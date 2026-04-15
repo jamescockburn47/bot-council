@@ -55,3 +55,37 @@ async fn test_get_debate_not_found() {
     ).await.unwrap();
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
+
+#[tokio::test]
+async fn test_get_transcript_not_found() {
+    let (app, _pool) = common::test_app().await;
+    let response = app
+        .oneshot(
+            axum::http::Request::builder()
+                .method("GET")
+                .uri("/debates/nonexistent/transcript")
+                .header("Authorization", "Bearer test")
+                .body(axum::body::Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 404);
+}
+
+#[tokio::test]
+async fn test_get_synthesis_not_found() {
+    let (app, _pool) = common::test_app().await;
+    let response = app
+        .oneshot(
+            axum::http::Request::builder()
+                .method("GET")
+                .uri("/debates/nonexistent/synthesis")
+                .header("Authorization", "Bearer test")
+                .body(axum::body::Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 404);
+}

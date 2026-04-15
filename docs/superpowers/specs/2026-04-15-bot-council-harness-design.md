@@ -1,6 +1,7 @@
 # LQ Bot Council Harness — Design Specification
 
-> v1.1 — 2026-04-15 — James Cockburn
+> v1.2 — 2026-04-15 — James Cockburn
+> Incorporates community feedback from LQ_Alice and Artur Serov
 
 ## Overview
 
@@ -682,16 +683,151 @@ The harness follows these rules (derived from the Clawdbot CLAUDE.md standards, 
 - **Commits are atomic.** One logical change per commit. No "WIP" commits on main.
 - **Reference implementations tested.** The Node.js and Python reference endpoints must pass a harness integration test.
 
-## Not In Scope (v1)
+## Phased Build Plan
 
-- Web dashboard / React frontend (separate project)
+The system is built incrementally. Each phase is independently testable and deployable. No phase depends on a later phase. The full 5-round protocol described above is the target architecture; the phases below are the build sequence.
+
+### Phase 0 — Single-Shot MVP
+
+**Goal:** Prove connectivity, the `/debate` contract, anonymisation, and peer scoring work. No rounds, no roles, no LLM analysis.
+
+**What it does:**
+1. Operator creates a debate via `POST /debates` with a topic and bot list
+2. Harness dispatches the topic to all bots concurrently (single call per bot, no role assignment)
+3. Bots return a one-shot response
+4. Harness anonymises all responses and redistributes to all bots
+5. Each bot scores every other bot's argument (cannot score its own, cannot see others' scores). Scoring call uses the same `/debate` endpoint with a `round: "scoring"` variant
+6. Harness aggregates scores, produces a ranked output: highest-scored argument(s) plus a compilation if multiple score highly
+
+**What it tests:**
+- Bot connectivity and timeout handling
+- The `/debate` endpoint contract (request/response schema)
+- Anonymisation and pseudonym assignment
+- Basic score aggregation
+- SQLite persistence and API retrieval
+
+**What it does NOT include:**
+- Constitutional roles
+- Multi-round protocol
+- Challenge validation
+- Divergence analysis
+- Opus synthesis
+- Judge model
+- Reputation
+
+**API surface (Phase 0):**
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/debates` | Create debate (topic, bot_ids) |
+| `GET` | `/debates` | List debates |
+| `GET` | `/debates/{id}` | Debate state + results |
+| `GET` | `/bots` | List bots |
+| `POST` | `/bots` | Register bot |
+| `GET` | `/health` | Health check |
+
+**Bot API (Phase 0):**
+
+The `/debate` endpoint receives either a `round: 0` (submit position) or `round: "scoring"` (score others' positions) call:
+
+Scoring request adds:
+```json
+{
+  "round": "scoring",
+  "context": [
+    { "pseudonym": "Agent A", "response": "..." },
+    { "pseudonym": "Agent B", "response": "..." }
+  ],
+  "prompt": "Score each argument 0-10 on reasoning quality and factual grounding. Return JSON array."
+}
+```
+
+Scoring response:
+```json
+{
+  "scores": [
+    { "pseudonym": "Agent A", "reasoning_quality": 7, "factual_grounding": 8, "overall": 7, "reasoning": "..." },
+    { "pseudonym": "Agent B", "reasoning_quality": 5, "factual_grounding": 6, "overall": 5, "reasoning": "..." }
+  ]
+}
+```
+
+**Estimated effort:** 1-2 weeks for harness + reference endpoints. This is the minimum viable test of the entire distributed architecture.
+
+### Phase 1 — Multi-Round Protocol
+
+**Goal:** Implement the full 5-round adversarial protocol with anti-sycophancy mechanisms. This is where the core intellectual work lives.
+
+**Adds on top of Phase 0:**
+- Constitutional roles (Proponent, Skeptic, Devil's Advocate, Empiricist, Steelman) with rotation
+- Rounds 0-4 as specified in the Debate Protocol section
+- Anonymisation across rounds (not just single-shot)
+- Structured challenge field + MiniMax validation (Round 2 dissent gate)
+- Cross-examination pairing via MiniMax (Round 3)
+- Position change tracking (Round 4)
+- Divergence analysis via MiniMax (post-Round 4)
+- Opus synthesis pass with rigid schema (temperature 0)
+- State machine with resumption from any round
+- Full transcript API with anonymisation log
+
+**Does NOT include:**
+- Judge model (bots no longer peer-score; the MiniMax analysis handles quality assessment)
+- Reputation / Elo
+- Diversity tracking tables
+- LQ Brain
+
+**This phase is the anti-sycophancy spine.** If this works — if blind formation, anonymisation, mandatory dissent, and capitulation detection actually produce better debate outputs than unconstrained multi-agent chat — the concept is validated.
+
+### Phase 2 — Judge, Reputation, and Diversity
+
+**Goal:** Add independent quality assessment, persistent bot reputation, and convergence monitoring.
+
+**Adds on top of Phase 1:**
+- Judge model (MiniMax scoring per bot per round on 5 dimensions)
+- Reputation system (Elo, per-dimension averages, role-specific stats)
+- Diversity tracking (model family, score variance, convergence flagging)
+- Judge integrity mechanisms (score withholding, audit trail)
+- `/debates/{id}/scores` and `/bots/{id}/reputation` API endpoints
+
+**Note on judge model (community feedback):** MiniMax as sole judge is a single point of classification drift (LQ_Alice). In Phase 2, the judge is MiniMax only. A future Phase 3 could introduce ensemble judging (multiple models score independently, harness aggregates) or periodic calibration against human judgement. This is documented as a known limitation, not deferred because it's unimportant, but because the debate protocol itself must be proven first.
+
+**Note on Elo convergence (community feedback):** With 5 bots, Elo ratings have high variance and won't converge under ~50 debates (LQ_Alice). This is acceptable because reputation is strictly informational in all phases — it never affects participation or role assignment.
+
+### Phase 3 — LQ Brain and Extensions (Future)
+
+**Not built as part of this spec. Documented for architectural planning only.**
+
+- LQ Brain MCP server implementation
+- Ensemble judging (multiple models, aggregated scores)
+- Reputation-based matchmaking
+- Live spectator feeds / WebSocket streaming
+- Web dashboard
 - WhatsApp integration
-- WebSocket real-time updates
-- Style normalisation of anonymised responses
-- Bot health monitoring / uptime tracking
-- Multi-topic or chained debates
+- Multi-topic and chained debates
 - Human participant mode
-- Debate templates or topic libraries
-- LQ Brain implementation (placeholder only — MCP server, storage, ingestion are separate projects)
-- Reputation-based matchmaking (reputation is tracked and exposed but does not affect participation or role assignment)
-- Live spectator feeds (the API exposes all data needed, but real-time streaming is a frontend concern)
+
+## Known Limitations and Design Honesty
+
+These are not bugs to fix — they are inherent constraints worth being explicit about.
+
+### Roles are prompt-based
+
+The constitutional roles (Proponent, Skeptic, etc.) are delivered as prompt instructions. This is in tension with the "structural enforcement over prompting" principle. The harness adds structural backing (re-prompting on role violation, MiniMax validation), but the role itself is still a prompt that an LLM could ignore or satisfy superficially. There is no way to make an LLM structurally incapable of agreeing — only to penalise it when it does. The protocol mitigates this; it does not eliminate it.
+
+### Asymmetric RAG
+
+Bots bring their own context, tools, and knowledge — including proprietary RAG pipelines, web search, and domain-specific training. This means some bots will have informational advantages on some topics. Combined with the read-only LQ Brain (when implemented), this creates an asymmetric knowledge landscape. This is a design choice, not a flaw: the value of the council comes from diversity of knowledge sources, not from levelling the playing field. But it means that debate outcomes are influenced by information access, not just reasoning quality. Worth tracking as an axis of analysis in synthesis outputs.
+
+### Judge gaming
+
+Any fixed judge model can be reverse-engineered over enough debates. A bot owner who studies the judge's scoring patterns could tune their bot's outputs to score well without improving reasoning quality. Phase 2 mitigates this with score withholding and audit trails. Ensemble judging (Phase 3) further hardens it. But no automated judge is immune to Goodhart's Law. The ultimate check is human review of synthesis outputs.
+
+### Single-harness trust
+
+The harness is a single point of trust. It anonymises, redistributes, validates, scores, and synthesises. If the harness has a bug — say it leaks identity metadata, or its validation has a false-positive rate — the protocol is silently compromised. Mitigation: full audit logging, and the harness source should be available to bot owners for inspection.
+
+## Not In Scope (any phase)
+
+- Style normalisation of anonymised responses
+- Debate templates or topic libraries (debates are ad-hoc, operator-initiated)
+- Automated debate scheduling (operator creates debates manually via API)

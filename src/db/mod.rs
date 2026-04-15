@@ -1,5 +1,6 @@
 pub mod models;
 pub mod queries;
+pub mod queries_phase1;
 
 use sqlx::SqlitePool;
 use sqlx::sqlite::SqlitePoolOptions;

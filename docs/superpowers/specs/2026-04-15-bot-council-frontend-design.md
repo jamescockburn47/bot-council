@@ -114,6 +114,7 @@ Persistent dark sidebar:
 | `/bots` | Yes | Admin | Bot management (active/pending/inactive tabs) |
 | `/bots/submit` | Yes | Member | Submit bot application |
 | `/bots/my-submissions` | Yes | Member | View own submissions and their status |
+| `/bots/criteria` | No | Public | What the council looks for in a bot — approval criteria |
 | `/settings` | Yes | Admin | Protocol config viewer (read-only for 1.5a) |
 
 ## Page Designs
@@ -132,7 +133,7 @@ The centrepiece page. Synthesis-first layout with full data transparency — eve
   - Live disagreements (red accent): issue, side A vs side B with agents and best arguments
   - Flagged capitulations (amber accent): agent, from/to position, justification assessment, flag reason
   - Minority positions (blue accent): agent, position, key argument with citation, confidence score
-- **Confidence trajectory chart**: line chart, one line per agent (colour-coded), x-axis = rounds, y-axis = confidence 0-100. Null for Round 0 (no confidence reported).
+- **Confidence trajectory chart**: line chart, one line per agent (colour-coded), x-axis = Rounds 1-4 only (Round 0 excluded — no confidence reported in blind formation), y-axis = confidence 0-100. Chart title: "Confidence (Rounds 1-4)". Four data points per agent.
 - **Meta observations**: the synthesis engine's structural commentary on debate quality (max 200 words)
 
 **Layer 2 — One click (expandable sections):**
@@ -174,6 +175,31 @@ The centrepiece page. Synthesis-first layout with full data transparency — eve
 - Challenge blocks: coloured left border matching challenge type (red for factual, amber for logical, purple for premise)
 - Position change blocks: highlighted callout with arrow icon (from → to)
 - Monospace font for agent pseudonyms and round labels; sans-serif for body text
+
+### Running Debate UX (Phase 1.5a — No WebSocket)
+
+In Phase 1.5a, there is no live streaming. Running debates are handled via polling:
+
+**Debate list card (running state):**
+- Pulsing purple dot indicator
+- Progress text: "Round 2/5" (current round / total rounds)
+- Time since creation (not countdown — round duration depends on bot response time)
+
+**Debate report page (running state):**
+- Synthesis section: "Synthesis will appear when all rounds complete." (grey placeholder)
+- Completed rounds: fully expandable with all data (responses, challenges, etc.)
+- Current round: "In progress..." with subtle loading indicator
+- Future rounds: "Pending" (greyed out, not expandable)
+- Confidence chart: shows data points for completed rounds only, chart grows as rounds complete
+- **Polling**: page fetches `GET /debates/{id}` every 15 seconds while debate status is not terminal (complete/cancelled/failed). When new round data arrives, the transcript updates in-place without full page reload.
+
+### Unresponsive vs Abstained Badge
+
+The transcript distinguishes two types of absent responses:
+- `abstained: true` + `valid: false` → **"Unresponsive"** badge (red) — bot timed out or returned an error. Visually distinct error state so spectators know why an agent is missing.
+- `abstained: true` + `valid: true` → **"Abstained"** badge (grey) — future-proofed for when bots can choose to abstain. Neutral visual treatment.
+
+This prevents spectators from seeing a gap in a round and assuming the synthesis is broken.
 
 ### Debate List (`/debates`)
 
@@ -225,6 +251,18 @@ Three-tab layout:
 - List of bots submitted by the current user
 - Each shows: name, endpoint, status badge (pending/approved/rejected), submitted date
 - No actions — view only
+
+### Bot Approval Criteria (`/bots/criteria` — public)
+
+Static content page linked from the bot submission form and How It Works. Explains what the council looks for when reviewing bot applications:
+
+- **API contract conformance**: bot must expose `POST /debate` returning valid JSON with at minimum a `response` field. Must handle all round types (0-4) and field requirements (challenge in Round 2, position_change in Round 4).
+- **Response quality**: bot should produce substantive, relevant responses (not gibberish, not template responses, not empty strings). Quality is assessed during the smoke test and ongoing debates.
+- **Response time**: bot must respond within the 5-minute timeout. Consistently slow bots that stall debates will be deactivated.
+- **No structural sycophancy**: bot should be capable of maintaining a position under challenge. Bots that immediately agree with every opposing argument add no value to the debate.
+- **Model diversity encouraged**: the council values diverse model families, reasoning styles, and knowledge bases. A pool of 5 identical GPT-4 wrappers is less valuable than a mixed pool.
+
+This page prevents arbitrary-feeling rejections and sets clear expectations for bot operators.
 
 ### Settings (`/settings` — admin only)
 
@@ -526,7 +564,7 @@ Challenge type:
   Logical:         #f59e0b (amber)
   Premise:         #8b5cf6 (purple)
 
-Font - headings:   monospace (system)
-Font - body:       sans-serif (system)
-Font - code/data:  monospace (system)
+Font - headings:   Geist Mono (fallback: ui-monospace, monospace)
+Font - body:       Inter (fallback: ui-sans-serif, system-ui, sans-serif)
+Font - code/data:  Geist Mono (fallback: ui-monospace, monospace)
 ```

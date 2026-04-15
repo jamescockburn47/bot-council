@@ -27,7 +27,8 @@ pub async fn create_bot(
     let id = BotId::new();
     let token_hash = hex::encode(Sha256::digest(req.token.as_bytes()));
     let row = queries::insert_bot(
-        state.db(), id.as_str(), &req.name, &req.endpoint_url, &token_hash, req.model_family.as_deref(),
+        state.db(), id.as_str(), &req.name, &req.endpoint_url, &token_hash,
+        req.model_family.as_deref(), None, None, "active",
     ).await?;
     Ok((StatusCode::CREATED, Json(BotResponse {
         id: row.id,

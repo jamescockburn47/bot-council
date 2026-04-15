@@ -112,3 +112,72 @@ pub async fn send_scoring_request(
         .await
         .map_err(|e| format!("invalid response body: {e}"))
 }
+
+/// Context entry sent to bots in Rounds 1+. Contains anonymised prior responses.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RoundContext {
+    pub pseudonym: String,
+    pub round: i64,
+    pub response: String,
+    pub confidence: Option<i64>,
+}
+
+/// Phase 1 request payload for all rounds. Superset of Phase 0 PositionRequest.
+#[derive(Debug, Serialize)]
+pub struct DebateRoundRequest {
+    pub session_id: String,
+    pub round: i64,
+    pub role: String,
+    pub context: Vec<RoundContext>,
+    pub prompt: String,
+}
+
+/// Structured challenge object (Round 2 required, optional other rounds).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChallengeField {
+    pub claim_targeted: String,
+    pub counter_evidence: String,
+    #[serde(rename = "type")]
+    pub challenge_type: String,
+}
+
+/// Position change declaration (Round 4 required).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PositionChangeField {
+    pub changed: bool,
+    pub from_summary: String,
+    pub to_summary: String,
+    pub reason: String,
+}
+
+/// Phase 1 response from a bot. All fields after `response` are optional
+/// depending on the round.
+#[derive(Debug, Clone, Deserialize)]
+pub struct DebateRoundResponse {
+    pub response: String,
+    pub confidence: Option<i64>,
+    pub challenge: Option<ChallengeField>,
+    pub position_change: Option<PositionChangeField>,
+}
+
+/// Send a Phase 1 debate round request to a bot.
+pub async fn send_debate_request(
+    client: &ClientWithMiddleware,
+    endpoint_url: &str,
+    token: &str,
+    request: &DebateRoundRequest,
+) -> Result<DebateRoundResponse, String> {
+    let resp = client
+        .post(endpoint_url)
+        .bearer_auth(token)
+        .json(request)
+        .send()
+        .await
+        .map_err(|e| format!("connection failed: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("bot returned HTTP {}", resp.status()));
+    }
+    resp.json::<DebateRoundResponse>()
+        .await
+        .map_err(|e| format!("invalid response body: {e}"))
+}

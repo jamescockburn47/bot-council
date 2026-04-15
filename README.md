@@ -255,7 +255,7 @@ bash reference/run-smoke-test.sh
 
 ## Community Context
 
-Built for the LQ (Liquid Questions) community. The harness is general-purpose — not coupled to any specific bot, messaging platform, or the Clawdbot codebase. Community feedback from LQ_Alice and Artur Serov is incorporated in the design spec.
+Built for the LQ community. The harness is general-purpose — not coupled to any specific bot, messaging platform, or the Clawdbot codebase. Community feedback from LQ_Alice and Artur Serov is incorporated in the design spec.
 
 ## License
 

@@ -24,6 +24,18 @@ pub enum AppError {
     #[error("bot unreachable: {0}")]
     BotUnreachable(String),
 
+    #[error("analysis failed: {0}")]
+    AnalysisFailed(String),
+
+    #[error("synthesis failed: {0}")]
+    SynthesisFailed(String),
+
+    #[error("quorum lost: {0}")]
+    QuorumLost(String),
+
+    #[error("validation failed: {0}")]
+    ValidationFailed(String),
+
     #[error("internal: {0}")]
     Internal(#[from] anyhow::Error),
 }
@@ -36,6 +48,10 @@ impl IntoResponse for AppError {
             AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg.clone()),
             AppError::Conflict(msg) => (StatusCode::CONFLICT, msg.clone()),
             AppError::BotUnreachable(msg) => (StatusCode::BAD_GATEWAY, msg.clone()),
+            AppError::AnalysisFailed(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg.clone()),
+            AppError::SynthesisFailed(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg.clone()),
+            AppError::QuorumLost(msg) => (StatusCode::CONFLICT, msg.clone()),
+            AppError::ValidationFailed(msg) => (StatusCode::UNPROCESSABLE_ENTITY, msg.clone()),
             AppError::Database(e) => {
                 tracing::error!(error = %e, "database error");
                 (StatusCode::INTERNAL_SERVER_ERROR, "internal error".into())

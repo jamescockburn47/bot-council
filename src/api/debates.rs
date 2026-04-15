@@ -4,7 +4,7 @@ use axum::http::StatusCode;
 use axum::Json;
 use crate::api::auth::BearerAuth;
 use crate::api::dto::*;
-use crate::db::queries;
+use crate::db::{queries, queries_phase1};
 use crate::error::{AppError, AppResult};
 use crate::orchestrator;
 use crate::orchestrator::anonymiser;
@@ -33,6 +33,12 @@ pub async fn create_debate(
     let debate_id = DebateId::new();
     queries::insert_debate(state.db(), debate_id.as_str(), &req.topic).await?;
 
+    // Assign roles with rotation
+    let bot_ids: Vec<String> = bots.iter().map(|b| b.id.clone()).collect();
+    let role_assignments = orchestrator::roles::assign_roles(state.db(), &bot_ids)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!(e)))?;
+
     let mut bot_tokens = std::collections::HashMap::new();
     for (i, bot) in bots.iter().enumerate() {
         let pseudonym = anonymiser::assign_pseudonym(i);
@@ -40,26 +46,43 @@ pub async fn create_debate(
         bot_tokens.insert(bot.id.clone(), String::new());
     }
 
-    // Spawn debate as background task
+    // Persist role assignments
+    orchestrator::roles::persist_role_assignments(state.db(), debate_id.as_str(), &role_assignments)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!(e)))?;
+
+    // Init round state machine
+    orchestrator::state_machine::init_rounds(state.db(), debate_id.as_str())
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!(e)))?;
+
+    // Spawn multi-round debate as background task
     let pool = state.db().clone();
     let client = state.http_client().clone();
     let topic = req.topic.clone();
     let debate_id_clone = debate_id.clone();
     let bots_clone = bots.clone();
+    let models_config = state.settings().models.clone();
+    let debate_config = state.settings().debate.clone();
     tokio::spawn(async move {
-        match orchestrator::run_debate(&pool, &client, &debate_id_clone, &topic, &bots_clone, &bot_tokens).await {
-            Ok(result) => tracing::info!(debate_id = %result.debate_id, rankings = result.rankings.len(), "debate completed"),
-            Err(e) => tracing::error!(debate_id = %debate_id_clone, error = %e, "debate failed"),
+        if let Err(e) = orchestrator::multi_round::run_multi_round_debate(
+            &pool, &client, &debate_id_clone, &topic, &bots_clone, &bot_tokens,
+            &models_config, &debate_config,
+        ).await {
+            tracing::error!(debate_id = %debate_id_clone, error = %e, "multi-round debate failed");
+            let _ = queries::update_debate_status(&pool, debate_id_clone.as_str(), "failed").await;
         }
     });
 
-    let debate_bots = queries::get_debate_bots(state.db(), debate_id.as_str()).await?;
-    let bot_infos: Vec<DebateBotInfo> = debate_bots.iter().map(|db| {
+    // Build response with role info
+    let debate_bots_rows = queries_phase1::get_debate_bots_with_roles(state.db(), debate_id.as_str()).await?;
+    let bot_infos: Vec<DebateBotInfo> = debate_bots_rows.iter().map(|db| {
         let bot = bots.iter().find(|b| b.id == db.bot_id);
         DebateBotInfo {
             bot_id: db.bot_id.clone(),
             bot_name: bot.map(|b| b.name.clone()).unwrap_or_default(),
             pseudonym: db.pseudonym.clone(),
+            role: db.role.clone(),
         }
     }).collect();
 
@@ -86,13 +109,14 @@ pub async fn list_debates(
 
     let mut debates = Vec::new();
     for row in rows {
-        let debate_bots = queries::get_debate_bots(state.db(), &row.id).await?;
+        let debate_bots = queries_phase1::get_debate_bots_with_roles(state.db(), &row.id).await?;
         let bot_infos: Vec<DebateBotInfo> = debate_bots.iter().map(|db| {
             let bot = all_bots.iter().find(|b| b.id == db.bot_id);
             DebateBotInfo {
                 bot_id: db.bot_id.clone(),
                 bot_name: bot.map(|b| b.name.clone()).unwrap_or_default(),
                 pseudonym: db.pseudonym.clone(),
+                role: db.role.clone(),
             }
         }).collect();
         debates.push(DebateResponse {
@@ -113,7 +137,7 @@ pub async fn get_debate(
     let debate = queries::get_debate(state.db(), &id).await?
         .ok_or_else(|| AppError::NotFound(format!("debate {id} not found")))?;
 
-    let debate_bots = queries::get_debate_bots(state.db(), &id).await?;
+    let debate_bots = queries_phase1::get_debate_bots_with_roles(state.db(), &id).await?;
     let all_bots = queries::list_active_bots(state.db()).await?;
     let bot_infos: Vec<DebateBotInfo> = debate_bots.iter().map(|db| {
         let bot = all_bots.iter().find(|b| b.id == db.bot_id);
@@ -121,6 +145,7 @@ pub async fn get_debate(
             bot_id: db.bot_id.clone(),
             bot_name: bot.map(|b| b.name.clone()).unwrap_or_default(),
             pseudonym: db.pseudonym.clone(),
+            role: db.role.clone(),
         }
     }).collect();
 

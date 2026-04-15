@@ -39,12 +39,13 @@ pub struct DebateResponse {
     pub results: Option<DebateResults>,
 }
 
-/// Bot assignment within a debate (pseudonymised).
+/// Bot assignment within a debate (pseudonymised, with optional role).
 #[derive(Debug, Serialize)]
 pub struct DebateBotInfo {
     pub bot_id: String,
     pub bot_name: String,
     pub pseudonym: String,
+    pub role: Option<String>,
 }
 
 /// Aggregated results for a completed debate.
@@ -77,4 +78,49 @@ pub struct RankedArgument {
 pub struct ListDebatesQuery {
     pub status: Option<String>,
     pub limit: Option<i64>,
+}
+
+/// Response for GET /debates/{id}/transcript.
+#[derive(Debug, Serialize)]
+pub struct TranscriptResponse {
+    pub debate_id: String,
+    pub topic: String,
+    pub rounds: Vec<TranscriptRound>,
+    pub anonymisation_log: Vec<AnonymisationEntry>,
+}
+
+/// A single round in the transcript.
+#[derive(Debug, Serialize)]
+pub struct TranscriptRound {
+    pub round_number: i64,
+    pub status: String,
+    pub responses: Vec<TranscriptEntry>,
+}
+
+/// A single response entry in a transcript round.
+#[derive(Debug, Serialize)]
+pub struct TranscriptEntry {
+    pub pseudonym: String,
+    pub response: String,
+    pub confidence: Option<i64>,
+    pub challenge: Option<serde_json::Value>,
+    pub position_change: Option<serde_json::Value>,
+    pub valid: bool,
+    pub abstained: bool,
+}
+
+/// Anonymisation log entry mapping pseudonym to role.
+#[derive(Debug, Serialize)]
+pub struct AnonymisationEntry {
+    pub pseudonym: String,
+    pub role: Option<String>,
+}
+
+/// Response for GET /debates/{id}/synthesis.
+#[derive(Debug, Serialize)]
+pub struct SynthesisResponse {
+    pub debate_id: String,
+    pub synthesis: serde_json::Value,
+    pub model_used: String,
+    pub created_at: String,
 }

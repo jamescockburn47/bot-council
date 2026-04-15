@@ -3,6 +3,8 @@ pub mod bots;
 pub mod debates;
 pub mod dto;
 pub mod health;
+pub mod synthesis;
+pub mod transcript;
 
 use axum::{Router, routing::get};
 use crate::state::AppState;
@@ -14,5 +16,7 @@ pub fn router(state: AppState) -> Router {
         .route("/bots", get(bots::list_bots).post(bots::create_bot))
         .route("/debates", get(debates::list_debates).post(debates::create_debate))
         .route("/debates/{id}", get(debates::get_debate))
+        .route("/debates/{id}/transcript", get(transcript::get_transcript))
+        .route("/debates/{id}/synthesis", get(synthesis::get_synthesis))
         .with_state(state)
 }

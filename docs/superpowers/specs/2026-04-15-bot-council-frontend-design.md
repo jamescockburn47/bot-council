@@ -351,6 +351,26 @@ New fields on the `bots` table:
 
 The existing `active` boolean is replaced by the `status` field. Migration preserves existing bots as `status = 'active'`.
 
+#### Bot Endpoint Conformance Check
+
+When an admin approves a bot, the harness fires a lightweight smoke test before transitioning to active:
+1. `POST /debate` to the bot's endpoint with a minimal Round 0 payload (`session_id: "smoke-test"`, `round: 0`, `role: "proponent"`, `context: []`, `prompt: "Smoke test: respond with any valid JSON."`)
+2. Verify the response parses as valid JSON with a `response` field (string)
+3. Timeout: 30 seconds (shorter than the 5-minute debate timeout)
+
+If the smoke test fails, the bot stays `pending` and the admin sees the failure reason (timeout, invalid JSON, HTTP error, missing `response` field). The admin can retry or reject.
+
+This prevents malformed bots from entering live debates and stalling or corrupting rounds.
+
+### 4a. Bot Count Cap
+
+Debates are capped at **5 bots maximum** (matching the 5 constitutional roles). The create debate form enforces min 3, max 5. The backend validates this in `POST /debates`. This cap ensures:
+- Every bot gets a unique constitutional role (no duplicate or unassigned roles)
+- The design token colour palette (5 agent colours) is sufficient
+- The confidence trajectory chart remains readable
+
+If a future phase supports variable bot counts, it must simultaneously extend the role system and the colour palette.
+
 ### 5. Transcript Response Extension
 
 The `TranscriptEntry` currently returns `valid: bool` but not the validation reasoning. Extend it to include:
@@ -384,7 +404,32 @@ Additionally, include divergence analysis results in the transcript response:
 }
 ```
 
-### 6. CreateDebateRequest Extension
+### 6. Synthesis Citation Validation
+
+After the Opus synthesis call completes, the harness runs a lightweight citation-consistency check:
+
+1. Parse every `[Agent X, Round N]` citation in the synthesis output (consensus_points.evidence, live_disagreements.best_argument, minority_positions.key_argument, flagged_capitulations)
+2. For each citation, verify:
+   - Agent X exists in the debate's anonymisation log
+   - Round N exists (0-4)
+   - Agent X actually submitted a response in Round N (not abstained)
+3. Produce a validation result:
+
+```json
+{
+  "citations_total": 12,
+  "citations_valid": 11,
+  "citations_invalid": [
+    { "citation": "[Agent C, Round 3]", "reason": "Agent C abstained in Round 3", "location": "consensus_points[1].evidence" }
+  ]
+}
+```
+
+This is stored alongside the synthesis in the `syntheses` table (new column: `citation_check_json TEXT`). The frontend displays a citation validity indicator on the synthesis section — green if all valid, amber with details if any are invalid.
+
+This is not a blocking check — invalid citations don't prevent the synthesis from being stored or displayed. It's a transparency mechanism: if the synthesis hallucinates a consensus point or misattributes a minority position, the report flags it rather than presenting it as authoritative.
+
+### 7. CreateDebateRequest Extension
 
 Add optional fields (all ignored if absent, preserving backward compatibility):
 

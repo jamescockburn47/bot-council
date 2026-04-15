@@ -220,7 +220,7 @@ async fn run_divergence_and_synthesis(
         &precomputed_json, &divergence_json, debate_config.synthesis_temperature,
     ).await.map_err(|e| format!("synthesis failed: {e}"))?;
 
-    queries_phase1::insert_synthesis(pool, debate_id, &synthesis_output, &models_config.opus_model, &prompt_hash)
+    queries_phase1::insert_synthesis(pool, debate_id, &synthesis_output, &models_config.opus_model, &prompt_hash, None)
         .await.map_err(|e| format!("db error storing synthesis: {e}"))?;
 
     queries::update_debate_status(pool, debate_id, "complete").await.map_err(|e| format!("db: {e}"))?;

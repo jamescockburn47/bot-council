@@ -205,11 +205,13 @@ pub async fn insert_synthesis(
     output_json: &str,
     model_used: &str,
     prompt_hash: &str,
+    citation_check_json: Option<&str>,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
-        "INSERT INTO syntheses (debate_id, output_json, model_used, prompt_hash) VALUES (?, ?, ?, ?)"
+        "INSERT INTO syntheses (debate_id, output_json, model_used, prompt_hash, citation_check_json) \
+         VALUES (?, ?, ?, ?, ?)"
     )
-    .bind(debate_id).bind(output_json).bind(model_used).bind(prompt_hash)
+    .bind(debate_id).bind(output_json).bind(model_used).bind(prompt_hash).bind(citation_check_json)
     .execute(pool).await?;
     Ok(())
 }

@@ -149,4 +149,5 @@ pub struct SynthesisResponse {
     pub synthesis: serde_json::Value,
     pub model_used: String,
     pub created_at: String,
+    pub citation_check: Option<serde_json::Value>,
 }

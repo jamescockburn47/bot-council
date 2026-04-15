@@ -107,6 +107,7 @@ pub struct SynthesisRow {
     pub output_json: String,
     pub model_used: String,
     pub prompt_hash: String,
+    pub citation_check_json: Option<String>,
     pub created_at: String,
 }
 

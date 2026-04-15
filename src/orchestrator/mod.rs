@@ -1,4 +1,6 @@
 pub mod anonymiser;
+pub mod roles;
+pub mod prompts;
 
 use std::collections::HashMap;
 use sqlx::SqlitePool;

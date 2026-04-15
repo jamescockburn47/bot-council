@@ -7,6 +7,7 @@ pub mod types;
 pub mod bot_client;
 pub mod orchestrator;
 pub mod analyser;
+pub mod synthesiser;
 
 use axum::Router;
 

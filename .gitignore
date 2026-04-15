@@ -1,0 +1,7 @@
+/target
+data/
+*.db
+*.db-journal
+*.db-wal
+node_modules/
+.env

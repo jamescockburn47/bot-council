@@ -6,6 +6,7 @@ pub mod state;
 pub mod types;
 pub mod bot_client;
 pub mod orchestrator;
+pub mod analyser;
 
 use axum::Router;
 

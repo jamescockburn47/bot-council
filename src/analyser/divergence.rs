@@ -1,9 +1,9 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use crate::analyser::call_minimax;
 use crate::config::ModelsConfig;
 
 /// Per-bot divergence analysis result.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DivergenceResult {
     /// Whether the position substantively shifted (not just rephrasing).
     pub shifted: bool,

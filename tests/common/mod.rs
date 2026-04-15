@@ -1,7 +1,7 @@
 use axum::Router;
 use sqlx::SqlitePool;
 use bot_council::state::AppState;
-use bot_council::config::{Settings, ServerConfig, DatabaseConfig, AuthConfig, HttpClientConfig};
+use bot_council::config::{Settings, ServerConfig, DatabaseConfig, AuthConfig, HttpClientConfig, ModelsConfig, DebateConfig};
 
 /// Build a test application with an in-memory SQLite database and no auth.
 pub async fn test_app() -> (Router, SqlitePool) {
@@ -16,6 +16,19 @@ pub async fn test_app() -> (Router, SqlitePool) {
             request_timeout_secs: 30,
             max_retries: 0,
             retry_delay_secs: 1,
+        },
+        models: ModelsConfig {
+            minimax_api_key: "test-minimax-key".into(),
+            minimax_model: "M2.7".into(),
+            minimax_base_url: "http://localhost:9999".into(),
+            opus_api_key: "test-opus-key".into(),
+            opus_model: "claude-opus-4-6".into(),
+        },
+        debate: DebateConfig {
+            default_timeout_secs: 30,
+            max_retries: 2,
+            quorum: 3,
+            synthesis_temperature: 0.0,
         },
     };
     let http_client = bot_council::bot_client::build_http_client(&settings.http_client);

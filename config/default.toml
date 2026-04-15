@@ -13,3 +13,16 @@ connect_timeout_secs = 5
 request_timeout_secs = 300
 max_retries = 1
 retry_delay_secs = 10
+
+[models]
+minimax_api_key = ""
+minimax_model = "M2.7"
+minimax_base_url = "https://api.minimax.chat"
+opus_api_key = ""
+opus_model = "claude-opus-4-6"
+
+[debate]
+default_timeout_secs = 300
+max_retries = 2
+quorum = 3
+synthesis_temperature = 0.0

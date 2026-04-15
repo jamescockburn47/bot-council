@@ -7,6 +7,8 @@ pub struct Settings {
     pub database: DatabaseConfig,
     pub auth: AuthConfig,
     pub http_client: HttpClientConfig,
+    pub models: ModelsConfig,
+    pub debate: DebateConfig,
 }
 
 /// HTTP server bind configuration.
@@ -35,6 +37,25 @@ pub struct HttpClientConfig {
     pub request_timeout_secs: u64,
     pub max_retries: u32,
     pub retry_delay_secs: u64,
+}
+
+/// LLM model configuration for MiniMax (analysis) and Opus (synthesis).
+#[derive(Debug, Deserialize, Clone)]
+pub struct ModelsConfig {
+    pub minimax_api_key: String,
+    pub minimax_model: String,
+    pub minimax_base_url: String,
+    pub opus_api_key: String,
+    pub opus_model: String,
+}
+
+/// Debate protocol tuning.
+#[derive(Debug, Deserialize, Clone)]
+pub struct DebateConfig {
+    pub default_timeout_secs: u64,
+    pub max_retries: u32,
+    pub quorum: usize,
+    pub synthesis_temperature: f64,
 }
 
 impl Settings {

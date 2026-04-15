@@ -100,6 +100,7 @@ pub struct TranscriptResponse {
     pub topic: String,
     pub rounds: Vec<TranscriptRound>,
     pub anonymisation_log: Vec<AnonymisationEntry>,
+    pub divergence_analyses: Vec<DivergenceEntry>,
 }
 
 /// A single round in the transcript.
@@ -120,6 +121,7 @@ pub struct TranscriptEntry {
     pub position_change: Option<serde_json::Value>,
     pub valid: bool,
     pub abstained: bool,
+    pub validation_reasoning: Option<String>,
 }
 
 /// Anonymisation log entry mapping pseudonym to role.
@@ -127,6 +129,17 @@ pub struct TranscriptEntry {
 pub struct AnonymisationEntry {
     pub pseudonym: String,
     pub role: Option<String>,
+}
+
+/// Divergence analysis entry for a bot across rounds.
+#[derive(Debug, Serialize)]
+pub struct DivergenceEntry {
+    pub pseudonym: String,
+    pub shifted: Option<bool>,
+    pub magnitude: Option<String>,
+    pub what_changed: Option<String>,
+    pub justification_adequate: Option<bool>,
+    pub flags: Vec<String>,
 }
 
 /// Response for GET /debates/{id}/synthesis.

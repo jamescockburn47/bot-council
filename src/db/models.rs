@@ -10,6 +10,11 @@ pub struct BotRow {
     pub model_family: Option<String>,
     pub active: bool,
     pub created_at: String,
+    pub status: String,
+    pub submitted_by: Option<String>,
+    pub description: Option<String>,
+    pub reviewed_at: Option<String>,
+    pub reviewed_by: Option<String>,
 }
 
 /// Database row for a debate session.

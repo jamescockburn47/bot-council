@@ -7,6 +7,7 @@ pub struct CreateBotRequest {
     pub endpoint_url: String,
     pub token: String,
     pub model_family: Option<String>,
+    pub description: Option<String>,
 }
 
 /// Response body for a bot resource.
@@ -17,7 +18,19 @@ pub struct BotResponse {
     pub endpoint_url: String,
     pub model_family: Option<String>,
     pub active: bool,
+    pub status: String,
+    pub description: Option<String>,
+    pub submitted_by: Option<String>,
+    pub reviewed_at: Option<String>,
+    pub reviewed_by: Option<String>,
     pub created_at: String,
+}
+
+/// Response body for GET /me.
+#[derive(Debug, Serialize)]
+pub struct UserInfoResponse {
+    pub user_id: String,
+    pub role: String,
 }
 
 /// Request body for creating a new debate.

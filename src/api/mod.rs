@@ -6,7 +6,7 @@ pub mod health;
 pub mod synthesis;
 pub mod transcript;
 
-use axum::{Router, http::HeaderValue, routing::get};
+use axum::{Router, http::HeaderValue, routing::{get, patch}};
 use tower_http::cors::{Any, CorsLayer};
 use axum::http::Method;
 use crate::state::AppState;
@@ -35,7 +35,13 @@ pub fn router(state: AppState) -> Router {
     let cors = cors_layer(&state.settings().server.cors_origins);
     Router::new()
         .route("/health", get(health::health))
+        .route("/me", get(bots::get_me))
+        .route("/bots/my-submissions", get(bots::my_submissions))
         .route("/bots", get(bots::list_bots).post(bots::create_bot))
+        .route("/bots/{id}/approve", patch(bots::approve_bot))
+        .route("/bots/{id}/reject", patch(bots::reject_bot))
+        .route("/bots/{id}/deactivate", patch(bots::deactivate_bot))
+        .route("/bots/{id}/reactivate", patch(bots::reactivate_bot))
         .route("/debates", get(debates::list_debates).post(debates::create_debate))
         .route("/debates/{id}", get(debates::get_debate))
         .route("/debates/{id}/transcript", get(transcript::get_transcript))

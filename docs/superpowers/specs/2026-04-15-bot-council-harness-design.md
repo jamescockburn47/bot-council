@@ -1,20 +1,23 @@
 # LQ Bot Council Harness — Design Specification
 
-> v1 — 2026-04-15 — James Cockburn
+> v1.1 — 2026-04-15 — James Cockburn
 
 ## Overview
 
-A standalone Rust/Axum service that orchestrates structured multi-agent adversarial debates. The harness manages a 5-round protocol with anti-sycophancy mechanisms enforced structurally, not through prompting. It communicates with N participating bots via HTTP, persists full session state in SQLite, and produces a rigorous synthesis output via a tightly-prompted Opus call.
+A standalone Rust/Axum service that orchestrates structured multi-agent adversarial debates. The harness manages a 5-round protocol with anti-sycophancy mechanisms enforced structurally, not through prompting. A separate judge model scores each agent's truthfulness and reasoning per round, producing a persistent performance record. It communicates with N participating bots via HTTP, persists full session state in SQLite, and produces a rigorous synthesis output via a tightly-prompted Opus call.
 
 The harness is general-purpose. It is not coupled to any specific bot implementation, WhatsApp, or the Clawdbot codebase. It runs on the Evo X2 (AMD Strix Halo, 128GB UMA) alongside existing services but has no dependency on them.
+
+The council's value comes from agent diversity — across model families, personas, and reasoning traditions. A single-vendor platform cannot replicate what a genuinely heterogeneous agent pool produces. The operational risk is convergence: if the judge gets gamed or the pool narrows to one reasoning style, the council becomes an echo chamber. Diversity monitoring is a first-class concern, not an afterthought.
 
 ## Design Principles
 
 1. **Structural enforcement over prompting.** Anti-sycophancy mechanisms are protocol rules enforced by the harness, not instructions in bot prompts that can be ignored.
 2. **Bot-agnostic.** The harness does not know or care what model, memory system, or tool stack any bot uses. It calls a uniform HTTP contract.
 3. **Resumable.** Every state transition is persisted. If the harness crashes mid-debate, it resumes from the last completed step.
-4. **Auditable.** Full round-by-round transcript with anonymisation log, divergence analysis, and synthesis provenance. Every claim in the synthesis cites bot + round.
-5. **Minimal dependencies.** Pure HTTP orchestration + SQLite + cloud LLM calls (MiniMax for analysis, Opus for synthesis). No local embedding models, no message queues, no external databases.
+4. **Auditable.** Full round-by-round transcript with anonymisation log, divergence analysis, judge scores, and synthesis provenance. Every claim in the synthesis cites bot + round.
+5. **Minimal dependencies.** Pure HTTP orchestration + SQLite + cloud LLM calls (MiniMax for analysis and judging, Opus for synthesis). No local embedding models, no message queues, no external databases.
+6. **Diversity as invariant.** The harness tracks model family, reasoning style convergence, and judge score distributions across debates. Homogeneity is flagged, not just permitted.
 
 ## Participants
 
@@ -201,7 +204,11 @@ Do not soften your position for the sake of agreement. Minority positions are pr
 
 ### Synthesis Pass
 
-After Round 4, the harness runs two steps:
+After Round 4, the harness runs four steps:
+
+**Step 0 — Final round judging (MiniMax, concurrent with other rounds' judging):**
+
+Judge scores for all rounds are computed as each round completes (see Judge Model section). By the time Round 4 finishes, Rounds 0-3 are already scored. Round 4 judging runs here before synthesis begins. All scores are withheld from bots until the debate is complete.
 
 **Step 1 — Deterministic pre-computation (harness, no LLM):**
 - Confidence trajectories per bot (Round 1 → Round 4)
@@ -265,8 +272,109 @@ OUTPUT SCHEMA (return valid JSON):
   "confidence_trajectories": {
     "pseudonym": [null, int, int, int, int]
   },
+  "judge_summary": {
+    "pseudonym": { "avg_overall": float, "strongest_dimension": "string", "weakest_dimension": "string" }
+  },
   "meta_observations": "string — max 200 words, any structural observations about the debate quality itself"
 }
+```
+
+## Judge Model
+
+A separate judge model scores each bot's contributions after every round. The judge is distinct from the synthesis pass — synthesis aggregates the debate outcome; the judge evaluates individual performance.
+
+### What the Judge Scores
+
+After each round completes, the harness calls MiniMax once per bot with the bot's response and the full round context:
+
+```
+You are the judge in a structured adversarial debate. Score this participant's contribution to Round {N}.
+
+Topic: {topic}
+Participant's role: {role}
+Participant's response: {response}
+Full round context (all participants): {anonymised_round_context}
+
+Score each dimension 0-10:
+
+1. **Truthfulness** — Are factual claims accurate? Are qualifications appropriate? Any unsupported assertions?
+2. **Reasoning quality** — Is the logic valid? Are inferences warranted? Are counter-arguments addressed rather than ignored?
+3. **Role adherence** — Does the response fulfil the constitutional role's function?
+4. **Substantive contribution** — Did this advance the debate? New arguments, genuine challenges, or productive synthesis — not just restating prior positions?
+5. **Intellectual honesty** — Does the participant acknowledge weaknesses in its own position? Does it engage with the strongest form of opposing arguments?
+
+Return JSON: {
+  "truthfulness": { "score": int, "reasoning": "string" },
+  "reasoning_quality": { "score": int, "reasoning": "string" },
+  "role_adherence": { "score": int, "reasoning": "string" },
+  "substantive_contribution": { "score": int, "reasoning": "string" },
+  "intellectual_honesty": { "score": int, "reasoning": "string" },
+  "overall": int,
+  "flags": ["string"]
+}
+```
+
+### Judge Integrity
+
+The judge must not become gameable. Mitigations:
+
+- **No bot sees its own scores until the debate is complete.** Scores are withheld during the debate to prevent bots from optimising for the judge rather than the argument.
+- **Judge scores are auditable.** The judge's reasoning is stored alongside scores. If a score is disputed, the reasoning can be reviewed.
+- **Diversity monitoring.** The harness tracks score distributions across debates per bot. If all bots converge toward similar scores, or one bot consistently dominates, the harness flags potential judge bias or pool homogeneity.
+
+### Reputation System
+
+Judge scores accumulate into a persistent reputation per bot:
+
+- **Per-dimension running averages** across all debates (truthfulness, reasoning, role adherence, contribution, honesty)
+- **Overall Elo-style rating** — bots that perform well against strong opponents gain more than those who perform well against weak ones. Computed from per-debate overall scores weighted by opponent pool strength.
+- **Debate count and recency** — reputation decays slowly if a bot stops participating. Recent performance is weighted more heavily.
+- **Role-specific performance** — track how each bot performs in each role. Some bots may excel as Skeptic but underperform as Proponent.
+
+Reputation is exposed via the API (`GET /bots/{id}/reputation`) and included in debate metadata. It is informational — it does not affect role assignment or debate participation in v1.
+
+## LQ Brain (Shared Knowledge Layer)
+
+LQ Brain is a shared, centralised knowledge repository accessible to all participating bots during debates via MCP (Model Context Protocol). It sits alongside each bot's own memories and web search tools as a third knowledge source.
+
+### Purpose
+
+- Provide a common factual ground that all bots can reference, reducing debates about easily-verifiable facts
+- Accumulate collective knowledge from prior debates — insights, resolved questions, established positions
+- Serve as the community's institutional memory across debates
+
+### v1 Scope — Placeholder
+
+LQ Brain is **not implemented in v1** of the harness. The harness spec includes:
+
+- A `brain_enabled: bool` flag in debate config (default false)
+- An `mcp_endpoint` field in harness config (empty string, not yet wired)
+- A `knowledge_sources` array in the bot API contract's Round 0 payload, which will list available MCP tools when Brain is active (empty array for now)
+
+The Brain itself — its storage, ingestion pipeline, MCP server implementation, and access control — is a separate project. The harness needs only to know whether it's available and pass the MCP connection details to bots in the debate context.
+
+### Future Design Intent
+
+When implemented, LQ Brain will:
+
+- Expose an MCP server that bots can query during their turn (the harness passes the MCP endpoint in the debate context)
+- Store curated knowledge: prior debate syntheses, verified facts, community-contributed reference material
+- Be read-only during debates — bots query it, they don't write to it during a session
+- Ingest new knowledge from completed debate syntheses (consensus points only, post-debate, with human approval)
+
+### Data Model Addition
+
+```sql
+-- Placeholder: LQ Brain query log (for when Brain is active)
+CREATE TABLE brain_queries (
+    id TEXT PRIMARY KEY,
+    debate_id TEXT NOT NULL REFERENCES debates(id),
+    round_number INTEGER NOT NULL,
+    bot_id TEXT NOT NULL REFERENCES bots(id),
+    query TEXT NOT NULL,
+    result_summary TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 ```
 
 ## Anti-Sycophancy Mechanisms Summary
@@ -289,6 +397,7 @@ CREATE TABLE bots (
     name TEXT NOT NULL,
     endpoint_url TEXT NOT NULL,
     token_hash TEXT NOT NULL,
+    model_family TEXT,          -- e.g. 'claude', 'gpt4', 'llama', 'minimax' — for diversity tracking
     active BOOLEAN NOT NULL DEFAULT true,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -376,6 +485,50 @@ CREATE TABLE role_history (
     role TEXT NOT NULL,
     PRIMARY KEY (bot_id, debate_id)
 );
+
+-- Judge scores (per bot per round)
+CREATE TABLE judge_scores (
+    id TEXT PRIMARY KEY,
+    debate_id TEXT NOT NULL REFERENCES debates(id),
+    round_number INTEGER NOT NULL,
+    bot_id TEXT NOT NULL REFERENCES bots(id),
+    truthfulness INTEGER NOT NULL,
+    reasoning_quality INTEGER NOT NULL,
+    role_adherence INTEGER NOT NULL,
+    substantive_contribution INTEGER NOT NULL,
+    intellectual_honesty INTEGER NOT NULL,
+    overall INTEGER NOT NULL,
+    reasoning_json TEXT NOT NULL,     -- judge's per-dimension reasoning
+    flags_json TEXT NOT NULL DEFAULT '[]',
+    model_used TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (debate_id, round_number, bot_id)
+);
+
+-- Reputation (materialised view, recomputed after each debate)
+CREATE TABLE reputation (
+    bot_id TEXT PRIMARY KEY REFERENCES bots(id),
+    debate_count INTEGER NOT NULL DEFAULT 0,
+    avg_truthfulness REAL NOT NULL DEFAULT 0,
+    avg_reasoning_quality REAL NOT NULL DEFAULT 0,
+    avg_role_adherence REAL NOT NULL DEFAULT 0,
+    avg_substantive_contribution REAL NOT NULL DEFAULT 0,
+    avg_intellectual_honesty REAL NOT NULL DEFAULT 0,
+    elo_rating REAL NOT NULL DEFAULT 1500,
+    last_debate_at TEXT,
+    role_performance_json TEXT NOT NULL DEFAULT '{}',  -- { "skeptic": { avg_overall: 7.2, count: 3 }, ... }
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Diversity tracking (per debate)
+CREATE TABLE diversity_checks (
+    debate_id TEXT PRIMARY KEY REFERENCES debates(id),
+    model_families_json TEXT NOT NULL,      -- ["claude", "gpt4", "llama"] — distinct families in this debate
+    family_count INTEGER NOT NULL,
+    score_variance REAL,                    -- variance of overall judge scores — low variance may signal convergence
+    convergence_flagged BOOLEAN NOT NULL DEFAULT false,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 ```
 
 ## Project Structure
@@ -416,8 +569,14 @@ bot-council/
       mod.rs                -- Opus synthesis call
       schema.rs             -- Output schema definition and validation
       precompute.rs         -- Deterministic pre-computation (confidence trajectories, challenge graph, vote tally)
+    judge/
+      mod.rs                -- Per-round judge scoring (MiniMax calls)
+      reputation.rs         -- Elo computation, running averages, role-specific stats
+      diversity.rs          -- Model family tracking, convergence detection
     anonymiser/
       mod.rs                -- Strip identity, assign pseudonyms, log mapping
+    brain/
+      mod.rs                -- LQ Brain integration placeholder (MCP client, config, query logging)
     db/
       mod.rs                -- Pool init, migrations
       models.rs             -- Row types
@@ -442,10 +601,12 @@ bot-council/
 | `GET` | `/debates/{id}/transcript` | Yes | Round-by-round transcript with anonymisation log |
 | `GET` | `/debates/{id}/synthesis` | Yes | Final synthesis (404 if not yet complete) |
 | `POST` | `/debates/{id}/cancel` | Yes | Cancel in-progress debate |
+| `GET` | `/debates/{id}/scores` | Yes | Judge scores for all bots across all rounds |
 | `GET` | `/bots` | Yes | List registered bots |
-| `POST` | `/bots` | Yes | Register bot. Body: `{ name, endpoint_url, token }` |
-| `PATCH` | `/bots/{id}` | Yes | Update bot (endpoint, token, active flag) |
+| `POST` | `/bots` | Yes | Register bot. Body: `{ name, endpoint_url, token, model_family? }` |
+| `PATCH` | `/bots/{id}` | Yes | Update bot (endpoint, token, active flag, model_family) |
 | `DELETE` | `/bots/{id}` | Yes | Deactivate bot (soft delete) |
+| `GET` | `/bots/{id}/reputation` | Yes | Reputation stats: averages, Elo, role breakdown, debate count |
 | `GET` | `/health` | No | Service health + DB connectivity |
 
 ## Configuration
@@ -531,3 +692,6 @@ The harness follows these rules (derived from the Clawdbot CLAUDE.md standards, 
 - Multi-topic or chained debates
 - Human participant mode
 - Debate templates or topic libraries
+- LQ Brain implementation (placeholder only — MCP server, storage, ingestion are separate projects)
+- Reputation-based matchmaking (reputation is tracked and exposed but does not affect participation or role assignment)
+- Live spectator feeds (the API exposes all data needed, but real-time streaming is a frontend concern)

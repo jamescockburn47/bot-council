@@ -13,7 +13,8 @@
 | **Run** | `cargo run` (on EVO) |
 | **Test** | `cargo test` (on EVO) |
 | **Spec** | `docs/superpowers/specs/2026-04-15-bot-council-harness-design.md` |
-| **Plan** | `docs/superpowers/plans/2026-04-15-phase0-single-shot-mvp.md` |
+| **Plan (P0)** | `docs/superpowers/plans/2026-04-15-phase0-single-shot-mvp.md` |
+| **Plan (P1)** | `docs/superpowers/plans/2026-04-15-phase1-multi-round-protocol.md` |
 
 ## Deploy Workflow
 
@@ -46,10 +47,12 @@ Standalone Rust/Axum service. No dependency on Clawdbot or any specific bot.
 Communicates with bots via HTTP POST to their /debate endpoint.
 Persists all state in SQLite. Background Tokio tasks run debates asynchronously.
 
-## Current Phase: 0 (Single-Shot MVP)
+## Current Phase: 1 (Multi-Round Protocol)
 
-Phase 0 supports: bot registration, single-shot debates, anonymisation,
-peer scoring, ranked results. No rounds, roles, or LLM analysis.
+Phase 1 supports: constitutional roles with rotation, 5-round adversarial protocol
+(blind formation, anonymous distribution, structured rebuttal with MiniMax validation,
+cross-examination with MiniMax pairing, final position with position change tracking),
+divergence analysis, Opus synthesis. State machine with resumption from any round.
 
 ## API Endpoints
 
@@ -60,4 +63,6 @@ peer scoring, ranked results. No rounds, roles, or LLM analysis.
 | POST | /debates | Create and run a debate |
 | GET | /debates | List debates |
 | GET | /debates/{id} | Get debate with results |
+| GET | /debates/{id}/transcript | Full transcript with anonymisation log |
+| GET | /debates/{id}/synthesis | Synthesis output (404 if incomplete) |
 | GET | /health | Health check |

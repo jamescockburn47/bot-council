@@ -1,6 +1,7 @@
 pub mod anonymiser;
 pub mod roles;
 pub mod prompts;
+pub mod rounds;
 pub mod state_machine;
 
 use std::collections::HashMap;

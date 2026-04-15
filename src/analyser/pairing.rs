@@ -1,9 +1,9 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use crate::analyser::call_minimax;
 use crate::config::ModelsConfig;
 
 /// MiniMax pairing result — which bots to pair for cross-examination.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct PairingResult {
     /// First cross-examination pair (two pseudonyms).
     pub pair_1: Vec<String>,

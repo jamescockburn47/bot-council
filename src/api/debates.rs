@@ -29,6 +29,11 @@ pub async fn create_debate(
     if bots.len() < 3 {
         return Err(AppError::BadRequest(format!("need at least 3 bots, found {}", bots.len())));
     }
+    if bots.len() > 5 {
+        return Err(AppError::BadRequest(
+            "Maximum 5 bots per debate (one per constitutional role)".into(),
+        ));
+    }
 
     let debate_id = DebateId::new();
     queries::insert_debate(state.db(), debate_id.as_str(), &req.topic).await?;

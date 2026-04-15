@@ -2,6 +2,7 @@ use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::Json;
 use sha2::{Sha256, Digest};
+use std::time::Duration;
 use crate::api::auth::{AuthIdentity, AdminOnly};
 use crate::api::dto::{CreateBotRequest, BotResponse, UserInfoResponse};
 use crate::db::{models::BotRow, queries};
@@ -71,6 +72,52 @@ pub async fn list_bots(
     Ok(Json(bots))
 }
 
+/// Send a smoke-test request to a bot's endpoint before approval.
+///
+/// Sends a minimal POST with a dummy session, checks that the response is
+/// valid JSON containing a string `response` field. Uses a 30-second timeout.
+/// The harness does NOT send a bearer token — only the hash is stored, not the
+/// raw token, and this call is intentionally unauthenticated.
+async fn smoke_test_bot(
+    client: &reqwest_middleware::ClientWithMiddleware,
+    endpoint_url: &str,
+) -> Result<(), String> {
+    let body = serde_json::json!({
+        "session_id": "smoke-test",
+        "round": 0,
+        "role": "proponent",
+        "context": [],
+        "prompt": "Smoke test: respond with any valid JSON containing a 'response' field."
+    });
+
+    let response = client
+        .post(endpoint_url)
+        .timeout(Duration::from_secs(30))
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("request failed: {e}"))?;
+
+    let status = response.status();
+    if !status.is_success() {
+        return Err(format!("bot returned HTTP {status}"));
+    }
+
+    let json: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("response is not valid JSON: {e}"))?;
+
+    match json.get("response") {
+        Some(serde_json::Value::String(_)) => Ok(()),
+        Some(other) => Err(format!(
+            "'response' field has wrong type: expected string, got {}",
+            other
+        )),
+        None => Err("response JSON missing 'response' field".into()),
+    }
+}
+
 /// PATCH /bots/{id}/approve — approve a pending bot (admin only).
 pub async fn approve_bot(
     State(state): State<AppState>,
@@ -82,6 +129,11 @@ pub async fn approve_bot(
     if bot.status != "pending" {
         return Err(AppError::BadRequest("bot is not pending".into()));
     }
+    smoke_test_bot(state.http_client(), &bot.endpoint_url)
+        .await
+        .map_err(|reason| AppError::BadRequest(
+            format!("Bot endpoint smoke test failed: {reason}")
+        ))?;
     queries::update_bot_status(
         state.db(), &id, "active", admin.0.user_id(),
     ).await?;

@@ -6,11 +6,33 @@ pub mod health;
 pub mod synthesis;
 pub mod transcript;
 
-use axum::{Router, routing::get};
+use axum::{Router, http::HeaderValue, routing::get};
+use tower_http::cors::{Any, CorsLayer};
+use axum::http::Method;
 use crate::state::AppState;
+
+/// Build the CORS layer from the configured origins.
+///
+/// If `origins` is empty, returns a permissive layer suitable for development.
+/// Otherwise, returns a restrictive layer allowing only the listed origins.
+fn cors_layer(origins: &[String]) -> CorsLayer {
+    if origins.is_empty() {
+        CorsLayer::permissive()
+    } else {
+        let parsed: Vec<HeaderValue> = origins
+            .iter()
+            .filter_map(|o| o.parse().ok())
+            .collect();
+        CorsLayer::new()
+            .allow_origin(parsed)
+            .allow_methods([Method::GET, Method::POST, Method::PATCH, Method::DELETE])
+            .allow_headers(Any)
+    }
+}
 
 /// Build the API router with all routes.
 pub fn router(state: AppState) -> Router {
+    let cors = cors_layer(&state.settings().server.cors_origins);
     Router::new()
         .route("/health", get(health::health))
         .route("/bots", get(bots::list_bots).post(bots::create_bot))
@@ -18,5 +40,6 @@ pub fn router(state: AppState) -> Router {
         .route("/debates/{id}", get(debates::get_debate))
         .route("/debates/{id}/transcript", get(transcript::get_transcript))
         .route("/debates/{id}/synthesis", get(synthesis::get_synthesis))
+        .layer(cors)
         .with_state(state)
 }

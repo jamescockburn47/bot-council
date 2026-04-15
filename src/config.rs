@@ -16,6 +16,8 @@ pub struct Settings {
 pub struct ServerConfig {
     pub host: String,
     pub port: u16,
+    /// Allowed CORS origins. Empty list enables permissive mode (dev).
+    pub cors_origins: Vec<String>,
 }
 
 /// Database connection configuration.

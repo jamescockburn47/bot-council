@@ -187,6 +187,184 @@
       detail: `${m.position} -- ${m.key_argument}`,
     })) ?? []
   );
+
+  const ROUND_LABELS: Record<number, string> = {
+    0: 'Blind Formation',
+    1: 'Anonymous Distribution',
+    2: 'Structured Rebuttal',
+    3: 'Cross-Examination',
+    4: 'Final Position',
+  };
+
+  function buildMarkdownExport(): string {
+    if (!debate || !transcript) return '';
+    const lines: string[] = [];
+
+    lines.push(`# ${debate.topic}`);
+    lines.push('');
+    lines.push(`**Status:** ${debate.status}  `);
+    lines.push(`**Debate ID:** ${debate.id}  `);
+    lines.push(`**Created:** ${formatDate(debate.created_at)}  `);
+    if (debate.completed_at) lines.push(`**Completed:** ${formatDate(debate.completed_at)}  `);
+    lines.push('');
+
+    // Participants
+    lines.push('## Participants');
+    lines.push('');
+    lines.push('| Agent | Role |');
+    lines.push('|-------|------|');
+    for (const entry of transcript.anonymisation_log) {
+      const bot = debate.bots.find(b => b.pseudonym === entry.pseudonym);
+      const name = bot?.bot_name ?? entry.pseudonym;
+      lines.push(`| ${name} (${entry.pseudonym}) | ${entry.role ?? 'none'} |`);
+    }
+    lines.push('');
+
+    // Synthesis
+    if (synthesis) {
+      const s = synthesis.synthesis;
+      lines.push('## Synthesis');
+      lines.push('');
+      lines.push(`*Model: ${synthesis.model_used}*`);
+      lines.push('');
+
+      if (s.consensus_points.length > 0) {
+        lines.push('### Consensus Points');
+        lines.push('');
+        for (const cp of s.consensus_points) {
+          lines.push(`**${cp.point}**`);
+          lines.push(`> Supporting: ${cp.supporting_bots.join(', ')}`);
+          lines.push(`> ${cp.evidence}`);
+          lines.push('');
+        }
+      }
+
+      if (s.live_disagreements.length > 0) {
+        lines.push('### Live Disagreements');
+        lines.push('');
+        for (const d of s.live_disagreements) {
+          lines.push(`**${d.issue}**`);
+          lines.push('');
+          lines.push(`*${d.side_a.bots.join(', ')}:* ${d.side_a.position}`);
+          lines.push(`> ${d.side_a.best_argument}`);
+          lines.push('');
+          lines.push(`*${d.side_b.bots.join(', ')}:* ${d.side_b.position}`);
+          lines.push(`> ${d.side_b.best_argument}`);
+          lines.push('');
+        }
+      }
+
+      if (s.flagged_capitulations.length > 0) {
+        lines.push('### Flagged Capitulations');
+        lines.push('');
+        for (const c of s.flagged_capitulations) {
+          lines.push(`**${c.bot}** ${c.justification_adequate ? '(justified)' : '(unjustified)'}`);
+          lines.push(`- From: ${c.from}`);
+          lines.push(`- To: ${c.to}`);
+          lines.push(`- Reason: ${c.flag_reason}`);
+          lines.push('');
+        }
+      }
+
+      if (s.minority_positions.length > 0) {
+        lines.push('### Minority Positions');
+        lines.push('');
+        for (const m of s.minority_positions) {
+          lines.push(`**${m.bot}** (confidence: ${m.confidence})`);
+          lines.push(`${m.position}`);
+          lines.push(`> ${m.key_argument}`);
+          lines.push('');
+        }
+      }
+
+      if (s.meta_observations) {
+        lines.push('### Meta Observations');
+        lines.push('');
+        lines.push(s.meta_observations);
+        lines.push('');
+      }
+    }
+
+    // Transcript
+    lines.push('---');
+    lines.push('');
+    lines.push('## Transcript');
+    lines.push('');
+
+    for (const round of transcript.rounds) {
+      const label = ROUND_LABELS[round.round_number] ?? `Round ${round.round_number}`;
+      lines.push(`### Round ${round.round_number}: ${label}`);
+      lines.push('');
+
+      for (const resp of round.responses) {
+        const role = roleMap[resp.pseudonym];
+        const roleTag = role ? ` (${role})` : '';
+        const confTag = resp.confidence != null ? ` [confidence: ${resp.confidence}]` : '';
+        lines.push(`**${resp.pseudonym}${roleTag}**${confTag}`);
+        if (resp.abstained) {
+          lines.push('*Abstained*');
+        } else {
+          lines.push('');
+          lines.push(resp.response);
+        }
+        lines.push('');
+
+        if (resp.challenge) {
+          lines.push(`> **Challenge** (${resp.challenge.type}): ${resp.challenge.claim_targeted}`);
+          lines.push(`> ${resp.challenge.counter_evidence}`);
+          lines.push('');
+        }
+
+        if (resp.position_change) {
+          const pc = resp.position_change;
+          lines.push(`> **Position ${pc.changed ? 'changed' : 'maintained'}**`);
+          if (pc.changed) {
+            lines.push(`> From: ${pc.from_summary}`);
+            lines.push(`> To: ${pc.to_summary}`);
+          }
+          lines.push(`> Reason: ${pc.reason}`);
+          lines.push('');
+        }
+      }
+    }
+
+    // Divergence
+    if (transcript.divergence_analyses.length > 0) {
+      lines.push('---');
+      lines.push('');
+      lines.push('## Divergence Analysis');
+      lines.push('');
+      lines.push('| Agent | Shifted | Magnitude | Justified |');
+      lines.push('|-------|---------|-----------|-----------|');
+      for (const d of transcript.divergence_analyses) {
+        lines.push(`| ${d.pseudonym} | ${d.shifted ? 'Yes' : 'No'} | ${d.magnitude ?? '-'} | ${d.justification_adequate ? 'Yes' : 'No'} |`);
+      }
+      lines.push('');
+      for (const d of transcript.divergence_analyses) {
+        if (d.what_changed) {
+          lines.push(`**${d.pseudonym}:** ${d.what_changed}`);
+          if (d.flags.length > 0) {
+            for (const f of d.flags) lines.push(`- Flag: ${f}`);
+          }
+          lines.push('');
+        }
+      }
+    }
+
+    return lines.join('\n');
+  }
+
+  function exportMarkdown() {
+    const md = buildMarkdownExport();
+    const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const slug = debate!.topic.slice(0, 40).replace(/[^a-zA-Z0-9]+/g, '-').toLowerCase();
+    a.download = `debate-${slug}-${debate!.id.slice(0, 8)}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 </script>
 
 {#if loading}
@@ -234,14 +412,24 @@
         {/if}
       </div>
       <h1 class="text-xl font-bold text-[var(--text-primary)] mb-3">{debate.topic}</h1>
-      <div class="flex items-center gap-4 text-[10px] mono text-[var(--text-muted)]">
-        <span>{debate.bots.length} agent{debate.bots.length !== 1 ? 's' : ''}</span>
-        {#if transcript}
-          <span>{transcript.rounds.length} round{transcript.rounds.length !== 1 ? 's' : ''}</span>
-        {/if}
-        <span>Created {formatDate(debate.created_at)}</span>
-        {#if debate.completed_at}
-          <span>Completed {formatDate(debate.completed_at)}</span>
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-4 text-[10px] mono text-[var(--text-muted)]">
+          <span>{debate.bots.length} agent{debate.bots.length !== 1 ? 's' : ''}</span>
+          {#if transcript}
+            <span>{transcript.rounds.length} round{transcript.rounds.length !== 1 ? 's' : ''}</span>
+          {/if}
+          <span>Created {formatDate(debate.created_at)}</span>
+          {#if debate.completed_at}
+            <span>Completed {formatDate(debate.completed_at)}</span>
+          {/if}
+        </div>
+        {#if isTerminal && transcript}
+          <button
+            onclick={exportMarkdown}
+            class="px-3 py-1.5 text-xs mono text-[var(--text-secondary)] border border-[var(--border)] rounded hover:text-[var(--text-primary)] hover:border-[var(--text-muted)] transition-colors"
+          >
+            Export .md
+          </button>
         {/if}
       </div>
     </div>

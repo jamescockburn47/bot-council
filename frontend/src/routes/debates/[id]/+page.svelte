@@ -1,5 +1,6 @@
 <script lang="ts">
   import { api, debateStreamUrl } from '$lib/api/client';
+  import { getSessionToken } from '$lib/auth/clerk';
   import StatusBadge from '$lib/components/StatusBadge.svelte';
   import SynthesisCard from '$lib/components/SynthesisCard.svelte';
   import ConfidenceChart from '$lib/components/ConfidenceChart.svelte';
@@ -74,87 +75,98 @@
     }
   }
 
-  // EventSource for live debate updates
+  // EventSource for live debate updates.
+  // EventSource cannot set Authorization headers, so the Clerk session token
+  // is passed via ?token=<jwt> query param. The backend's authenticate()
+  // falls back to this when no Authorization header is present.
   $effect(() => {
     if (!debate || isTerminalStatus(debate.status)) return;
 
-    const es = new EventSource(debateStreamUrl(data.debateId));
+    let es: EventSource | null = null;
+    let cancelled = false;
 
-    es.onopen = () => { sseConnected = true; };
-    es.onerror = () => { sseConnected = false; };
+    (async () => {
+      const token = await getSessionToken().catch(() => null);
+      if (cancelled) return;
+      es = new EventSource(debateStreamUrl(data.debateId, token));
 
-    es.addEventListener('round:started', (e: MessageEvent) => {
-      const d = JSON.parse(e.data);
-      if (transcript) {
-        const exists = transcript.rounds.find((r: any) => r.round_number === d.round_number);
-        if (!exists) {
-          transcript.rounds = [...transcript.rounds, {
-            round_number: d.round_number,
-            status: 'in_progress',
-            responses: [],
-          }];
+      es.onopen = () => { sseConnected = true; };
+      es.onerror = () => { sseConnected = false; };
+
+      es.addEventListener('round:started', (e: MessageEvent) => {
+        const d = JSON.parse(e.data);
+        if (transcript) {
+          const exists = transcript.rounds.find((r: any) => r.round_number === d.round_number);
+          if (!exists) {
+            transcript.rounds = [...transcript.rounds, {
+              round_number: d.round_number,
+              status: 'in_progress',
+              responses: [],
+            }];
+          }
         }
-      }
-    });
+      });
 
-    es.addEventListener('response:received', (e: MessageEvent) => {
-      const d = JSON.parse(e.data);
-      if (transcript) {
-        const round = transcript.rounds.find((r: any) => r.round_number === d.round_number);
-        if (round) {
-          round.responses = [...round.responses, {
-            pseudonym: d.pseudonym,
-            response: d.response,
-            confidence: d.confidence ?? null,
-            challenge: d.challenge ?? null,
-            position_change: d.position_change ?? null,
-            valid: d.valid,
-            abstained: d.abstained,
-            validation_reasoning: null,
-          }];
-          transcript = transcript; // trigger Svelte 5 reactivity
+      es.addEventListener('response:received', (e: MessageEvent) => {
+        const d = JSON.parse(e.data);
+        if (transcript) {
+          const round = transcript.rounds.find((r: any) => r.round_number === d.round_number);
+          if (round) {
+            round.responses = [...round.responses, {
+              pseudonym: d.pseudonym,
+              response: d.response,
+              confidence: d.confidence ?? null,
+              challenge: d.challenge ?? null,
+              position_change: d.position_change ?? null,
+              valid: d.valid,
+              abstained: d.abstained,
+              validation_reasoning: null,
+            }];
+            transcript = transcript;
+          }
         }
-      }
-    });
+      });
 
-    es.addEventListener('round:completed', (e: MessageEvent) => {
-      const d = JSON.parse(e.data);
-      if (transcript) {
-        const round = transcript.rounds.find((r: any) => r.round_number === d.round_number);
-        if (round) {
-          round.status = 'complete';
-          transcript = transcript;
+      es.addEventListener('round:completed', (e: MessageEvent) => {
+        const d = JSON.parse(e.data);
+        if (transcript) {
+          const round = transcript.rounds.find((r: any) => r.round_number === d.round_number);
+          if (round) {
+            round.status = 'complete';
+            transcript = transcript;
+          }
         }
-      }
-    });
+      });
 
-    es.addEventListener('synthesis:completed', (e: MessageEvent) => {
-      const d = JSON.parse(e.data);
-      synthesis = {
-        debate_id: data.debateId,
-        synthesis: d.synthesis,
-        model_used: '',
-        created_at: new Date().toISOString(),
-        citation_check: d.citation_check ?? null,
-      };
-    });
+      es.addEventListener('synthesis:completed', (e: MessageEvent) => {
+        const d = JSON.parse(e.data);
+        synthesis = {
+          debate_id: data.debateId,
+          synthesis: d.synthesis,
+          model_used: '',
+          created_at: new Date().toISOString(),
+          citation_check: d.citation_check ?? null,
+        };
+      });
 
-    es.addEventListener('debate:completed', () => {
-      if (debate) debate = { ...debate, status: 'complete' };
-      sseConnected = false;
-      es.close();
-    });
+      es.addEventListener('debate:completed', () => {
+        if (debate) debate = { ...debate, status: 'complete' };
+        sseConnected = false;
+        es?.close();
+      });
 
-    es.addEventListener('debate:failed', (e: MessageEvent) => {
-      const d = JSON.parse(e.data);
-      if (debate) debate = { ...debate, status: 'failed' };
-      error = `Debate failed: ${d.reason}`;
-      sseConnected = false;
-      es.close();
-    });
+      es.addEventListener('debate:failed', (e: MessageEvent) => {
+        const d = JSON.parse(e.data);
+        if (debate) debate = { ...debate, status: 'failed' };
+        error = `Debate failed: ${d.reason}`;
+        sseConnected = false;
+        es?.close();
+      });
+    })();
 
     return () => {
-      es.close();
+      cancelled = true;
+      es?.close();
       sseConnected = false;
     };
   });

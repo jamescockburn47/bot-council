@@ -99,12 +99,25 @@ impl FromRequestParts<AppState> for AuthIdentity {
 
 async fn authenticate(parts: &Parts, state: &AppState) -> Result<AuthIdentity, AppError> {
     let cfg = &state.settings().auth;
-    let token = parts
+
+    // Primary: Authorization: Bearer <token> header.
+    let header_token = parts
         .headers
         .get("authorization")
         .and_then(|v| v.to_str().ok())
         .and_then(|h| h.strip_prefix("Bearer "))
+        .map(|s| s.to_string());
+
+    // Fallback: ?token=<token> query param. Required for EventSource
+    // (SSE) connections, which cannot set request headers. The token is
+    // logged in server access logs — acceptable for short-lived Clerk JWTs
+    // but callers should prefer the header where possible.
+    let query_token = parts.uri.query().and_then(parse_token_param);
+
+    let token = header_token
+        .or(query_token)
         .ok_or(AppError::Unauthorized)?;
+    let token = token.as_str();
 
     // 1. Static admin bearer
     if !cfg.admin_token.is_empty() && token == cfg.admin_token {
@@ -157,6 +170,79 @@ async fn verify_clerk_jwt(token: &str, state: &AppState) -> Result<AuthIdentity,
         })
     } else {
         Ok(AuthIdentity::Participant { user_id: claims.sub })
+    }
+}
+
+/// Extract `token=<value>` from a URL query string. Handles percent-decoding
+/// of the value. Returns `None` if the key is absent.
+fn parse_token_param(query: &str) -> Option<String> {
+    for pair in query.split('&') {
+        let mut it = pair.splitn(2, '=');
+        let k = it.next()?;
+        if k != "token" { continue; }
+        let v = it.next().unwrap_or("");
+        return Some(percent_decode(v));
+    }
+    None
+}
+
+/// Minimal percent-decoder for query values. Handles `%XX` and `+` as space.
+fn percent_decode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let bytes = s.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'+' => { out.push(' '); i += 1; }
+            b'%' if i + 2 < bytes.len() => {
+                let hi = (bytes[i + 1] as char).to_digit(16);
+                let lo = (bytes[i + 2] as char).to_digit(16);
+                match (hi, lo) {
+                    (Some(h), Some(l)) => {
+                        out.push(((h * 16 + l) as u8) as char);
+                        i += 3;
+                    }
+                    _ => { out.push('%'); i += 1; }
+                }
+            }
+            b => { out.push(b as char); i += 1; }
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod query_tests {
+    use super::{parse_token_param, percent_decode};
+
+    #[test]
+    fn extracts_token() {
+        assert_eq!(parse_token_param("token=abc123"), Some("abc123".into()));
+    }
+
+    #[test]
+    fn extracts_token_among_other_params() {
+        assert_eq!(
+            parse_token_param("other=x&token=abc123&foo=bar"),
+            Some("abc123".into())
+        );
+    }
+
+    #[test]
+    fn percent_decoded_value() {
+        assert_eq!(parse_token_param("token=abc%20def"), Some("abc def".into()));
+    }
+
+    #[test]
+    fn absent_returns_none() {
+        assert_eq!(parse_token_param("other=x"), None);
+    }
+
+    #[test]
+    fn percent_decode_basic() {
+        assert_eq!(percent_decode("a%20b"), "a b");
+        assert_eq!(percent_decode("a+b"), "a b");
+        assert_eq!(percent_decode("plain"), "plain");
     }
 }
 

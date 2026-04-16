@@ -22,7 +22,7 @@ pub async fn build_app() -> anyhow::Result<Router> {
     // Bot token key: parse from config or use zero key when Clerk is disabled.
     // Boot-time validation in Task 13 rejects the zero key when clerk_issuer is set.
     let bot_token_key = api::bot_token_crypto::parse_key_hex(&settings.auth.bot_token_key)
-        .unwrap_or([0u8; 32]);
+        .unwrap_or_else(|_| api::bot_token_crypto::BotTokenKey::zero());
 
     // JWKS cache: URL derived from issuer if not explicitly set.
     let jwks_url = if settings.auth.clerk_jwks_url.is_empty() {

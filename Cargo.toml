@@ -33,6 +33,7 @@ tokio-stream = { version = "0.1", features = ["sync", "time"] }
 aes-gcm = "0.10"
 base64 = "0.22"
 arc-swap = "1"
+zeroize = { version = "1", features = ["derive"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full", "test-util"] }

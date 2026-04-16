@@ -39,7 +39,7 @@ pub async fn test_app() -> (Router, SqlitePool) {
     };
     let http_client = bot_council::bot_client::build_http_client(&settings.http_client);
     let jwks = bot_council::api::jwks_cache::JwksCache::new("http://localhost/unused");
-    let bot_token_key = [0u8; 32];
+    let bot_token_key = bot_council::api::bot_token_crypto::BotTokenKey::zero();
     let state = AppState::new(pool.clone(), http_client, settings, jwks, bot_token_key);
     let app = bot_council::api::router(state);
     (app, pool)

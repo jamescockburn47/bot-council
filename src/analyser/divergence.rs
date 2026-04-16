@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use crate::analyser::call_minimax;
 use crate::config::ModelsConfig;
+use crate::sanitise::{frame_untrusted, ANTI_INJECTION_PREAMBLE};
 
 /// Per-bot divergence analysis result.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -29,11 +30,15 @@ pub async fn analyse_divergence(
     round4_response: &str,
     position_change_json: &str,
 ) -> Result<DivergenceResult, String> {
+    let framed_r0 = frame_untrusted("round0_position", round0_response);
+    let framed_r4 = frame_untrusted("round4_position", round4_response);
+    let framed_pc = frame_untrusted("position_change", position_change_json);
     let prompt = format!(
-        "Compare these two positions from the same participant in a structured debate.\n\n\
-         Round 0 position: {round0_response}\n\
-         Round 4 position: {round4_response}\n\
-         Participant's self-declared position_change: {position_change_json}\n\n\
+        "{ANTI_INJECTION_PREAMBLE}\n\n\
+         Compare these two positions from the same participant in a structured debate.\n\n\
+         {framed_r0}\n\
+         {framed_r4}\n\
+         {framed_pc}\n\n\
          Assess:\n\
          1. Did the position substantively shift? (not just rephrasing)\n\
          2. Magnitude: none | minor | major | reversal\n\

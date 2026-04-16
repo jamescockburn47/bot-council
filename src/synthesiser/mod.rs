@@ -8,6 +8,7 @@ pub mod schema;
 use serde::{Deserialize, Serialize};
 use sha2::{Sha256, Digest};
 use crate::config::ModelsConfig;
+use crate::sanitise::ANTI_INJECTION_PREAMBLE;
 
 /// Call Opus to produce the final synthesis.
 ///
@@ -93,6 +94,7 @@ fn build_synthesis_prompt(
     format!(
         "You are the synthesis engine for a structured adversarial debate. \
          Your role is analytical, not creative. You must produce a rigorous, citation-backed synthesis.\n\n\
+         {ANTI_INJECTION_PREAMBLE}\n\n\
          RULES:\n\
          - Every factual claim must cite [Bot pseudonym, Round N].\n\
          - Do not infer what a participant \"seemed to mean\" — use only their stated positions.\n\
@@ -100,9 +102,9 @@ fn build_synthesis_prompt(
          - Preserve minority positions with full dignity.\n\
          - Flag any position shift that lacks adequate justification.\n\n\
          TOPIC: {topic}\n\n\
-         FULL TRANSCRIPT:\n{transcript}\n\n\
-         PRE-COMPUTED STRUCTURAL DATA:\n{precomputed}\n\n\
-         DIVERGENCE ANALYSES:\n{divergence}\n\n\
+         <debate-transcript>\n{transcript}\n</debate-transcript>\n\n\
+         <structural-data>\n{precomputed}\n</structural-data>\n\n\
+         <divergence-analyses>\n{divergence}\n</divergence-analyses>\n\n\
          OUTPUT SCHEMA (return valid JSON):\n\
          {{\n\
            \"topic\": \"string\",\n\

@@ -6,6 +6,21 @@ use crate::db::{queries, queries_phase1};
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
 
+/// Strip markdown code fences from model output (e.g. ` ```json\n{...}\n``` `).
+fn strip_code_fences(s: &str) -> String {
+    let trimmed = s.trim();
+    if trimmed.starts_with("```") {
+        let without_opening = match trimmed.find('\n') {
+            Some(pos) => &trimmed[pos + 1..],
+            None => trimmed,
+        };
+        if let Some(pos) = without_opening.rfind("```") {
+            return without_opening[..pos].trim().to_string();
+        }
+    }
+    trimmed.to_string()
+}
+
 /// GET /debates/{id}/synthesis — final synthesis output (404 if not yet complete).
 pub async fn get_synthesis(
     State(state): State<AppState>,
@@ -18,7 +33,8 @@ pub async fn get_synthesis(
     let synthesis = queries_phase1::get_synthesis(state.db(), &id).await?
         .ok_or_else(|| AppError::NotFound(format!("synthesis not yet available for debate {id}")))?;
 
-    let output: serde_json::Value = serde_json::from_str(&synthesis.output_json)
+    let cleaned = strip_code_fences(&synthesis.output_json);
+    let output: serde_json::Value = serde_json::from_str(&cleaned)
         .unwrap_or_else(|_| serde_json::Value::String(synthesis.output_json.clone()));
 
     let citation_check: Option<serde_json::Value> = synthesis.citation_check_json

@@ -11,14 +11,15 @@
     "@sveltejs/adapter-static": "^3",
     "@sveltejs/kit": "^2",
     "@sveltejs/vite-plugin-svelte": "^4",
+    "@tailwindcss/vite": "^4",
     "svelte": "^5",
     "svelte-check": "^4",
-    "typescript": "^5",
-    "vite": "^6",
     "tailwindcss": "^4",
-    "@tailwindcss/vite": "^4"
+    "typescript": "^5",
+    "vite": "^6"
   },
   "dependencies": {
+    "@clerk/clerk-js": "^6.7.2",
     "chart.js": "^4"
   },
   "type": "module"

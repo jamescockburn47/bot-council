@@ -1,4 +1,6 @@
 import { env } from '$env/dynamic/public';
+import { goto } from '$app/navigation';
+import { getSessionToken } from '$lib/auth/clerk';
 import type {
   BotResponse,
   CreateBotRequest,
@@ -25,8 +27,17 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     'Content-Type': 'application/json',
     ...((options.headers as Record<string, string>) ?? {}),
   };
-  // Auth token will be added when Clerk is wired up
+  try {
+    const token = await getSessionToken();
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+  } catch {
+    // Clerk not yet loaded / not configured — fall through without auth.
+  }
   const res = await fetch(`${BASE_URL}${path}`, { ...options, headers });
+  if (res.status === 401) {
+    await goto('/sign-in');
+    throw new ApiError(401, null);
+  }
   if (!res.ok) {
     const body = await res.json().catch(() => null);
     throw new ApiError(res.status, body);
@@ -64,7 +75,11 @@ export const api = {
         body: JSON.stringify(req),
       }),
     approve: (id: string) => request<BotResponse>(`/bots/${id}/approve`, { method: 'PATCH' }),
-    reject: (id: string) => request<BotResponse>(`/bots/${id}/reject`, { method: 'PATCH' }),
+    reject: (id: string, reason: string) =>
+      request<BotResponse>(`/bots/${id}/reject`, {
+        method: 'PATCH',
+        body: JSON.stringify({ reason }),
+      }),
     deactivate: (id: string) => request<void>(`/bots/${id}/deactivate`, { method: 'PATCH' }),
     reactivate: (id: string) => request<void>(`/bots/${id}/reactivate`, { method: 'PATCH' }),
     mySubmissions: () => request<BotResponse[]>('/bots/my-submissions'),

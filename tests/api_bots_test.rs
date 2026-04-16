@@ -13,14 +13,15 @@ async fn test_create_bot_returns_201() {
         "endpoint_url": "http://localhost:9999/debate",
         "token": "secret123"
     });
-    let response = app.oneshot(
+    let req = common::admin_auth(
         Request::builder()
             .method("POST")
             .uri("/bots")
-            .header("content-type", "application/json")
-            .body(Body::from(serde_json::to_string(&body).unwrap()))
-            .unwrap(),
-    ).await.unwrap();
+            .header("content-type", "application/json"),
+    )
+        .body(Body::from(serde_json::to_string(&body).unwrap()))
+        .unwrap();
+    let response = app.oneshot(req).await.unwrap();
     assert_eq!(response.status(), StatusCode::CREATED);
     let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
     let json: Value = serde_json::from_slice(&body).unwrap();
@@ -31,12 +32,13 @@ async fn test_create_bot_returns_201() {
 #[tokio::test]
 async fn test_list_bots_returns_empty() {
     let (app, _pool) = common::test_app().await;
-    let response = app.oneshot(
+    let req = common::admin_auth(
         Request::builder()
-            .uri("/bots")
-            .body(Body::empty())
-            .unwrap(),
-    ).await.unwrap();
+            .uri("/bots"),
+    )
+        .body(Body::empty())
+        .unwrap();
+    let response = app.oneshot(req).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
     let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
     let json: Value = serde_json::from_slice(&body).unwrap();

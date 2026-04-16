@@ -209,13 +209,13 @@ pub async fn my_submissions(
 /// GET /me — return current user info from auth identity.
 pub async fn get_me(auth: AuthIdentity) -> AppResult<Json<UserInfoResponse>> {
     match &auth {
-        AuthIdentity::BearerToken => Ok(Json(UserInfoResponse {
-            user_id: "admin".into(),
+        AuthIdentity::Admin { user_id, .. } => Ok(Json(UserInfoResponse {
+            user_id: user_id.clone().unwrap_or_else(|| "admin".into()),
             role: "admin".into(),
         })),
-        AuthIdentity::ClerkUser { user_id, role } => Ok(Json(UserInfoResponse {
+        AuthIdentity::Participant { user_id } => Ok(Json(UserInfoResponse {
             user_id: user_id.clone(),
-            role: role.clone(),
+            role: "member".into(),
         })),
     }
 }

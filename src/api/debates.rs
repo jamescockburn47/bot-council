@@ -2,7 +2,7 @@
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::Json;
-use crate::api::auth::BearerAuth;
+use crate::api::auth::{RequireAuth, RequireAdmin};
 use crate::api::dto::*;
 use crate::db::{queries, queries_phase1};
 use crate::error::{AppError, AppResult};
@@ -14,7 +14,7 @@ use crate::types::DebateId;
 /// POST /debates — create and run a debate.
 pub async fn create_debate(
     State(state): State<AppState>,
-    _auth: BearerAuth,
+    _auth: RequireAdmin,
     Json(req): Json<CreateDebateRequest>,
 ) -> AppResult<(StatusCode, Json<DebateResponse>)> {
     if req.topic.is_empty() {
@@ -113,7 +113,7 @@ pub async fn create_debate(
 /// GET /debates — list debates.
 pub async fn list_debates(
     State(state): State<AppState>,
-    _auth: BearerAuth,
+    _auth: RequireAuth,
     Query(params): Query<ListDebatesQuery>,
 ) -> AppResult<Json<Vec<DebateResponse>>> {
     let limit = params.limit.unwrap_or(20);
@@ -144,7 +144,7 @@ pub async fn list_debates(
 /// GET /debates/{id} — get debate detail with results if complete.
 pub async fn get_debate(
     State(state): State<AppState>,
-    _auth: BearerAuth,
+    _auth: RequireAuth,
     Path(id): Path<String>,
 ) -> AppResult<Json<DebateResponse>> {
     let debate = queries::get_debate(state.db(), &id).await?

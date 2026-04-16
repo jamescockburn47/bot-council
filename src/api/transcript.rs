@@ -1,7 +1,7 @@
 use axum::extract::{Path, State};
 use axum::Json;
 use std::collections::HashMap;
-use crate::api::auth::BearerAuth;
+use crate::api::auth::RequireAuth;
 use crate::api::dto::*;
 use crate::db::{queries, queries_phase1};
 use crate::error::{AppError, AppResult};
@@ -10,7 +10,7 @@ use crate::state::AppState;
 /// GET /debates/{id}/transcript — full round-by-round transcript.
 pub async fn get_transcript(
     State(state): State<AppState>,
-    _auth: BearerAuth,
+    _auth: RequireAuth,
     Path(id): Path<String>,
 ) -> AppResult<Json<TranscriptResponse>> {
     let debate = queries::get_debate(state.db(), &id).await?

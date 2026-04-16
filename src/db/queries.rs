@@ -1,37 +1,56 @@
 use sqlx::SqlitePool;
 use crate::db::models::*;
 
+/// Column list used by every bot SELECT. Kept in one place so schema changes
+/// touch one spot instead of six.
+const BOT_COLUMNS: &str = "id, name, endpoint_url, token_hash, token_ciphertext, \
+    model_family, active, created_at, status, submitted_by, description, \
+    rejection_reason, reviewed_at, reviewed_by";
+
 /// Insert a new bot registration and return the created row.
+#[allow(clippy::too_many_arguments)]
 pub async fn insert_bot(
-    pool: &SqlitePool, id: &str, name: &str, endpoint_url: &str,
-    token_hash: &str, model_family: Option<&str>,
-    submitted_by: Option<&str>, description: Option<&str>, status: &str,
+    pool: &SqlitePool,
+    id: &str,
+    name: &str,
+    endpoint_url: &str,
+    token_ciphertext: &[u8],
+    model_family: Option<&str>,
+    submitted_by: Option<&str>,
+    description: Option<&str>,
+    status: &str,
 ) -> Result<BotRow, sqlx::Error> {
     sqlx::query_as::<_, BotRow>(
-        "INSERT INTO bots (id, name, endpoint_url, token_hash, model_family, submitted_by, description, status) \
+        "INSERT INTO bots (id, name, endpoint_url, token_ciphertext, model_family, \
+         submitted_by, description, status) \
          VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING *"
     )
-    .bind(id).bind(name).bind(endpoint_url).bind(token_hash).bind(model_family)
-    .bind(submitted_by).bind(description).bind(status)
-    .fetch_one(pool).await
+    .bind(id)
+    .bind(name)
+    .bind(endpoint_url)
+    .bind(token_ciphertext)
+    .bind(model_family)
+    .bind(submitted_by)
+    .bind(description)
+    .bind(status)
+    .fetch_one(pool)
+    .await
 }
 
 /// Return all active bots ordered by creation time.
 pub async fn list_active_bots(pool: &SqlitePool) -> Result<Vec<BotRow>, sqlx::Error> {
-    sqlx::query_as::<_, BotRow>(
-        "SELECT id, name, endpoint_url, token_hash, model_family, active, \
-         status, submitted_by, description, reviewed_at, reviewed_by, created_at \
-         FROM bots WHERE status = 'active' ORDER BY created_at"
-    ).fetch_all(pool).await
+    let sql = format!(
+        "SELECT {BOT_COLUMNS} FROM bots WHERE status = 'active' ORDER BY created_at"
+    );
+    sqlx::query_as::<_, BotRow>(&sql).fetch_all(pool).await
 }
 
 /// Fetch a single bot by ID, or None if not found.
 pub async fn get_bot(pool: &SqlitePool, id: &str) -> Result<Option<BotRow>, sqlx::Error> {
-    sqlx::query_as::<_, BotRow>(
-        "SELECT id, name, endpoint_url, token_hash, model_family, active, \
-         status, submitted_by, description, reviewed_at, reviewed_by, created_at \
-         FROM bots WHERE id = ?"
-    ).bind(id).fetch_optional(pool).await
+    let sql = format!(
+        "SELECT {BOT_COLUMNS} FROM bots WHERE id = ?"
+    );
+    sqlx::query_as::<_, BotRow>(&sql).bind(id).fetch_optional(pool).await
 }
 
 /// Fetch multiple active bots by a slice of IDs.
@@ -39,17 +58,12 @@ pub async fn get_bots_by_ids(pool: &SqlitePool, ids: &[String]) -> Result<Vec<Bo
     if ids.is_empty() { return Ok(vec![]); }
     let placeholders: String = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
     let query = format!(
-        "SELECT id, name, endpoint_url, token_hash, model_family, active, \
-         status, submitted_by, description, reviewed_at, reviewed_by, created_at \
-         FROM bots WHERE id IN ({}) AND status = 'active'",
-        placeholders
+        "SELECT {BOT_COLUMNS} FROM bots WHERE id IN ({placeholders}) AND status = 'active'"
     );
     let mut q = sqlx::query_as::<_, BotRow>(&query);
     for id in ids { q = q.bind(id); }
     q.fetch_all(pool).await
 }
-
-/// Insert a new debate and return the created row.
 pub async fn insert_debate(
     pool: &SqlitePool, id: &str, topic: &str,
 ) -> Result<DebateRow, sqlx::Error> {
@@ -160,30 +174,29 @@ pub async fn get_peer_scores(
 }
 
 /// List bots filtered by status.
+
+/// List bots filtered by status.
 pub async fn list_bots_by_status(pool: &SqlitePool, status: &str) -> Result<Vec<BotRow>, sqlx::Error> {
-    sqlx::query_as::<_, BotRow>(
-        "SELECT id, name, endpoint_url, token_hash, model_family, active, \
-         status, submitted_by, description, reviewed_at, reviewed_by, created_at \
-         FROM bots WHERE status = ? ORDER BY created_at DESC"
-    ).bind(status).fetch_all(pool).await
+    let sql = format!(
+        "SELECT {BOT_COLUMNS} FROM bots WHERE status = ? ORDER BY created_at DESC"
+    );
+    sqlx::query_as::<_, BotRow>(&sql).bind(status).fetch_all(pool).await
 }
 
 /// List bots submitted by a specific user.
 pub async fn list_bots_by_submitter(pool: &SqlitePool, submitted_by: &str) -> Result<Vec<BotRow>, sqlx::Error> {
-    sqlx::query_as::<_, BotRow>(
-        "SELECT id, name, endpoint_url, token_hash, model_family, active, \
-         status, submitted_by, description, reviewed_at, reviewed_by, created_at \
-         FROM bots WHERE submitted_by = ? ORDER BY created_at DESC"
-    ).bind(submitted_by).fetch_all(pool).await
+    let sql = format!(
+        "SELECT {BOT_COLUMNS} FROM bots WHERE submitted_by = ? ORDER BY created_at DESC"
+    );
+    sqlx::query_as::<_, BotRow>(&sql).bind(submitted_by).fetch_all(pool).await
 }
 
 /// List all bots regardless of status (admin use).
 pub async fn list_all_bots(pool: &SqlitePool) -> Result<Vec<BotRow>, sqlx::Error> {
-    sqlx::query_as::<_, BotRow>(
-        "SELECT id, name, endpoint_url, token_hash, model_family, active, \
-         status, submitted_by, description, reviewed_at, reviewed_by, created_at \
-         FROM bots ORDER BY created_at DESC"
-    ).fetch_all(pool).await
+    let sql = format!(
+        "SELECT {BOT_COLUMNS} FROM bots ORDER BY created_at DESC"
+    );
+    sqlx::query_as::<_, BotRow>(&sql).fetch_all(pool).await
 }
 
 /// Update bot status (approve, reject, deactivate, reactivate).

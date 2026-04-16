@@ -4,6 +4,7 @@
   const navItems = [
     { href: '/debates', label: 'Debates', icon: '\u2694', minRole: 'member' },
     { href: '/bots', label: 'Bots', icon: '\u2699', minRole: 'member' },
+    { href: '/admins', label: 'Admins', icon: '\u2731', minRole: 'admin' },
     { href: '/settings', label: 'Settings', icon: '\u2630', minRole: 'admin' },
     { href: '/bots/guide', label: 'Bot Guide', icon: '\u25A0', minRole: null as string | null },
     { href: '/security', label: 'Security', icon: '\u2261', minRole: null as string | null },

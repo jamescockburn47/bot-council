@@ -12,14 +12,7 @@ user allowlist. Follow the steps in order.
 
 ## Pre-flight checklist (do this before the deploy window)
 
-### 1. Gather the 5 admin Clerk user IDs
-
-Sign in to the Clerk dashboard. For each of the 5 admins (James, Jamie, Artur, Ray,
-YC), go to **Users → click the user → copy the "User ID" field** (format: `user_2abc...`).
-
-Capture all 5 IDs in 1Password or wherever you're keeping the production secrets.
-
-### 2. Generate a bot token encryption key
+### 1. Generate a bot token encryption key
 
 ```bash
 openssl rand -hex 32
@@ -28,7 +21,7 @@ openssl rand -hex 32
 Save the 64-character hex output. This is `APP__AUTH__BOT_TOKEN_KEY`. **Never rotate
 without re-encrypting all bot rows** — rotating this key breaks every existing bot.
 
-### 3. Generate (or reuse) the admin bearer token
+### 2. Generate (or reuse) the admin bearer token
 
 ```bash
 openssl rand -hex 32
@@ -38,7 +31,7 @@ Save the output. This is `APP__AUTH__ADMIN_TOKEN`. It grants full admin access v
 `Authorization: Bearer <token>` — use for CLI ops and emergency access if Clerk is
 down.
 
-### 4. Confirm existing bot state on EVO
+### 3. Confirm existing bot state on EVO
 
 ```bash
 ssh -i C:/Users/James/.ssh/id_ed25519 james@100.90.66.54 \
@@ -82,12 +75,11 @@ Edit the systemd unit's environment file (or wherever you currently set config).
 ```
 APP__AUTH__ADMIN_TOKEN=<your-admin-token>
 APP__AUTH__CLERK_ISSUER=https://<your-clerk-instance>.clerk.accounts.dev
-APP__AUTH__ADMIN_USER_IDS=user_2abc,user_2def,user_2ghi,user_2jkl,user_2mno
 APP__AUTH__BOT_TOKEN_KEY=<your-64-char-hex-key>
 ```
 
-`ADMIN_USER_IDS` is a comma-separated list. The `config` crate parses it into a
-`Vec<String>` via the `separator="__"` + `try_parsing` setup in `src/config.rs`.
+No preset admin list needed. Admins are managed at runtime via the `admins` table
+and the `/admins` page (see Step 7).
 
 ### Step 4 — Build and restart
 
@@ -133,25 +125,48 @@ npm run build
 # (Vercel, Cloudflare Pages, etc.)
 ```
 
-### Step 7 — Sign-in smoke test (browser)
+### Step 7 — Bootstrap the first admin
 
-1. Open https://lqcouncil.com in a browser.
-2. You should be redirected to `/sign-in` immediately.
-3. Clerk's sign-in UI loads.
-4. Sign in with one of the 5 admin accounts.
-5. Redirected to `/`.
-6. Navigate to `/bots/submit`. Submit a dummy bot (name, fake endpoint URL, any token).
-   - As an admin, the bot should be created with status=`active` immediately.
-   - Verify via `/bots` — it appears in the Active tab.
-7. Sign out, sign in as a non-admin test Clerk user (not in the allowlist).
-8. Verify:
-   - **Sidebar shows "Signed in as member"** (not admin).
-   - **/debates page has no "New Debate" button.**
-   - Navigating directly to `/debates/new` redirects back to `/debates`.
-   - Submitting a bot via `/bots/submit` creates it with status=`pending`.
-   - `/bots/my-submissions` shows the pending bot.
+No admins exist yet in the DB. The bootstrap flow uses the static admin bearer token.
 
-### Step 8 — Resubmit existing bots
+1. Open https://lqcouncil.com in a browser → redirected to `/sign-in`.
+2. Sign up / sign in with your (James's) Clerk account.
+3. You'll land on `/` as a **member** — this is expected, no admin rows exist.
+4. Hit `/me` in your browser devtools or:
+   ```bash
+   curl -s -H "Authorization: Bearer $CLERK_SESSION_JWT" https://lqcouncil.com/me
+   ```
+   Record your Clerk user_id from the response (format `user_2abc...`). You can also
+   read it from the Clerk dashboard.
+5. Promote yourself using the admin bearer token (one time only):
+   ```bash
+   curl -X POST https://lqcouncil.com/admins \
+     -H "Authorization: Bearer $APP__AUTH__ADMIN_TOKEN" \
+     -H "content-type: application/json" \
+     -d '{"user_id":"user_2YOUR_ID_HERE"}'
+   ```
+6. Refresh the browser. You should now see the admin UI (New Debate button, Admins
+   nav entry, etc.).
+7. Navigate to `/admins`. Promote the other 4 admins (Jamie, Artur, Ray, YC) by
+   clicking "Promote" next to each name. They must have signed in at least once to
+   appear in the Signed-in users table — ping them to sign in first if they haven't.
+
+### Step 8 — Sign-in smoke test (browser)
+
+With yourself as admin:
+
+1. Submit a dummy bot via `/bots/submit` — as admin, it lands in `status=active`.
+2. Verify in `/bots` Active tab.
+
+Sign out, sign in as a non-admin test Clerk user:
+
+1. **Sidebar shows "Signed in as member"**.
+2. **No Admins nav entry**, **no New Debate button** on `/debates`.
+3. Navigating directly to `/debates/new` or `/admins` redirects away.
+4. Submitting a bot via `/bots/submit` creates it with `status=pending`.
+5. `/bots/my-submissions` shows the pending bot.
+
+### Step 9 — Resubmit existing bots
 
 If the pre-flight DB check found any `active` bots with null `token_ciphertext`,
 resubmit them now through `/bots/submit`. For Clint:
@@ -167,7 +182,7 @@ Description:   LQ Council's own EVO-hosted bot.
 Task 10 / Plan 2 will enforce the MiniMax participant constraint — for now, model
 family is informational.
 
-### Step 9 — Tag and merge
+### Step 10 — Tag and merge
 
 Once sign-in + submit + approve flow works end-to-end:
 

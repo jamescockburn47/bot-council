@@ -14,7 +14,6 @@ pub async fn test_app() -> (Router, SqlitePool) {
             admin_token: "test-admin-token".into(),
             clerk_issuer: "".into(),
             clerk_jwks_url: "".into(),
-            admin_user_ids: vec![],
             // 32 bytes = 64 hex chars; deterministic for reproducible tests.
             bot_token_key: "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff".into(),
         },

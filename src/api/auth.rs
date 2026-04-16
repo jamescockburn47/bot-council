@@ -11,6 +11,7 @@ use axum::extract::FromRequestParts;
 use axum::http::request::Parts;
 use jsonwebtoken::{decode, decode_header, Algorithm, DecodingKey, Validation};
 use serde::Deserialize;
+use crate::db::queries;
 use crate::error::AppError;
 use crate::state::AppState;
 
@@ -142,7 +143,14 @@ async fn verify_clerk_jwt(token: &str, state: &AppState) -> Result<AuthIdentity,
         .map_err(|_| AppError::Unauthorized)?
         .claims;
 
-    if cfg.admin_user_ids.iter().any(|id| id == &claims.sub) {
+    // Best-effort seen_users upsert. A DB failure here must not break auth.
+    if let Err(e) = queries::upsert_seen_user(state.db(), &claims.sub).await {
+        tracing::warn!(error = %e, user_id = %claims.sub, "seen_users upsert failed");
+    }
+
+    let is_admin = queries::is_admin(state.db(), &claims.sub).await.unwrap_or(false);
+
+    if is_admin {
         Ok(AuthIdentity::Admin {
             user_id: Some(claims.sub),
             source: AuthSource::ClerkJwt,

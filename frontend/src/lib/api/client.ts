@@ -2,10 +2,12 @@ import { env } from '$env/dynamic/public';
 import { goto } from '$app/navigation';
 import { getSessionToken } from '$lib/auth/clerk';
 import type {
+  AdminEntry,
   BotResponse,
   CreateBotRequest,
   CreateDebateRequest,
   DebateResponse,
+  SeenUserEntry,
   SynthesisResponse,
   TranscriptResponse,
   UserInfoResponse,
@@ -83,6 +85,21 @@ export const api = {
     deactivate: (id: string) => request<void>(`/bots/${id}/deactivate`, { method: 'PATCH' }),
     reactivate: (id: string) => request<void>(`/bots/${id}/reactivate`, { method: 'PATCH' }),
     mySubmissions: () => request<BotResponse[]>('/bots/my-submissions'),
+  },
+
+  admins: {
+    list: () => request<AdminEntry[]>('/admins'),
+    add: (user_id: string) =>
+      request<AdminEntry>('/admins', {
+        method: 'POST',
+        body: JSON.stringify({ user_id }),
+      }),
+    remove: (user_id: string) =>
+      request<void>(`/admins/${encodeURIComponent(user_id)}`, { method: 'DELETE' }),
+  },
+
+  users: {
+    list: () => request<SeenUserEntry[]>('/users'),
   },
 };
 

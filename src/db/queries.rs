@@ -3,8 +3,8 @@ use crate::db::models::*;
 
 /// Column list used by every bot SELECT. Kept in one place so schema changes
 /// touch one spot instead of six.
-const BOT_COLUMNS: &str = "id, name, endpoint_url, token_hash, token_ciphertext, \
-    model_family, active, created_at, status, submitted_by, description, \
+const BOT_COLUMNS: &str = "id, name, endpoint_url, token_ciphertext, \
+    model_family, created_at, status, submitted_by, description, \
     rejection_reason, reviewed_at, reviewed_by";
 
 /// Insert a new bot registration and return the created row.
@@ -20,13 +20,10 @@ pub async fn insert_bot(
     description: Option<&str>,
     status: &str,
 ) -> Result<BotRow, sqlx::Error> {
-    // token_hash = '' satisfies the legacy NOT NULL constraint from the
-    // original migration. The column is dropped in a follow-up migration;
-    // new code reads token_ciphertext only.
     sqlx::query_as::<_, BotRow>(
-        "INSERT INTO bots (id, name, endpoint_url, token_hash, token_ciphertext, \
+        "INSERT INTO bots (id, name, endpoint_url, token_ciphertext, \
          model_family, submitted_by, description, status) \
-         VALUES (?, ?, ?, '', ?, ?, ?, ?, ?) RETURNING *"
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING *"
     )
     .bind(id)
     .bind(name)
@@ -214,14 +211,13 @@ pub async fn transition_bot_status(
     rejection_reason: Option<&str>,
 ) -> Result<Option<BotRow>, sqlx::Error> {
     let placeholders = expected_from.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-    let active = new_status == "active";
     let sql = format!(
-        "UPDATE bots SET status = ?, active = ?, reviewed_at = datetime('now'), \
+        "UPDATE bots SET status = ?, reviewed_at = datetime('now'), \
          reviewed_by = ?, rejection_reason = ? \
          WHERE id = ? AND status IN ({placeholders}) RETURNING *"
     );
     let mut q = sqlx::query_as::<_, BotRow>(&sql)
-        .bind(new_status).bind(active)
+        .bind(new_status)
         .bind(reviewed_by).bind(rejection_reason).bind(id);
     for s in expected_from { q = q.bind(*s); }
     q.fetch_optional(pool).await

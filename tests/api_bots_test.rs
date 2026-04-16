@@ -49,8 +49,8 @@ async fn test_list_bots_returns_empty() {
 async fn reject_with_short_reason_returns_400() {
     let (app, pool) = common::test_app().await;
     sqlx::query(
-        "INSERT INTO bots (id, name, endpoint_url, token_hash, token_ciphertext, status) \
-         VALUES ('b1', 'B1', 'https://example.com/d', '', X'00', 'pending')"
+        "INSERT INTO bots (id, name, endpoint_url, token_ciphertext, status) \
+         VALUES ('b1', 'B1', 'https://example.com/d', X'00', 'pending')"
     ).execute(&pool).await.unwrap();
 
     let req = common::admin_auth(
@@ -65,8 +65,8 @@ async fn reject_with_short_reason_returns_400() {
 async fn reject_with_valid_reason_sets_status_and_reason() {
     let (app, pool) = common::test_app().await;
     sqlx::query(
-        "INSERT INTO bots (id, name, endpoint_url, token_hash, token_ciphertext, status) \
-         VALUES ('b2', 'B2', 'https://example.com/d', '', X'00', 'pending')"
+        "INSERT INTO bots (id, name, endpoint_url, token_ciphertext, status) \
+         VALUES ('b2', 'B2', 'https://example.com/d', X'00', 'pending')"
     ).execute(&pool).await.unwrap();
 
     let req = common::admin_auth(
@@ -85,8 +85,8 @@ async fn reject_with_valid_reason_sets_status_and_reason() {
 async fn deactivate_pending_bot_returns_409() {
     let (app, pool) = common::test_app().await;
     sqlx::query(
-        "INSERT INTO bots (id, name, endpoint_url, token_hash, token_ciphertext, status) \
-         VALUES ('b3', 'B3', 'https://example.com/d', '', X'00', 'pending')"
+        "INSERT INTO bots (id, name, endpoint_url, token_ciphertext, status) \
+         VALUES ('b3', 'B3', 'https://example.com/d', X'00', 'pending')"
     ).execute(&pool).await.unwrap();
 
     let req = common::admin_auth(
@@ -111,13 +111,10 @@ async fn submitted_token_is_encrypted_in_db() {
     let res = app.oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::CREATED);
 
-    let (ciphertext, hash): (Option<Vec<u8>>, Option<String>) = sqlx::query_as(
-        "SELECT token_ciphertext, token_hash FROM bots WHERE name = 'TokenTest'"
+    let (ciphertext,): (Option<Vec<u8>>,) = sqlx::query_as(
+        "SELECT token_ciphertext FROM bots WHERE name = 'TokenTest'"
     ).fetch_one(&pool).await.unwrap();
     assert!(ciphertext.is_some(), "ciphertext should be populated");
-    // Legacy token_hash column is still NOT NULL in schema; new rows write
-    // empty string. The column is dropped entirely in a follow-up migration.
-    assert_eq!(hash.as_deref(), Some(""), "new rows populate legacy hash with empty string");
     let ct = ciphertext.unwrap();
     assert!(ct.len() > 12, "ciphertext must be longer than 12-byte nonce");
     assert!(!ct.windows(5).any(|w| w == b"s3cr3"),

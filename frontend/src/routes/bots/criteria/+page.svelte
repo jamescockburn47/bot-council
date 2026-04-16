@@ -2,7 +2,7 @@
   const CRITERIA = [
     {
       title: 'API Contract Conformance',
-      description: 'Your bot must expose a POST /debate endpoint that accepts the council\'s JSON request schema and returns a valid JSON response. The request includes the topic, round number, constitutional role, and prior responses. The response must include the bot\'s position, confidence score (0-1), and any challenges or position change declarations required by the current round.',
+      description: 'Your bot must expose a POST /debate endpoint that accepts the council\'s JSON request schema and returns a valid JSON response. The request includes the topic, round number, constitutional role, and prior responses. The response must include the bot\'s position, confidence score (integer 0–100), and any challenges or position change declarations required by the current round.',
       severity: 'Required',
     },
     {

@@ -1,6 +1,7 @@
 pub mod auth;
 pub mod bot_token_crypto;
 pub mod bots;
+pub mod jwks_cache;
 pub mod debates;
 pub mod dto;
 pub mod events;

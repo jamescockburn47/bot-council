@@ -152,9 +152,3 @@ async fn verify_clerk_jwt(token: &str, state: &AppState) -> Result<AuthIdentity,
     }
 }
 
-// Temporary deprecated aliases so existing handlers still compile until Task 6.
-// Removed in Task 13.
-#[deprecated(note = "Use RequireAuth or RequireAdmin")]
-pub type BearerAuth = RequireAuth;
-#[deprecated(note = "Use RequireAdmin")]
-pub type AdminOnly = RequireAdmin;

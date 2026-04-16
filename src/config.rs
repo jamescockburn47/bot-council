@@ -86,4 +86,49 @@ impl Settings {
             .build()?;
         Ok(config.try_deserialize()?)
     }
+
+    /// Fail-fast validation of boot-time configuration invariants.
+    /// Returns the first error found; the caller should refuse to start.
+    pub fn validate(&self) -> anyhow::Result<()> {
+        let a = &self.auth;
+
+        // 1. At least one auth path must be configured (tests skip this).
+        if a.admin_token.is_empty() && a.clerk_issuer.is_empty() && !cfg!(test) {
+            anyhow::bail!(
+                "auth.admin_token OR auth.clerk_issuer must be set. \
+                 Dev-mode auto-admin has been removed."
+            );
+        }
+
+        // 2. Clerk path requires admin_user_ids and bot_token_key.
+        if !a.clerk_issuer.is_empty() {
+            if a.admin_user_ids.is_empty() {
+                anyhow::bail!(
+                    "auth.clerk_issuer is set but auth.admin_user_ids is empty; \
+                     no one would have admin privileges"
+                );
+            }
+            for id in &a.admin_user_ids {
+                if !id.starts_with("user_") {
+                    anyhow::bail!(
+                        "auth.admin_user_ids contains '{id}', which does not look \
+                         like a Clerk user_id (expected format: user_2...)"
+                    );
+                }
+            }
+            if a.bot_token_key.is_empty() {
+                anyhow::bail!(
+                    "auth.clerk_issuer is set but auth.bot_token_key is not; \
+                     bot tokens cannot be encrypted"
+                );
+            }
+            crate::api::bot_token_crypto::parse_key_hex(&a.bot_token_key).map_err(|_| {
+                anyhow::anyhow!(
+                    "auth.bot_token_key must be exactly 64 hex characters (32 bytes)"
+                )
+            })?;
+        }
+
+        Ok(())
+    }
 }

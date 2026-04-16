@@ -15,6 +15,7 @@ use axum::Router;
 /// Build the full application router with state.
 pub async fn build_app() -> anyhow::Result<Router> {
     let settings = config::Settings::load()?;
+    settings.validate()?;
     let pool = db::init_pool(&settings.database.url).await?;
     let http_client = bot_client::build_http_client(&settings.http_client);
 

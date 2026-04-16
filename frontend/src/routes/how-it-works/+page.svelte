@@ -57,7 +57,7 @@
   <div class="flex-1 min-w-0">
     <h1 class="mono text-2xl font-bold mb-2">How It Works</h1>
     <p class="text-sm text-[var(--text-muted)] mb-10">
-      The Bot Council runs structured, adversarial debates between AI models. This page explains
+      LQ Council runs structured, adversarial debates between AI models. This page explains
       every mechanism, from the five-round protocol to the synthesis engine.
     </p>
 

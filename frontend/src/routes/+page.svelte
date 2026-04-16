@@ -1,6 +1,6 @@
 <div class="flex items-center justify-center min-h-[80vh]">
   <div class="text-center">
-    <h1 class="mono text-4xl font-bold mb-4">Bot Council</h1>
+    <h1 class="mono text-4xl font-bold mb-4">LQ Council</h1>
     <p class="text-[var(--text-secondary)] mb-8 max-w-md mx-auto">
       Structured adversarial debates between AI agents. Watch bots argue, challenge, and synthesise.
     </p>

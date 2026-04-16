@@ -161,30 +161,30 @@
 
   // Synthesis card data
   let consensusItems = $derived(
-    synthesis?.synthesis.consensus_points.map(p => ({
-      label: p.point,
-      detail: `${p.supporting_bots.join(', ')} -- ${p.evidence}`,
+    synthesis?.synthesis?.consensus_points?.map(p => ({
+      label: p.point ?? '',
+      detail: `${(p.supporting_bots ?? []).join(', ')} -- ${p.evidence ?? ''}`,
     })) ?? []
   );
 
   let disagreementItems = $derived(
-    synthesis?.synthesis.live_disagreements.map(d => ({
-      label: d.issue,
-      detail: `${d.side_a.bots.join(', ')}: "${d.side_a.position}" vs ${d.side_b.bots.join(', ')}: "${d.side_b.position}"`,
+    synthesis?.synthesis?.live_disagreements?.map(d => ({
+      label: d.issue ?? '',
+      detail: `${(d.side_a?.bots ?? []).join(', ')}: "${d.side_a?.position ?? ''}" vs ${(d.side_b?.bots ?? []).join(', ')}: "${d.side_b?.position ?? ''}"`,
     })) ?? []
   );
 
   let capitulationItems = $derived(
-    synthesis?.synthesis.flagged_capitulations.map(c => ({
-      label: `${c.bot}: ${c.from} -> ${c.to}`,
-      detail: `${c.justification_adequate ? 'Justified' : 'Unjustified'} -- ${c.flag_reason}`,
+    synthesis?.synthesis?.flagged_capitulations?.map(c => ({
+      label: `${c.bot ?? '?'}: ${c.from ?? '?'} -> ${c.to ?? '?'}`,
+      detail: `${c.justification_adequate ? 'Justified' : 'Unjustified'} -- ${c.flag_reason ?? ''}`,
     })) ?? []
   );
 
   let minorityItems = $derived(
-    synthesis?.synthesis.minority_positions.map(m => ({
-      label: `${m.bot} (conf: ${m.confidence})`,
-      detail: `${m.position} -- ${m.key_argument}`,
+    synthesis?.synthesis?.minority_positions?.map(m => ({
+      label: `${m.bot ?? '?'} (conf: ${m.confidence ?? '?'})`,
+      detail: `${m.position ?? ''} -- ${m.key_argument ?? ''}`,
     })) ?? []
   );
 
@@ -439,25 +439,25 @@
       <div class="grid grid-cols-2 gap-4 mb-6">
         <SynthesisCard
           title="Consensus"
-          count={synthesis.synthesis.consensus_points.length}
+          count={synthesis.synthesis?.consensus_points?.length ?? 0}
           color="#22c55e"
           items={consensusItems}
         />
         <SynthesisCard
           title="Disagreements"
-          count={synthesis.synthesis.live_disagreements.length}
+          count={synthesis.synthesis?.live_disagreements?.length ?? 0}
           color="#ef4444"
           items={disagreementItems}
         />
         <SynthesisCard
           title="Capitulations"
-          count={synthesis.synthesis.flagged_capitulations.length}
+          count={synthesis.synthesis?.flagged_capitulations?.length ?? 0}
           color="#f59e0b"
           items={capitulationItems}
         />
         <SynthesisCard
           title="Minority Positions"
-          count={synthesis.synthesis.minority_positions.length}
+          count={synthesis.synthesis?.minority_positions?.length ?? 0}
           color="#8b5cf6"
           items={minorityItems}
         />

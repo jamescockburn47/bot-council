@@ -6,6 +6,7 @@
     { href: '/bots', label: 'Bots', icon: '\u2699', minRole: 'member' },
     { href: '/settings', label: 'Settings', icon: '\u2630', minRole: 'admin' },
     { href: '/bots/guide', label: 'Bot Guide', icon: '\u25A0', minRole: null as string | null },
+    { href: '/security', label: 'Security', icon: '\u2261', minRole: null as string | null },
     { href: '/how-it-works', label: 'How It Works', icon: '?', minRole: null as string | null },
   ];
 

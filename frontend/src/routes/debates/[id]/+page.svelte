@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { api } from '$lib/api/client';
+  import { api, debateStreamUrl } from '$lib/api/client';
   import StatusBadge from '$lib/components/StatusBadge.svelte';
   import SynthesisCard from '$lib/components/SynthesisCard.svelte';
   import ConfidenceChart from '$lib/components/ConfidenceChart.svelte';
@@ -20,6 +20,7 @@
   let loading = $state(true);
   let error = $state<string | null>(null);
   let anonLogExpanded = $state(false);
+  let sseConnected = $state(false);
 
   const TERMINAL = ['complete', 'cancelled', 'failed'];
 
@@ -39,6 +40,10 @@
   });
 
   let isTerminal = $derived(debate ? TERMINAL.includes(debate.status) : false);
+
+  function isTerminalStatus(status: string): boolean {
+    return TERMINAL.includes(status);
+  }
 
   // Initial fetch
   $effect(() => {
@@ -69,23 +74,89 @@
     }
   }
 
-  // Polling for non-terminal debates
+  // EventSource for live debate updates
   $effect(() => {
-    if (isTerminal || loading) return;
-    const id = data.debateId;
-    const interval = setInterval(async () => {
-      try {
-        const d = await api.debates.get(id);
-        debate = d;
-        if (TERMINAL.includes(d.status)) {
-          clearInterval(interval);
-          // Fetch final transcript + synthesis
-          try { transcript = await api.debates.transcript(id); } catch { /* noop */ }
-          try { synthesis = await api.debates.synthesis(id); } catch { /* noop */ }
+    if (!debate || isTerminalStatus(debate.status)) return;
+
+    const es = new EventSource(debateStreamUrl(data.debateId));
+
+    es.onopen = () => { sseConnected = true; };
+    es.onerror = () => { sseConnected = false; };
+
+    es.addEventListener('round:started', (e: MessageEvent) => {
+      const d = JSON.parse(e.data);
+      if (transcript) {
+        const exists = transcript.rounds.find((r: any) => r.round_number === d.round_number);
+        if (!exists) {
+          transcript.rounds = [...transcript.rounds, {
+            round_number: d.round_number,
+            status: 'in_progress',
+            responses: [],
+          }];
         }
-      } catch { /* silent poll failure */ }
-    }, 15000);
-    return () => clearInterval(interval);
+      }
+    });
+
+    es.addEventListener('response:received', (e: MessageEvent) => {
+      const d = JSON.parse(e.data);
+      if (transcript) {
+        const round = transcript.rounds.find((r: any) => r.round_number === d.round_number);
+        if (round) {
+          round.responses = [...round.responses, {
+            pseudonym: d.pseudonym,
+            response: d.response,
+            confidence: d.confidence ?? null,
+            challenge: d.challenge ?? null,
+            position_change: d.position_change ?? null,
+            valid: d.valid,
+            abstained: d.abstained,
+            validation_reasoning: null,
+          }];
+          transcript = transcript; // trigger Svelte 5 reactivity
+        }
+      }
+    });
+
+    es.addEventListener('round:completed', (e: MessageEvent) => {
+      const d = JSON.parse(e.data);
+      if (transcript) {
+        const round = transcript.rounds.find((r: any) => r.round_number === d.round_number);
+        if (round) {
+          round.status = 'complete';
+          transcript = transcript;
+        }
+      }
+    });
+
+    es.addEventListener('synthesis:completed', (e: MessageEvent) => {
+      const d = JSON.parse(e.data);
+      synthesis = {
+        debate_id: data.debateId,
+        synthesis: d.synthesis,
+        model_used: '',
+        created_at: new Date().toISOString(),
+        citation_check: d.citation_check ?? null,
+      };
+    });
+
+    es.addEventListener('debate:completed', () => {
+      if (debate) debate = { ...debate, status: 'complete' };
+      sseConnected = false;
+      es.close();
+    });
+
+    es.addEventListener('debate:failed', (e: MessageEvent) => {
+      const d = JSON.parse(e.data);
+      if (debate) debate = { ...debate, status: 'failed' };
+      error = `Debate failed: ${d.reason}`;
+      sseConnected = false;
+      es.close();
+    });
+
+    return () => {
+      es.close();
+      sseConnected = false;
+    };
   });
 
   // Synthesis card data
@@ -155,6 +226,12 @@
         <span class="text-[var(--text-muted)]">/</span>
         <span class="text-xs mono text-[var(--text-muted)]">{debate.id.slice(0, 8)}</span>
         <StatusBadge status={debate.status} />
+        {#if sseConnected}
+          <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs mono text-[#22c55e] bg-[#22c55e15] border border-[#22c55e30]">
+            <span class="w-1.5 h-1.5 rounded-full bg-[#22c55e] animate-pulse"></span>
+            LIVE
+          </span>
+        {/if}
       </div>
       <h1 class="text-xl font-bold text-[var(--text-primary)] mb-3">{debate.topic}</h1>
       <div class="flex items-center gap-4 text-[10px] mono text-[var(--text-muted)]">

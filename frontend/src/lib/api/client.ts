@@ -71,4 +71,8 @@ export const api = {
   },
 };
 
+export function debateStreamUrl(debateId: string): string {
+  return `${BASE_URL}/debates/${debateId}/stream`;
+}
+
 export { ApiError };

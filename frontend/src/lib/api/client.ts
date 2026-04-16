@@ -35,7 +35,10 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   } catch {
     // Clerk not yet loaded / not configured — fall through without auth.
   }
-  const res = await fetch(`${BASE_URL}${path}`, { ...options, headers });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10_000);
+  const res = await fetch(`${BASE_URL}${path}`, { ...options, headers, signal: controller.signal })
+    .finally(() => clearTimeout(timeout));
   if (res.status === 401) {
     await goto('/sign-in');
     throw new ApiError(401, null);

@@ -71,6 +71,30 @@ pub async fn list_bots(
     Ok(Json(bots))
 }
 
+/// Convert a raw smoke-test error into plain-English feedback for the submitter.
+/// Pure function; separately tested.
+fn classify_smoke_test_error(raw: &str) -> String {
+    let lower = raw.to_lowercase();
+    if lower.contains("dns") || lower.contains("name resolution") || lower.contains("failed to lookup") {
+        "Endpoint hostname could not be resolved. Check the URL.".into()
+    } else if lower.contains("connection refused") || lower.contains("timed out") || lower.contains("timeout") {
+        "Harness could not reach the endpoint. If self-hosting, check your firewall \
+         and make sure the bot is publicly reachable via HTTPS. See /bots/guide for \
+         deployment options (VPS + Caddy, Cloudflare Tunnel, ngrok, etc.).".into()
+    } else if lower.contains("tls") || lower.contains("ssl") || lower.contains("certificate") {
+        "TLS handshake failed. The endpoint must be HTTPS with a valid certificate.".into()
+    } else if lower.contains("http 401") || lower.contains("http 403") {
+        "Endpoint rejected the harness's bearer token. Verify your bot is using \
+         the token you registered.".into()
+    } else if lower.starts_with("bot returned http ") {
+        format!("Smoke test failed: {raw}. Check bot logs.")
+    } else if lower.contains("is not valid json") || lower.contains("missing 'response'") {
+        format!("Smoke test failed: {raw}. Your /debate endpoint must return a JSON body with a 'response' string field.")
+    } else {
+        format!("Smoke test failed: {raw}")
+    }
+}
+
 /// Send a smoke-test request to a bot's endpoint before approval.
 ///
 /// Sends a minimal POST with a dummy session, checks that the response is
@@ -153,10 +177,11 @@ pub async fn approve_bot(
             Ok(Json(bot_to_response(&row)))
         }
         Err(reason) => {
+            let classified = classify_smoke_test_error(&reason);
             let row = do_transition(
                 &state, &admin, &id,
                 &["pending", "smoke_test_failed"], "smoke_test_failed",
-                Some(&reason),
+                Some(&classified),
             ).await?;
             Ok(Json(bot_to_response(&row)))
         }
@@ -227,5 +252,47 @@ pub async fn get_me(auth: AuthIdentity) -> AppResult<Json<UserInfoResponse>> {
             user_id: user_id.clone(),
             role: "member".into(),
         })),
+    }
+}
+
+#[cfg(test)]
+mod classifier_tests {
+    use super::classify_smoke_test_error;
+
+    #[test]
+    fn dns_failure() {
+        let out = classify_smoke_test_error("request failed: error trying to connect: dns error: failed to lookup address information");
+        assert!(out.contains("hostname could not be resolved"));
+    }
+
+    #[test]
+    fn connection_refused() {
+        let out = classify_smoke_test_error("request failed: connection refused");
+        assert!(out.contains("Harness could not reach"));
+        assert!(out.contains("/bots/guide"));
+    }
+
+    #[test]
+    fn tls_failure() {
+        let out = classify_smoke_test_error("request failed: error trying to connect: tls handshake eof");
+        assert!(out.contains("TLS handshake failed"));
+    }
+
+    #[test]
+    fn http_401() {
+        let out = classify_smoke_test_error("bot returned HTTP 401 Unauthorized");
+        assert!(out.contains("bearer token"));
+    }
+
+    #[test]
+    fn json_missing_response() {
+        let out = classify_smoke_test_error("response JSON missing 'response' field");
+        assert!(out.contains("JSON body with a 'response' string field"));
+    }
+
+    #[test]
+    fn unknown_error_falls_through() {
+        let out = classify_smoke_test_error("something unexpected");
+        assert_eq!(out, "Smoke test failed: something unexpected");
     }
 }

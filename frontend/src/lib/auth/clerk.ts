@@ -13,7 +13,10 @@ export function getClerk(): Promise<Clerk> {
     return Promise.reject(new Error('PUBLIC_CLERK_PUBLISHABLE_KEY is not set'));
   }
   const c = new Clerk(key);
-  loadPromise = c.load().then(() => {
+  const timeout = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error('Clerk load timeout')), 12_000)
+  );
+  loadPromise = Promise.race([c.load(), timeout]).then(() => {
     clerkInstance = c;
     return c;
   });

@@ -17,13 +17,19 @@ pub struct BotResponse {
     pub name: String,
     pub endpoint_url: String,
     pub model_family: Option<String>,
-    pub active: bool,
     pub status: String,
     pub description: Option<String>,
     pub submitted_by: Option<String>,
+    pub rejection_reason: Option<String>,
     pub reviewed_at: Option<String>,
     pub reviewed_by: Option<String>,
     pub created_at: String,
+}
+
+/// Request body for rejecting a bot; requires a human-readable reason.
+#[derive(Debug, Deserialize)]
+pub struct RejectBotRequest {
+    pub reason: String,
 }
 
 /// Response body for GET /me.

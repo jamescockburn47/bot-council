@@ -44,3 +44,54 @@ async fn test_list_bots_returns_empty() {
     let json: Value = serde_json::from_slice(&body).unwrap();
     assert!(json.as_array().unwrap().is_empty());
 }
+
+#[tokio::test]
+async fn reject_with_short_reason_returns_400() {
+    let (app, pool) = common::test_app().await;
+    sqlx::query(
+        "INSERT INTO bots (id, name, endpoint_url, token_ciphertext, status) \
+         VALUES ('b1', 'B1', 'https://example.com/d', X'00', 'pending')"
+    ).execute(&pool).await.unwrap();
+
+    let req = common::admin_auth(
+        Request::builder().method("PATCH").uri("/bots/b1/reject")
+            .header("content-type", "application/json"),
+    ).body(Body::from(r#"{"reason":"short"}"#)).unwrap();
+    let res = app.oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn reject_with_valid_reason_sets_status_and_reason() {
+    let (app, pool) = common::test_app().await;
+    sqlx::query(
+        "INSERT INTO bots (id, name, endpoint_url, token_ciphertext, status) \
+         VALUES ('b2', 'B2', 'https://example.com/d', X'00', 'pending')"
+    ).execute(&pool).await.unwrap();
+
+    let req = common::admin_auth(
+        Request::builder().method("PATCH").uri("/bots/b2/reject")
+            .header("content-type", "application/json"),
+    ).body(Body::from(r#"{"reason":"endpoint returned garbage on all test rounds"}"#)).unwrap();
+    let res = app.oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    let json: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["status"], "rejected");
+    assert!(json["rejection_reason"].as_str().unwrap().contains("endpoint returned garbage"));
+}
+
+#[tokio::test]
+async fn deactivate_pending_bot_returns_409() {
+    let (app, pool) = common::test_app().await;
+    sqlx::query(
+        "INSERT INTO bots (id, name, endpoint_url, token_ciphertext, status) \
+         VALUES ('b3', 'B3', 'https://example.com/d', X'00', 'pending')"
+    ).execute(&pool).await.unwrap();
+
+    let req = common::admin_auth(
+        Request::builder().method("PATCH").uri("/bots/b3/deactivate"),
+    ).body(Body::empty()).unwrap();
+    let res = app.oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::CONFLICT);
+}

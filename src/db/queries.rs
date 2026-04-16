@@ -199,14 +199,27 @@ pub async fn list_all_bots(pool: &SqlitePool) -> Result<Vec<BotRow>, sqlx::Error
     sqlx::query_as::<_, BotRow>(&sql).fetch_all(pool).await
 }
 
-/// Update bot status (approve, reject, deactivate, reactivate).
-pub async fn update_bot_status(
-    pool: &SqlitePool, bot_id: &str, new_status: &str, reviewed_by: Option<&str>,
-) -> Result<(), sqlx::Error> {
-    let now = chrono::Utc::now().to_rfc3339();
-    let active = matches!(new_status, "active");
-    sqlx::query("UPDATE bots SET status = ?, active = ?, reviewed_at = ?, reviewed_by = ? WHERE id = ?")
-        .bind(new_status).bind(active).bind(&now).bind(reviewed_by).bind(bot_id)
-        .execute(pool).await?;
-    Ok(())
+/// Atomically transition a bot's status. Returns the updated row, or `None`
+/// if the WHERE clause matched no row (caller then distinguishes "not found"
+/// from "wrong state" via get_bot).
+pub async fn transition_bot_status(
+    pool: &SqlitePool,
+    id: &str,
+    expected_from: &[&str],
+    new_status: &str,
+    reviewed_by: Option<&str>,
+    rejection_reason: Option<&str>,
+) -> Result<Option<BotRow>, sqlx::Error> {
+    let placeholders = expected_from.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+    let active = new_status == "active";
+    let sql = format!(
+        "UPDATE bots SET status = ?, active = ?, reviewed_at = datetime('now'), \
+         reviewed_by = ?, rejection_reason = ? \
+         WHERE id = ? AND status IN ({placeholders}) RETURNING *"
+    );
+    let mut q = sqlx::query_as::<_, BotRow>(&sql)
+        .bind(new_status).bind(active)
+        .bind(reviewed_by).bind(rejection_reason).bind(id);
+    for s in expected_from { q = q.bind(*s); }
+    q.fetch_optional(pool).await
 }

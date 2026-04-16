@@ -4,6 +4,7 @@ pub mod debates;
 pub mod dto;
 pub mod events;
 pub mod health;
+pub mod stream;
 pub mod synthesis;
 pub mod transcript;
 
@@ -47,6 +48,7 @@ pub fn router(state: AppState) -> Router {
         .route("/debates/{id}", get(debates::get_debate))
         .route("/debates/{id}/transcript", get(transcript::get_transcript))
         .route("/debates/{id}/synthesis", get(synthesis::get_synthesis))
+        .route("/debates/{id}/stream", get(stream::stream_debate))
         .layer(cors)
         .with_state(state)
 }

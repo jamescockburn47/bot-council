@@ -7,6 +7,7 @@ pub mod schema;
 
 use serde::{Deserialize, Serialize};
 use sha2::{Sha256, Digest};
+use crate::analyser::call_minimax;
 use crate::config::ModelsConfig;
 use crate::sanitise::ANTI_INJECTION_PREAMBLE;
 
@@ -43,43 +44,8 @@ pub async fn run_synthesis(
         hex::encode(hasher.finalize())
     };
 
-    let client = reqwest::Client::new();
-    let request = AnthropicRequest {
-        model: config.opus_model.clone(),
-        max_tokens: 4096,
-        temperature,
-        messages: vec![
-            AnthropicMessage { role: "user".into(), content: system_prompt },
-        ],
-    };
-
-    let resp = client
-        .post("https://api.anthropic.com/v1/messages")
-        .header("x-api-key", &config.opus_api_key)
-        .header("anthropic-version", "2023-06-01")
-        .header("Content-Type", "application/json")
-        .json(&request)
-        .send()
-        .await
-        .map_err(|e| format!("Opus request failed: {e}"))?;
-
-    if !resp.status().is_success() {
-        let status = resp.status();
-        let body = resp.text().await.unwrap_or_default();
-        return Err(format!("Opus returned HTTP {status}: {body}"));
-    }
-
-    let parsed: AnthropicResponse = resp
-        .json()
-        .await
-        .map_err(|e| format!("Opus response parse failed: {e}"))?;
-
-    let content = parsed
-        .content
-        .into_iter()
-        .next()
-        .map(|c| c.text)
-        .ok_or_else(|| "Opus returned empty content".to_string())?;
+    let content = call_minimax(config, &system_prompt).await
+        .map_err(|e| format!("synthesis failed: {e}"))?;
 
     Ok((content, prompt_hash))
 }

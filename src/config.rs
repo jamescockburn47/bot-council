@@ -34,6 +34,9 @@ pub struct AuthConfig {
     pub admin_token: String,
     pub clerk_jwks_url: String,
     pub clerk_issuer: String,
+    /// PEM-encoded RSA public key from Clerk dashboard for JWT verification.
+    /// If empty while `clerk_issuer` is set, all Clerk JWTs are rejected.
+    pub clerk_jwt_public_key: String,
 }
 
 /// Outbound HTTP client tuning.

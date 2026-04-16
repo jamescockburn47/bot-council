@@ -71,8 +71,12 @@ export const api = {
   },
 };
 
-export function debateStreamUrl(debateId: string): string {
-  return `${BASE_URL}/debates/${debateId}/stream`;
+/// Build the SSE stream URL. Accepts an optional auth token which is passed
+/// as a query parameter (EventSource cannot set Authorization headers).
+/// Token will come from Clerk session once auth is fully wired.
+export function debateStreamUrl(debateId: string, token?: string): string {
+  const base = `${BASE_URL}/debates/${debateId}/stream`;
+  return token ? `${base}?token=${encodeURIComponent(token)}` : base;
 }
 
 export { ApiError };

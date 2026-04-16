@@ -10,6 +10,7 @@ url = "sqlite:data/council.db?mode=rwc"
 admin_token = ""
 clerk_jwks_url = ""
 clerk_issuer = ""
+clerk_jwt_public_key = ""
 
 [http_client]
 connect_timeout_secs = 5

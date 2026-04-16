@@ -27,6 +27,7 @@ hex = "0.4"
 futures = "0.3"
 rand = "0.9"
 jsonwebtoken = "9"
+form_urlencoded = "1"
 regex = "1"
 dashmap = "6"
 tokio-stream = { version = "0.1", features = ["sync", "time"] }

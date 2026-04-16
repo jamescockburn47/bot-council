@@ -10,7 +10,7 @@ pub async fn test_app() -> (Router, SqlitePool) {
     let settings = Settings {
         server: ServerConfig { host: "127.0.0.1".into(), port: 0, cors_origins: vec![] },
         database: DatabaseConfig { url: "sqlite::memory:".into() },
-        auth: AuthConfig { admin_token: "".into(), clerk_jwks_url: "".into(), clerk_issuer: "".into() },
+        auth: AuthConfig { admin_token: "".into(), clerk_jwks_url: "".into(), clerk_issuer: "".into(), clerk_jwt_public_key: "".into() },
         http_client: HttpClientConfig {
             connect_timeout_secs: 5,
             request_timeout_secs: 30,

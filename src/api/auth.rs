@@ -58,8 +58,6 @@ impl FromRequestParts<AppState> for AdminOnly {
 #[derive(serde::Deserialize)]
 struct ClerkClaims {
     sub: String,
-    iss: String,
-    exp: u64,
     #[serde(default)]
     public_metadata: Option<ClerkPublicMetadata>,
 }
@@ -69,6 +67,29 @@ struct ClerkClaims {
 struct ClerkPublicMetadata {
     #[serde(default)]
     role: Option<String>,
+}
+
+/// Extract a token from the Authorization header (Bearer scheme).
+fn extract_header_token(parts: &Parts) -> Option<String> {
+    parts
+        .headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|h| h.strip_prefix("Bearer "))
+        .map(|s| s.to_string())
+}
+
+/// Extract a token from the `token` query parameter.
+/// Needed for EventSource SSE connections which cannot set headers.
+fn extract_query_token(parts: &Parts) -> Option<String> {
+    parts
+        .uri
+        .query()
+        .and_then(|q| {
+            form_urlencoded::parse(q.as_bytes())
+                .find(|(k, _)| k == "token")
+                .map(|(_, v)| v.to_string())
+        })
 }
 
 impl FromRequestParts<AppState> for AuthIdentity {
@@ -82,17 +103,14 @@ impl FromRequestParts<AppState> for AuthIdentity {
         let dev_mode = auth_cfg.admin_token.is_empty()
             && auth_cfg.clerk_issuer.is_empty();
 
-        // Extract bearer token from Authorization header
-        let token = parts
-            .headers
-            .get("authorization")
-            .and_then(|v| v.to_str().ok())
-            .and_then(|h| h.strip_prefix("Bearer "));
+        // Extract token from header first, fall back to query param (SSE support)
+        let token = extract_header_token(parts)
+            .or_else(|| extract_query_token(parts));
 
         // 1. Try static bearer token match
         if !auth_cfg.admin_token.is_empty() {
-            if let Some(t) = token {
-                if t == auth_cfg.admin_token {
+            if let Some(ref t) = token {
+                if t == &auth_cfg.admin_token {
                     return Ok(AuthIdentity::BearerToken);
                 }
             }
@@ -100,8 +118,17 @@ impl FromRequestParts<AppState> for AuthIdentity {
 
         // 2. Try Clerk JWT decode if issuer is configured
         if !auth_cfg.clerk_issuer.is_empty() {
-            if let Some(t) = token {
-                match try_decode_clerk_jwt(t, &auth_cfg.clerk_issuer) {
+            if auth_cfg.clerk_jwt_public_key.is_empty() {
+                tracing::warn!(
+                    "clerk_issuer is set but clerk_jwt_public_key is empty — \
+                     rejecting all Clerk JWTs until a PEM key is configured"
+                );
+            } else if let Some(ref t) = token {
+                match try_decode_clerk_jwt(
+                    t,
+                    &auth_cfg.clerk_issuer,
+                    &auth_cfg.clerk_jwt_public_key,
+                ) {
                     Ok(identity) => return Ok(identity),
                     Err(e) => {
                         tracing::debug!(error = %e, "clerk JWT decode failed");
@@ -119,49 +146,24 @@ impl FromRequestParts<AppState> for AuthIdentity {
     }
 }
 
-/// Attempt to decode a Clerk JWT and extract identity.
-///
-/// TODO: Production should use proper JWKS RS256 verification via clerk_jwks_url.
-/// Currently uses insecure decode (no signature verification) which is acceptable
-/// for Phase 1.5a behind Cloudflare Tunnel.
+/// Attempt to decode a Clerk JWT using RS256 PEM public key verification.
 fn try_decode_clerk_jwt(
     token: &str,
     expected_issuer: &str,
+    pem_public_key: &str,
 ) -> Result<AuthIdentity, String> {
-    let token_data = jsonwebtoken::decode::<ClerkClaims>(
-        token,
-        &jsonwebtoken::DecodingKey::from_secret(b""),
-        &{
-            let mut v = jsonwebtoken::Validation::new(
-                jsonwebtoken::Algorithm::HS256,
-            );
-            v.insecure_disable_signature_validation();
-            v.set_required_spec_claims::<&str>(&[]);
-            v.validate_exp = false;
-            v.validate_aud = false;
-            v
-        },
-    )
-    .map_err(|e| format!("JWT decode error: {e}"))?;
+    let key = jsonwebtoken::DecodingKey::from_rsa_pem(pem_public_key.as_bytes())
+        .map_err(|e| format!("invalid clerk PEM key: {e}"))?;
+
+    let mut validation = jsonwebtoken::Validation::new(jsonwebtoken::Algorithm::RS256);
+    validation.set_issuer(&[expected_issuer]);
+    validation.validate_exp = true;
+    validation.validate_aud = false; // Clerk JWTs don't always include aud
+
+    let token_data = jsonwebtoken::decode::<ClerkClaims>(token, &key, &validation)
+        .map_err(|e| format!("JWT verification failed: {e}"))?;
 
     let claims = token_data.claims;
-
-    // Validate issuer
-    if claims.iss != expected_issuer {
-        return Err(format!(
-            "issuer mismatch: expected {expected_issuer}, got {}",
-            claims.iss
-        ));
-    }
-
-    // Validate expiry manually
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
-    if claims.exp <= now {
-        return Err("token expired".into());
-    }
 
     let role = claims
         .public_metadata

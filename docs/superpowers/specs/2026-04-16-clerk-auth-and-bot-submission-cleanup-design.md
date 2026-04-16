@@ -727,6 +727,167 @@ The §14 execution order gains **commit 6**:
 
 ### 18.7 Risks and mitigations (additions)
 
+## 19. Participant Model Constraint
+
+### 19.1 Rationale
+
+Participant-submitted bots are constrained to a single model family (default:
+MiniMax M2.7). Three independent reasons, any one of which would justify it:
+
+1. **Cost.** 15 model calls per debate × ~10K tokens per call. MiniMax at roughly
+   $0.50/M input, $1.50/M output → ~$0.05 per bot per debate. Claude Opus at
+   $15/$75 → ~$3 per bot per debate (60× more). The constraint keeps the
+   participant barrier to entry near zero.
+
+2. **Fairness.** A bot's contribution should come from its tooling (RAG, web
+   search, domain knowledge, memory) — not from raw model horsepower. If one
+   participant runs Opus and another runs Llama 8B, the debate measures model
+   quality, not agent quality.
+
+3. **Harness robustness.** The repair logic (§18.3) is calibrated to MiniMax's
+   specific quirks (unescaped inner quotes, occasional markdown fences). Allowing
+   arbitrary models forces the harness to ship per-family repair codepaths for
+   every new model a participant plugs in — a support treadmill. Constraining
+   participants bounds the problem.
+
+### 19.2 Scope
+
+- **Participants**: must declare `model_family = "minimax"` at submission. Any
+  other value is rejected with a clear error linking to `/bots/guide`.
+- **Admins**: unrestricted. Admin bots can declare any model family. Admin-owned
+  bots are visibly marked in the UI with their actual model, so the asymmetry
+  is transparent to all viewers.
+- **Policy is config-driven.** `config.bots.participant_required_model` defaults
+  to `"minimax"`. Setting it to `""` disables the constraint. Lets you reverse
+  the decision without redeploy if the calculus changes.
+
+### 19.3 Enforcement — three layers
+
+1. **Submission-time declaration.** `POST /bots` as a Participant rejects any
+   `model_family` other than the configured required model. Enforced in
+   `create_bot` handler. Admin submissions are unchecked.
+
+2. **Per-response attestation.** The `/debate` response schema gains a required
+   `model_used: string` field. Every round's response must include it. The harness
+   validates via **prefix match** against the declared `model_family`:
+
+   ```rust
+   fn attests_model(attested: &str, declared: &str) -> bool {
+       let a = attested.to_lowercase().replace(['-', '_', '/'], "");
+       let d = declared.to_lowercase();
+       a.starts_with(&d)
+   }
+   ```
+
+   This accepts all realistic forms — `"minimax-m2.7"`, `"MiniMax M2.7"`,
+   `"minimax/minimax-m2.7"` (OpenRouter format), `"minimax_m2_7"` — while
+   rejecting `"gpt-5.4"` for a declared-MiniMax bot.
+
+3. **Transparency over prevention.** The harness cannot *prove* a bot didn't
+   silently call a different model behind the scenes. When attestation
+   mismatches, the response is marked `valid: false` and an entry appears in
+   the transcript: "Bot X attested `gpt-5.4` but declared `minimax`. Response
+   discarded." Repeated mismatches (3+ in a debate) auto-abstain the bot and
+   queue an admin review of the submission.
+
+### 19.4 Schema additions
+
+Bot response (per round, applied at `response_normaliser`):
+
+```json
+{
+  "response": "string",
+  "confidence": 72,
+  "model_used": "minimax-m2.7",     // NEW — required
+  "challenge": { ... },              // round 2 only
+  "position_change": { ... }         // round 4 only
+}
+```
+
+Smoke test applies the same check. A smoke test missing `model_used` or with a
+mismatched value fails with `rejection_reason: "Smoke test failed: response
+missing 'model_used' field (declared model_family=minimax)"`.
+
+### 19.5 Guide updates
+
+- `/bots/submit` form: `model_family` dropdown becomes **required** for all
+  submitters. For participants, only the required model is enabled; other
+  options are grayed out with a tooltip: "Admin-only. Participants must use
+  MiniMax M2.7 — see /bots/criteria for rationale."
+- `/bots/criteria`: new section "Model requirement" explaining the three
+  rationales above, signed "— LQ Council admins".
+- `/bots/guide` super-prompt gains "Return `model_used: '<your-model-id>'` in
+  every round response" as a top-level requirement.
+- Per-vendor JSON-mode guidance in §18.2 is restructured: **MiniMax section is
+  the default / canonical example** (with client-side repair loop because M2.7
+  doesn't always honour JSON mode). Other vendors kept as a reference section
+  for admin-submitted bots, explicitly labelled "Admin use only".
+
+### 19.6 Clint and other admin bots
+
+Clint declares `model_family = "claude-sonnet"` (or whatever its debate-path
+model is — James to confirm during registration). As an admin bot it's exempt
+from the constraint. The transcript and bot list both surface the declared
+model so participants can see that Clint is playing on a different tier — the
+asymmetry is visible, not hidden.
+
+### 19.7 Grandfathering
+
+Existing active bots (pre-rollout) keep their `model_family` value. If any are
+participant-submitted (submitted_by IS NOT NULL) with a non-MiniMax
+`model_family`, they are **not** auto-deactivated — instead they are flagged
+in the admin bot review UI with a "model_family violates current policy" banner
+and the admin can decide to deactivate or grandfather. No silent breakage.
+Pre-check on EVO before commit 3: `SELECT id, name, model_family FROM bots
+WHERE submitted_by IS NOT NULL AND model_family != 'minimax'` — plan adjusts if
+non-empty.
+
+### 19.8 Tests (additions)
+
+- Participant submission with `model_family != "minimax"` → 400 with message
+  pointing to the criteria page.
+- Admin submission with any `model_family` → 201.
+- `/debate` response missing `model_used` → flagged invalid, transcript notes.
+- `/debate` response with attested model that doesn't prefix-match declared →
+  flagged invalid.
+- `/debate` response with `"minimax/minimax-m2.7"` against declared `"minimax"`
+  → valid (prefix-match after normalisation).
+- 3 attestation mismatches in one debate → bot auto-abstained for remaining
+  rounds; admin review queue entry created.
+
+### 19.9 Config
+
+`config/default.toml`:
+
+```toml
+[bots]
+participant_required_model = "minimax"    # empty string disables the constraint
+```
+
+Env override: `APP__BOTS__PARTICIPANT_REQUIRED_MODEL=""`.
+
+### 19.10 Execution order impact
+
+No new commit — rolled into **commit 6 (Bot author UX pass)** from §18.6. The
+enforcement code lives in:
+- `create_bot` handler (submission-time check)
+- `response_normaliser` (attestation check as part of the uniform normalisation)
+- `/bots/guide` and `/bots/criteria` page updates
+
+Total additional footprint: ~60 lines of Rust, ~40 lines of Svelte, one config
+field, one migration-free DB behaviour change.
+
+### 19.11 Risks and mitigations (participant-model-specific)
+
+| Risk | Mitigation |
+|---|---|
+| Participant silently runs a different model than declared | Attestation mismatch is visible in the transcript. Repeated mismatches auto-abstain. Admin can reject the bot if pattern continues. Trust + visibility, not cryptographic proof. |
+| MiniMax rate-limits or outages hurt participant debates disproportionately | Debates can proceed with abstention. Admin bots (on varied models) keep the debate going. Future work: MiniMax provider failover (Vercel AI Gateway would be a natural fit). |
+| Constraint feels punitive to sophisticated participants | Framing matters — explain cost + fairness + harness robustness in `/bots/criteria`. The config is reversible if the community signals strongly otherwise. |
+| MiniMax deprecates or changes pricing | Config field is a string, not an enum. Admins change config and the constraint shifts to the new baseline model. |
+
+### 19.12 Original Section 18.7 risks (pre-existing, retained)
+
 | Risk | Mitigation |
 |---|---|
 | Bot authors miss the guide update and continue skipping auth | Smoke test begins sending the token after commit 3. Clear error classifier message points them to the guide. Pre-announce in whatever channel exists (email the 5 admins; post in whatever Slack/Discord). |

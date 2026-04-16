@@ -104,12 +104,34 @@ pub async fn run_round3(
         }
     }
 
-    // Pass B: Each bot answers the first question posed to it (concurrent)
+    // Pass B: Each bot answers ALL questions posed to it (concurrent).
+    // With 5 bots, some bots receive 2 questions (the joined pair member).
+    // We combine all questions into one prompt so the bot addresses each.
     let pass_b_futures: Vec<_> = bots.iter().filter_map(|bot| {
         let questions = questions_for.get(&bot.id)?;
-        let (questioner_pseudo, question_text) = questions.first()?;
-        let partner_response = round2_responses.get(questioner_pseudo.as_str()).cloned().unwrap_or_default();
-        let prompt = prompts::round3_answer_prompt(questioner_pseudo, &partner_response, question_text);
+        if questions.is_empty() { return None; }
+
+        // Build a combined prompt with all questions posed to this bot
+        let combined_prompt = if questions.len() == 1 {
+            let (q_pseudo, q_text) = &questions[0];
+            let partner_response = round2_responses.get(q_pseudo.as_str()).cloned().unwrap_or_default();
+            prompts::round3_answer_prompt(q_pseudo, &partner_response, q_text)
+        } else {
+            // Multiple questioners — format all questions
+            let mut parts = Vec::new();
+            for (q_pseudo, q_text) in questions {
+                let partner_response = round2_responses.get(q_pseudo.as_str()).cloned().unwrap_or_default();
+                parts.push(format!(
+                    "Question from {q_pseudo} (whose position was: {partner_response}):\n\"{q_text}\""
+                ));
+            }
+            format!(
+                "You are being cross-examined by multiple participants.\n\n{}\n\n\
+                 Address each question directly and substantively.",
+                parts.join("\n\n")
+            )
+        };
+
         let client = client.clone();
         let endpoint = bot.endpoint_url.clone();
         let token = bot_tokens.get(&bot.id).cloned().unwrap_or_default();
@@ -119,7 +141,7 @@ pub async fn run_round3(
         Some(async move {
             let req = DebateRoundRequest {
                 session_id, round: 3, role: role.as_str().to_string(),
-                context: vec![], prompt,
+                context: vec![], prompt: combined_prompt,
             };
             let result = tokio::time::timeout(
                 std::time::Duration::from_secs(timeout_secs),
@@ -141,19 +163,24 @@ pub async fn run_round3(
 
     let pass_b_results = futures::future::join_all(pass_b_futures).await;
 
-    // Store combined responses
+    // Store combined responses: question(s) posed TO this bot + their answer
     let mut all_results: Vec<(String, Option<DebateRoundResponse>)> = Vec::new();
     for (bot_id, answer_opt) in &pass_b_results {
-        let question_text = pass_a_results.iter()
-            .find(|(id, _)| id == bot_id)
-            .and_then(|(_, q)| q.clone());
-        let combined = match (&question_text, answer_opt) {
-            (Some(q), Some(a)) => format!("[Question posed]: {q}\n\n[Answer given]: {}", a.response),
-            (Some(q), None)    => format!("[Question posed]: {q}\n\n[Answer]: (no answer)"),
+        // Get question(s) that were posed TO this bot
+        let questions = questions_for.get(bot_id.as_str());
+        let question_summary = questions.map(|qs| {
+            qs.iter()
+                .map(|(pseudo, text)| format!("[Question from {pseudo}]: {text}"))
+                .collect::<Vec<_>>()
+                .join("\n\n")
+        });
+        let combined = match (&question_summary, answer_opt) {
+            (Some(q), Some(a)) => format!("{q}\n\n[Answer given]: {}", a.response),
+            (Some(q), None)    => format!("{q}\n\n[Answer]: (no answer)"),
             (None, Some(a))    => format!("[Question]: (none)\n\n[Answer given]: {}", a.response),
             (None, None)       => "(abstained)".to_string(),
         };
-        let abstained = answer_opt.is_none() && question_text.is_none();
+        let abstained = answer_opt.is_none() && question_summary.is_none();
         let resp_id = uuid::Uuid::new_v4().to_string();
         queries_phase1::insert_response_full(
             pool, &resp_id, debate_id, 3, bot_id, &combined,

@@ -191,3 +191,21 @@ export interface UserInfoResponse {
   user_id: string;
   role: string;
 }
+
+// Admin registry types
+export interface AdminEntry {
+  user_id: string;
+  granted_at: string;
+  granted_by: string | null;
+}
+
+export interface AddAdminRequest {
+  user_id: string;
+}
+
+export interface SeenUserEntry {
+  user_id: string;
+  first_seen_at: string;
+  last_seen_at: string;
+  is_admin: boolean;
+}

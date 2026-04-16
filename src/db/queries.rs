@@ -226,3 +226,85 @@ pub async fn transition_bot_status(
     for s in expected_from { q = q.bind(*s); }
     q.fetch_optional(pool).await
 }
+
+// ─── Admin registry ────────────────────────────────────────────────────────
+
+/// Admin row returned by list_admins.
+#[derive(Debug, Clone, serde::Serialize, sqlx::FromRow)]
+pub struct AdminRow {
+    pub user_id: String,
+    pub granted_at: String,
+    pub granted_by: Option<String>,
+}
+
+/// Returns true if the given Clerk user_id is in the admins table.
+pub async fn is_admin(pool: &SqlitePool, user_id: &str) -> Result<bool, sqlx::Error> {
+    let row: Option<(String,)> = sqlx::query_as("SELECT user_id FROM admins WHERE user_id = ?")
+        .bind(user_id)
+        .fetch_optional(pool)
+        .await?;
+    Ok(row.is_some())
+}
+
+/// List all admins, newest grants first.
+pub async fn list_admins(pool: &SqlitePool) -> Result<Vec<AdminRow>, sqlx::Error> {
+    sqlx::query_as::<_, AdminRow>(
+        "SELECT user_id, granted_at, granted_by FROM admins ORDER BY granted_at DESC"
+    ).fetch_all(pool).await
+}
+
+/// Insert a user_id into the admins table. No-op if already present.
+pub async fn add_admin(
+    pool: &SqlitePool,
+    user_id: &str,
+    granted_by: Option<&str>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO admins (user_id, granted_by) VALUES (?, ?) \
+         ON CONFLICT(user_id) DO NOTHING"
+    )
+        .bind(user_id)
+        .bind(granted_by)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+/// Remove a user_id from the admins table. Returns true if a row was deleted.
+pub async fn remove_admin(pool: &SqlitePool, user_id: &str) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query("DELETE FROM admins WHERE user_id = ?")
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+    Ok(result.rows_affected() > 0)
+}
+
+// ─── Seen users log ────────────────────────────────────────────────────────
+
+/// Seen user row returned by list_seen_users.
+#[derive(Debug, Clone, serde::Serialize, sqlx::FromRow)]
+pub struct SeenUserRow {
+    pub user_id: String,
+    pub first_seen_at: String,
+    pub last_seen_at: String,
+}
+
+/// Upsert an entry in the seen_users log. Best-effort — callers should swallow
+/// errors rather than fail the authenticated request that triggered the call.
+pub async fn upsert_seen_user(pool: &SqlitePool, user_id: &str) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO seen_users (user_id) VALUES (?) \
+         ON CONFLICT(user_id) DO UPDATE SET last_seen_at = datetime('now')"
+    )
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+/// List every user_id that has authenticated at least once, most recent first.
+pub async fn list_seen_users(pool: &SqlitePool) -> Result<Vec<SeenUserRow>, sqlx::Error> {
+    sqlx::query_as::<_, SeenUserRow>(
+        "SELECT user_id, first_seen_at, last_seen_at FROM seen_users ORDER BY last_seen_at DESC"
+    ).fetch_all(pool).await
+}

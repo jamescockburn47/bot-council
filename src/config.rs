@@ -28,18 +28,19 @@ pub struct DatabaseConfig {
 
 /// Authentication configuration.
 /// Supports bearer token (admin CLI/bots) and Clerk JWT (frontend users).
+///
+/// Admin identities are stored in the `admins` table and managed at runtime
+/// via POST/DELETE /admins — no config-driven allowlist.
 #[derive(Debug, Deserialize, Clone)]
 pub struct AuthConfig {
     /// Static bearer token granting admin. Empty string disables this path.
+    /// Also used to bootstrap the first in-app admin via POST /admins.
     pub admin_token: String,
     /// Base URL of the Clerk issuer, e.g. `https://<app>.clerk.accounts.dev`.
     pub clerk_issuer: String,
     /// Clerk JWKS URL. If empty, derived from `clerk_issuer` as
     /// `{issuer}/.well-known/jwks.json`.
     pub clerk_jwks_url: String,
-    /// Clerk user_ids (format `user_2...`) granted admin role.
-    #[serde(default)]
-    pub admin_user_ids: Vec<String>,
     /// 64-character hex string (32 bytes) — AES-256 key for bot token
     /// encryption. Required when Clerk is configured.
     pub bot_token_key: String,
@@ -100,22 +101,11 @@ impl Settings {
             );
         }
 
-        // 2. Clerk path requires admin_user_ids and bot_token_key.
+        // 2. Clerk path requires a bot_token_key. Admin membership is managed
+        //    at runtime via the `admins` table, so no allowlist check here.
+        //    First admin is bootstrapped via the admin_token bearer POSTing to
+        //    /admins after sign-in — see docs/deploy-clerk-auth-rollout.md.
         if !a.clerk_issuer.is_empty() {
-            if a.admin_user_ids.is_empty() {
-                anyhow::bail!(
-                    "auth.clerk_issuer is set but auth.admin_user_ids is empty; \
-                     no one would have admin privileges"
-                );
-            }
-            for id in &a.admin_user_ids {
-                if !id.starts_with("user_") {
-                    anyhow::bail!(
-                        "auth.admin_user_ids contains '{id}', which does not look \
-                         like a Clerk user_id (expected format: user_2...)"
-                    );
-                }
-            }
             if a.bot_token_key.is_empty() {
                 anyhow::bail!(
                     "auth.clerk_issuer is set but auth.bot_token_key is not; \

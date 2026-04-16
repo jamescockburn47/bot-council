@@ -1,3 +1,4 @@
+pub mod admins;
 pub mod auth;
 pub mod bot_token_crypto;
 pub mod bots;
@@ -10,7 +11,7 @@ pub mod stream;
 pub mod synthesis;
 pub mod transcript;
 
-use axum::{Router, http::HeaderValue, routing::{get, patch}};
+use axum::{Router, http::HeaderValue, routing::{delete, get, patch}};
 use tower_http::cors::{Any, CorsLayer};
 use axum::http::Method;
 use crate::state::AppState;
@@ -51,6 +52,9 @@ pub fn router(state: AppState) -> Router {
         .route("/debates/{id}/transcript", get(transcript::get_transcript))
         .route("/debates/{id}/synthesis", get(synthesis::get_synthesis))
         .route("/debates/{id}/stream", get(stream::stream_debate))
+        .route("/admins", get(admins::list_admins).post(admins::add_admin))
+        .route("/admins/{user_id}", delete(admins::remove_admin))
+        .route("/users", get(admins::list_users))
         .layer(cors)
         .with_state(state)
 }

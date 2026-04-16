@@ -10,7 +10,6 @@ url = "sqlite:data/council.db?mode=rwc"
 admin_token = ""
 clerk_issuer = ""
 clerk_jwks_url = ""
-admin_user_ids = []
 bot_token_key = ""
 
 [http_client]

@@ -174,18 +174,31 @@ In-app `admins` table for runtime role management.
 - **Promotion**: POST /admins with a Clerk user_id. First admin bootstrapped by bearer token
   before the user has admin rights via any other path. See `docs/deploy-clerk-auth-rollout.md`.
 
-## Current state (post-deploy-readiness)
+## Current state (deployed 2026-04-16)
 
-Plan 1 (Clerk auth + RBAC + encrypted bot tokens) merged to `main`:
+Plan 1 (Clerk auth + RBAC + encrypted bot tokens) **live on EVO + Vercel**:
 - #20: RS256 JWKS verification, RequireAuth/RequireAdmin, encrypted tokens, submission feedback
 - #21: In-app admin registry — no preset user_ids, runtime promote/demote via `/admins`
 - #22: SSE `?token=` query-param fallback (EventSource can't set headers)
+- #27: Wire frontend to public API URL (council.sovren.xyz), fix Clerk v6 redirect
+  options, add 10s fetch timeout
 
-50 backend tests + frontend build all green on `main`.
+**Backend**: running on EVO, accessible publicly via Cloudflare Tunnel at
+`https://council.sovren.xyz`. Env vars set in `/etc/bot-council.env`.
 
-**Deploy to EVO not yet performed** — see `docs/deploy-clerk-auth-rollout.md`. Owner
-must generate `APP__AUTH__BOT_TOKEN_KEY` + `APP__AUTH__ADMIN_TOKEN`, set Clerk
-issuer, restart service, bootstrap first admin via one curl call.
+**Frontend**: Vercel production at `https://lqcouncil.com`, `PUBLIC_API_URL=https://council.sovren.xyz`.
+
+**⚠ Admin bootstrap still needed.** No admins in DB yet. First session:
+1. Go to lqcouncil.com → sign in as James.
+2. Get your Clerk user_id from `/me` (or Clerk dashboard).
+3. Promote yourself:
+   ```bash
+   curl -X POST https://council.sovren.xyz/admins \
+     -H "Authorization: Bearer af78eb543e9fa563096c2a004c37c53deae1bb1899a493e1a5d9d707716ec0a6" \
+     -H "content-type: application/json" \
+     -d '{"user_id":"user_2YOUR_ID"}'
+   ```
+4. Refresh → admin UI visible. Then promote colleagues from `/admins` page.
 
 **Plan 2 pending**: bot author UX (response normaliser consolidation, `/bots/schema`
 validator endpoint, MiniMax participant model constraint, guide rewrites). Spec

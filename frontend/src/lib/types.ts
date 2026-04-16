@@ -1,0 +1,187 @@
+// Bot types
+export interface BotResponse {
+  id: string;
+  name: string;
+  endpoint_url: string;
+  model_family: string | null;
+  active: boolean;
+  status: string;
+  description: string | null;
+  submitted_by: string | null;
+  reviewed_at: string | null;
+  reviewed_by: string | null;
+  created_at: string;
+}
+
+export interface CreateBotRequest {
+  name: string;
+  endpoint_url: string;
+  token: string;
+  model_family?: string;
+  description?: string;
+}
+
+// Debate types
+export interface DebateResponse {
+  id: string;
+  topic: string;
+  status: string;
+  created_at: string;
+  completed_at: string | null;
+  bots: DebateBotInfo[];
+  results: DebateResults | null;
+}
+
+export interface DebateBotInfo {
+  bot_id: string;
+  bot_name: string;
+  pseudonym: string;
+  role: string | null;
+}
+
+export interface DebateResults {
+  responses: AnonymisedResponse[];
+  rankings: RankedArgument[];
+}
+
+export interface AnonymisedResponse {
+  pseudonym: string;
+  response: string;
+  abstained: boolean;
+}
+
+export interface RankedArgument {
+  pseudonym: string;
+  avg_reasoning_quality: number;
+  avg_factual_grounding: number;
+  avg_overall: number;
+  total_scores: number;
+}
+
+export interface CreateDebateRequest {
+  topic: string;
+  bot_ids?: string[];
+  goal_mode?: string;
+}
+
+// Transcript types
+export interface TranscriptResponse {
+  debate_id: string;
+  topic: string;
+  rounds: TranscriptRound[];
+  anonymisation_log: AnonymisationEntry[];
+  divergence_analyses: DivergenceEntry[];
+}
+
+export interface TranscriptRound {
+  round_number: number;
+  status: string;
+  responses: TranscriptEntry[];
+}
+
+export interface TranscriptEntry {
+  pseudonym: string;
+  response: string;
+  confidence: number | null;
+  challenge: ChallengeData | null;
+  position_change: PositionChangeData | null;
+  valid: boolean;
+  abstained: boolean;
+  validation_reasoning: string | null;
+}
+
+export interface ChallengeData {
+  claim_targeted: string;
+  counter_evidence: string;
+  type: 'factual' | 'logical' | 'premise';
+}
+
+export interface PositionChangeData {
+  changed: boolean;
+  from_summary: string;
+  to_summary: string;
+  reason: string;
+}
+
+export interface AnonymisationEntry {
+  pseudonym: string;
+  role: string | null;
+}
+
+export interface DivergenceEntry {
+  pseudonym: string;
+  shifted: boolean | null;
+  magnitude: string | null;
+  what_changed: string | null;
+  justification_adequate: boolean | null;
+  flags: string[];
+}
+
+// Synthesis types
+export interface SynthesisResponse {
+  debate_id: string;
+  synthesis: SynthesisData;
+  model_used: string;
+  created_at: string;
+  citation_check: CitationCheckResult | null;
+}
+
+export interface SynthesisData {
+  topic: string;
+  consensus_points: ConsensusPoint[];
+  live_disagreements: Disagreement[];
+  flagged_capitulations: Capitulation[];
+  minority_positions: MinorityPosition[];
+  confidence_trajectories: Record<string, (number | null)[]>;
+  meta_observations: string;
+}
+
+export interface ConsensusPoint {
+  point: string;
+  supporting_bots: string[];
+  evidence: string;
+}
+
+export interface Disagreement {
+  issue: string;
+  side_a: DisagreementSide;
+  side_b: DisagreementSide;
+}
+
+export interface DisagreementSide {
+  position: string;
+  bots: string[];
+  best_argument: string;
+}
+
+export interface Capitulation {
+  bot: string;
+  from: string;
+  to: string;
+  justification_adequate: boolean;
+  flag_reason: string;
+}
+
+export interface MinorityPosition {
+  bot: string;
+  position: string;
+  key_argument: string;
+  confidence: number;
+}
+
+export interface CitationCheckResult {
+  citations_total: number;
+  citations_valid: number;
+  citations_invalid: InvalidCitation[];
+}
+
+export interface InvalidCitation {
+  citation: string;
+  reason: string;
+  location: string;
+}
+
+export interface UserInfoResponse {
+  user_id: string;
+  role: string;
+}

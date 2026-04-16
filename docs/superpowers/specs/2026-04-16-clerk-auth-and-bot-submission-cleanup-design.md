@@ -514,3 +514,221 @@ Each of the five commits can be reverted independently. The migration (§14 comm
 is additive — no data loss if reverted mid-rollout. The only irreversible step is
 dropping `token_hash` and `active` columns, which is deferred to a follow-up release
 explicitly so this plan can be rolled back cleanly.
+
+## 18. Bot Author UX — Reachability, Output Quality, and Auth
+
+The previous sections fix the submitter-facing *feedback* loop. This section fixes the
+*author-facing* quality loop — so that what bots are told to build, and what the
+harness demands of them, are coherent and realistic.
+
+### 18.1 Network reachability
+
+**Problem.** Bots run in a variety of topologies. The dominant case is a VPS
+(Hostinger, DigitalOcean, Linode, Hetzner) — publicly routable but still requiring
+TLS termination and firewall rules. A secondary case is self-hosted on residential
+NAT or corporate firewalls, which cannot receive inbound HTTPS at all without a
+tunnel. The current guide gives zero guidance on either; failure manifests as a
+smoke-test timeout with no diagnostic.
+
+**Fixes.**
+
+1. `/bots/guide` gains a new "Deployment & reachability" section with options ordered
+   by realistic prevalence:
+
+   **Primary — VPS (Hostinger, DigitalOcean, Linode, Hetzner, OVH, etc.)**
+   This is the expected default. Three steps:
+     a. Point a domain (or subdomain) at the VPS's public IP via an A record.
+     b. Run a reverse proxy with automatic HTTPS. Recommended: **Caddy** — a
+        six-line Caddyfile terminates TLS with LetsEncrypt and proxies to the bot
+        on localhost:3000. Alternative: nginx + certbot for users who prefer it.
+     c. Open port 443 on the VPS firewall (`sudo ufw allow 443/tcp`) and bind the
+        bot to `127.0.0.1:<port>` — never expose the bot process directly.
+     Copy-pasteable Caddyfile and systemd unit provided.
+
+   **Also common — PaaS (Fly.io, Railway, Render, Vercel Functions)**
+     TLS and routing are handled for you. Set the bot's `DEBATE_PORT` env var
+     to whatever the platform injects (`PORT` on most), deploy from a Git repo.
+     One-command `fly launch` snippet.
+
+   **For self-hosters (home lab, office network)**
+     When inbound HTTPS is not possible (CGNAT, residential firewall):
+     - **Cloudflare Tunnel** — free, auth-gated, matches the harness's own topology
+     - **Tailscale Funnel** — free public-facing tailnet endpoint
+     - **ngrok reserved domain** — easiest for prototyping
+     Each gets a one-line `cloudflared tunnel --url http://localhost:3000` style
+     command and a note that the resulting URL is the one to paste into `/bots/submit`.
+
+   **Do not** — raw port-forwarding with no TLS. Smoke test rejects non-HTTPS URLs.
+
+2. Every option has a copy-pasteable setup snippet that produces a URL of the form
+   `https://<name>.example.com/debate`.
+3. **HTTPS enforced at submission.** `POST /bots` rejects `endpoint_url` values that
+   do not start with `https://` with `AppError::BadRequest("endpoint_url must be
+   https://")`. Exception: URLs ending in `.localhost`, `127.0.0.1:*`, or
+   `localhost:*` are allowed only when `cfg!(debug_assertions)` — lets local tests
+   against the harness run, but production builds reject them.
+
+4. The existing smoke test already catches unreachability (connect-timeout becomes
+   `rejection_reason: "Smoke test failed: request failed: connection timeout"`), but
+   the reason string is cryptic. A small classifier maps common failures to plain
+   English:
+
+   | Underlying error | Reason surfaced |
+   |---|---|
+   | DNS / name resolution | "Endpoint hostname could not be resolved. Check the URL." |
+   | TCP connect refused / timeout | "Harness could not reach the endpoint. If self-hosting, check your firewall and make sure the bot is exposed via Cloudflare Tunnel, ngrok, or equivalent. See the guide's 'Deployment & reachability' section." |
+   | TLS handshake failure | "TLS handshake failed. The endpoint must be HTTPS with a valid certificate. LetsEncrypt or Cloudflare Tunnel both work." |
+   | HTTP 401/403 on smoke test | "Endpoint rejected the harness's bearer token. Verify your bot is using the token you registered." |
+   | HTTP 4xx (other) / 5xx | "Endpoint returned HTTP {status}. Check bot logs." |
+   | Response not JSON | "Endpoint returned non-JSON content-type {mime}. The bot must reply with application/json." |
+
+   Added as a pure-function classifier in `src/api/bots.rs` (~40 lines). Tested with
+   synthetic errors.
+
+### 18.2 Output-schema hardening (the "superprompt")
+
+**Problem.** Models vary wildly in JSON adherence. MiniMax produces unescaped inner
+quotes; weaker open models often wrap JSON in markdown fences or add preamble
+("Based on my research, here is my response: { ... }"). The harness has accreted
+three defensive layers (`response_parser`, quote-repair, `sanitise.rs`), but bot
+authors are never told why their output fails or what the harness actually expects.
+
+**Fixes.**
+
+1. **Update the super-prompt** in `/bots/guide` with an explicit "Output discipline"
+   section:
+
+   - **Use your model's structured-output mode.** Per-vendor instructions:
+     - Anthropic SDK: no native JSON mode — instead use a prefilled `{` in the
+       `messages[].content` assistant turn and validate with `JSON.parse`.
+     - OpenAI SDK: `response_format: { type: "json_object" }` or, preferred,
+       `response_format: { type: "json_schema", json_schema: {...} }`.
+     - Gemini SDK: `responseMimeType: "application/json"` with `responseSchema`.
+     - MiniMax / DeepSeek / open models via OpenRouter: if the underlying model
+       supports JSON mode, enable it; if not, you MUST run a JSON.parse + repair
+       pass before returning (see below).
+   - **No markdown fences.** Never wrap the JSON in triple backticks. The harness
+     strips them defensively but it's noise.
+   - **No preamble.** The response body must start with `{` and end with `}`. The
+     harness strips "Based on my research…" style lead-ins, but it's fragile.
+   - **Escape inner quotes.** Every `"` inside a string value must be `\"`. Every
+     newline must be `\n`. The harness will repair common breakages but a clean
+     bot MUST get this right.
+   - **Validate before returning.** Call `JSON.parse(responseText)` in your bot.
+     If it throws, regenerate with a "strict JSON only" instruction or fall back
+     to `{"response": "<plain text>", "confidence": 50}`. Never return JSON the
+     bot itself can't parse.
+   - **Specific rule for MiniMax and similar.** If your bot uses MiniMax, DeepSeek,
+     Llama < 70B, or any model prone to JSON drift, you MUST add a client-side
+     repair-and-retry loop. Example Node snippet provided in the guide.
+
+2. **Share the exact JSON schema** the harness validates against. A new
+   `/bots/schema` page renders the machine-readable schema for each round, with
+   field descriptions and a live JSON validator (paste your bot's test output,
+   see pass/fail per field).
+
+3. **Expose a self-test endpoint** `POST /bots/schema/validate` on the harness:
+
+   ```json
+   { "round": 0, "response_json": "<bot's JSON as a string>" }
+   ```
+
+   Returns:
+
+   ```json
+   { "valid": true }                                       // happy path
+   { "valid": false, "errors": ["response: expected string, got null"] }
+   { "valid": false, "repaired": true, "repaired_json": "...", "warnings": ["quote-repair applied"] }
+   ```
+
+   Bot authors can hit this from their CI without having to be smoke-tested or
+   registered first.
+
+### 18.3 Harness-side repair consolidation
+
+**Problem.** The three existing defensive layers are applied inconsistently:
+`response_parser` runs in round handlers 0–4 (except round 3, per the commit diff);
+quote-repair runs only in `synthesis.rs`; `sanitise.rs` framing is per-module. A
+round-3 response with MiniMax-style broken quotes will hit the DB unrepaired.
+
+**Fixes.**
+
+1. Consolidate into a single `src/orchestrator/response_normaliser.rs` that:
+   - Strips markdown fences.
+   - Extracts embedded JSON from preambled responses (existing `response_parser`
+     logic).
+   - Runs the quote-repair pass (existing logic from `synthesis.rs`).
+   - Validates against the per-round schema.
+   - Returns `NormalisedResponse { json, repairs_applied: Vec<RepairKind> }`.
+
+2. Apply it in `bot_client::debate_request()` so every bot response goes through the
+   same pipeline before reaching any round handler, analyser, or synthesiser. Round
+   handlers 0–4 become consumers rather than repair orchestrators.
+
+3. Track repair metrics per bot:
+
+   ```sql
+   ALTER TABLE responses ADD COLUMN repairs_applied TEXT; -- JSON array of RepairKind
+   ```
+
+   Aggregated in the admin bot review UI: "Clint — 18/20 rounds clean, 2 needed
+   quote-repair, 0 failed". Gives admins a quick signal that a bot is on the edge of
+   the quality bar without being rejection-worthy yet.
+
+4. Unrecoverable malformation (repair pass also fails to produce valid JSON) sets:
+   - `responses.valid = false`
+   - `responses.abstained = true`
+   - A debate-level tracking event "Bot X returned malformed output in round N; treated as abstention."
+   - This is surfaced in the transcript so the user can see what happened.
+
+### 18.4 Bot guide auth update (depends on §7, commit 3)
+
+Once the stored token is decrypted and sent on outbound calls:
+
+1. The super-prompt's "Skip authentication for this endpoint (the council manages its
+   own auth)" line is **reversed**:
+
+   > **The council sends the Bearer token you registered on every /debate and smoke
+   > test request.** Your bot MUST verify it matches the secret you configured before
+   > processing the body. Reject with HTTP 401 if missing or wrong.
+
+2. Per-language snippets showing how to verify (Node/Express, Python/FastAPI,
+   Rust/Axum).
+
+3. `/bots/criteria` gains a line: "Your /debate endpoint MUST verify the council's
+   bearer token. Smoke test will send it; unauthenticated endpoints will be
+   rejected."
+
+### 18.5 Clint compatibility check
+
+Clint already ships a `/debate` endpoint (registered as a bot on the council). Before
+commit 3 (smoke-test-with-bearer) ships:
+
+1. Confirm Clint's current token status — either it's already in the ciphertext column
+   via re-submission, or its row predates the migration and will need re-submission.
+2. If re-submission is needed, do it as part of the rollout — Clint's author
+   (James) has the raw token in EVO's `.env`.
+3. Add a one-line note in `docs/runbook.md` (new file or append): "To re-register
+   Clint after token encryption rollout: visit /bots/submit, use Clint's endpoint
+   URL and the EVO .env `DASHBOARD_TOKEN`."
+
+### 18.6 Additional commit to the execution order
+
+The §14 execution order gains **commit 6**:
+
+6. **Bot author UX pass.** New `response_normaliser` module consolidating the three
+   defensive layers. `/bots/schema` page and `POST /bots/schema/validate` endpoint.
+   Guide rewrites (deployment, output discipline, updated auth language). Error
+   classifier for smoke test reasons. Migration adding `repairs_applied` column.
+   Admin UI repair-rate column.
+
+   This commit is largest but zero-risk — it's docs, a new page, a new endpoint, and
+   a consolidation that moves existing logic without changing its behaviour.
+
+### 18.7 Risks and mitigations (additions)
+
+| Risk | Mitigation |
+|---|---|
+| Bot authors miss the guide update and continue skipping auth | Smoke test begins sending the token after commit 3. Clear error classifier message points them to the guide. Pre-announce in whatever channel exists (email the 5 admins; post in whatever Slack/Discord). |
+| `/bots/schema/validate` becomes an abuse vector (unauthenticated JSON parser) | Rate-limited to 30 req/min per IP via a new `tower-governor` middleware. Response body capped at 20KB matching the existing bot-response cap. |
+| Consolidated normaliser changes existing round behaviour | Unit tests for every known repair case (embedded JSON preamble, markdown fences, unescaped quotes, all three at once). Integration tests reproducing the exact failing MiniMax response from commit c2f17c8. |

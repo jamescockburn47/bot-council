@@ -46,10 +46,14 @@ struct MiniMaxChoiceMessage {
     content: String,
 }
 
+/// Maximum retries for transient MiniMax errors (529 overloaded).
+const MINIMAX_MAX_RETRIES: u32 = 3;
+
 /// Call MiniMax with a system prompt and expect a JSON response string.
 ///
-/// Returns the raw JSON content string from the first choice, or an error
-/// describing what went wrong (network failure, non-2xx status, empty choices).
+/// Retries on 529 (overloaded) up to `MINIMAX_MAX_RETRIES` times with
+/// exponential backoff. Returns the cleaned JSON content string from the
+/// first choice, or an error describing what went wrong.
 pub async fn call_minimax(
     config: &ModelsConfig,
     system_prompt: &str,
@@ -66,26 +70,76 @@ pub async fn call_minimax(
         response_format: Some(ResponseFormat { format_type: "json_object".into() }),
     };
 
-    let resp = client
-        .post(&url)
-        .header("Authorization", format!("Bearer {}", config.minimax_api_key))
-        .header("Content-Type", "application/json")
-        .json(&request)
-        .send()
-        .await
-        .map_err(|e| format!("MiniMax request failed: {e}"))?;
+    let mut last_err = String::new();
+    for attempt in 0..=MINIMAX_MAX_RETRIES {
+        if attempt > 0 {
+            let delay = std::time::Duration::from_secs(2u64.pow(attempt));
+            tokio::time::sleep(delay).await;
+        }
 
-    if !resp.status().is_success() {
+        let resp = match client
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", config.minimax_api_key))
+            .header("Content-Type", "application/json")
+            .json(&request)
+            .send()
+            .await
+        {
+            Ok(r) => r,
+            Err(e) => { last_err = format!("MiniMax request failed: {e}"); continue; }
+        };
+
         let status = resp.status();
-        let body = resp.text().await.unwrap_or_default(); // intentional: error body is best-effort
-        return Err(format!("MiniMax returned HTTP {status}: {body}"));
+        if status.as_u16() == 529 {
+            let body = resp.text().await.unwrap_or_default();
+            last_err = format!("MiniMax returned HTTP 529: {body}");
+            tracing::warn!(attempt, "MiniMax overloaded (529), retrying");
+            continue;
+        }
+
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(format!("MiniMax returned HTTP {status}: {body}"));
+        }
+
+        let parsed: MiniMaxResponse = resp.json()
+            .await
+            .map_err(|e| format!("MiniMax response parse failed: {e}"))?;
+
+        return parsed.choices.first()
+            .map(|c| clean_model_output(&c.message.content))
+            .ok_or_else(|| "MiniMax returned empty choices".into());
     }
 
-    let parsed: MiniMaxResponse = resp.json()
-        .await
-        .map_err(|e| format!("MiniMax response parse failed: {e}"))?;
+    Err(last_err)
+}
 
-    parsed.choices.first()
-        .map(|c| c.message.content.clone())
-        .ok_or_else(|| "MiniMax returned empty choices".into())
+/// Clean raw MiniMax M2.7 output to extract JSON content.
+///
+/// Handles two quirks:
+/// 1. `<think>…</think>` reasoning tags wrapped around the real content
+/// 2. Markdown code fences (` ```json … ``` `) around JSON
+fn clean_model_output(content: &str) -> String {
+    let mut s = content.trim().to_string();
+
+    // Strip <think>…</think> tags
+    if s.starts_with("<think>") {
+        if let Some(pos) = s.find("</think>") {
+            s = s[pos + 8..].trim().to_string();
+        }
+    }
+
+    // Strip markdown code fences
+    if s.starts_with("```") {
+        // Remove opening fence (with optional language hint)
+        if let Some(newline) = s.find('\n') {
+            s = s[newline + 1..].to_string();
+        }
+        // Remove closing fence
+        if let Some(pos) = s.rfind("```") {
+            s = s[..pos].trim().to_string();
+        }
+    }
+
+    s
 }

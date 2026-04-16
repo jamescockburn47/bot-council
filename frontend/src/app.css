@@ -1,0 +1,65 @@
+@import "tailwindcss";
+
+@font-face {
+  font-family: 'Geist Mono';
+  src: url('https://cdn.jsdelivr.net/npm/geist@1/dist/fonts/geist-mono/GeistMono-Regular.woff2') format('woff2');
+  font-weight: 400;
+}
+@font-face {
+  font-family: 'Geist Mono';
+  src: url('https://cdn.jsdelivr.net/npm/geist@1/dist/fonts/geist-mono/GeistMono-Bold.woff2') format('woff2');
+  font-weight: 700;
+}
+@font-face {
+  font-family: 'Inter';
+  src: url('https://cdn.jsdelivr.net/npm/inter-font@3/ttf/Inter-Regular.ttf') format('truetype');
+  font-weight: 400;
+}
+@font-face {
+  font-family: 'Inter';
+  src: url('https://cdn.jsdelivr.net/npm/inter-font@3/ttf/Inter-Medium.ttf') format('truetype');
+  font-weight: 500;
+}
+@font-face {
+  font-family: 'Inter';
+  src: url('https://cdn.jsdelivr.net/npm/inter-font@3/ttf/Inter-SemiBold.ttf') format('truetype');
+  font-weight: 600;
+}
+
+:root {
+  --bg: #0a0a0f;
+  --surface: #12121f;
+  --border: #1e1e3a;
+  --text-primary: #e2e8f0;
+  --text-secondary: #94a3b8;
+  --text-muted: #4a4a6a;
+  --agent-a: #f472b6;
+  --agent-b: #34d399;
+  --agent-c: #60a5fa;
+  --agent-d: #f59e0b;
+  --agent-e: #8b5cf6;
+  --status-running: #8b5cf6;
+  --status-complete: #22c55e;
+  --status-cancelled: #ef4444;
+  --synthesis-consensus: #22c55e;
+  --synthesis-disagreement: #ef4444;
+  --synthesis-capitulation: #f59e0b;
+  --synthesis-minority: #60a5fa;
+  --challenge-factual: #ef4444;
+  --challenge-logical: #f59e0b;
+  --challenge-premise: #8b5cf6;
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--text-primary);
+  font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+}
+
+.mono {
+  font-family: 'Geist Mono', ui-monospace, 'Cascadia Code', monospace;
+}
+
+code, pre {
+  font-family: 'Geist Mono', ui-monospace, 'Cascadia Code', monospace;
+}

@@ -1,3 +1,5 @@
+/// Post-synthesis citation validation.
+pub mod citation_check;
 /// Pre-computation of structural debate data.
 pub mod precompute;
 /// Output schema for the synthesis result.

@@ -7,6 +7,7 @@ pub struct CreateBotRequest {
     pub endpoint_url: String,
     pub token: String,
     pub model_family: Option<String>,
+    pub description: Option<String>,
 }
 
 /// Response body for a bot resource.
@@ -17,7 +18,19 @@ pub struct BotResponse {
     pub endpoint_url: String,
     pub model_family: Option<String>,
     pub active: bool,
+    pub status: String,
+    pub description: Option<String>,
+    pub submitted_by: Option<String>,
+    pub reviewed_at: Option<String>,
+    pub reviewed_by: Option<String>,
     pub created_at: String,
+}
+
+/// Response body for GET /me.
+#[derive(Debug, Serialize)]
+pub struct UserInfoResponse {
+    pub user_id: String,
+    pub role: String,
 }
 
 /// Request body for creating a new debate.
@@ -87,6 +100,7 @@ pub struct TranscriptResponse {
     pub topic: String,
     pub rounds: Vec<TranscriptRound>,
     pub anonymisation_log: Vec<AnonymisationEntry>,
+    pub divergence_analyses: Vec<DivergenceEntry>,
 }
 
 /// A single round in the transcript.
@@ -107,6 +121,7 @@ pub struct TranscriptEntry {
     pub position_change: Option<serde_json::Value>,
     pub valid: bool,
     pub abstained: bool,
+    pub validation_reasoning: Option<String>,
 }
 
 /// Anonymisation log entry mapping pseudonym to role.
@@ -116,6 +131,17 @@ pub struct AnonymisationEntry {
     pub role: Option<String>,
 }
 
+/// Divergence analysis entry for a bot across rounds.
+#[derive(Debug, Serialize)]
+pub struct DivergenceEntry {
+    pub pseudonym: String,
+    pub shifted: Option<bool>,
+    pub magnitude: Option<String>,
+    pub what_changed: Option<String>,
+    pub justification_adequate: Option<bool>,
+    pub flags: Vec<String>,
+}
+
 /// Response for GET /debates/{id}/synthesis.
 #[derive(Debug, Serialize)]
 pub struct SynthesisResponse {
@@ -123,4 +149,5 @@ pub struct SynthesisResponse {
     pub synthesis: serde_json::Value,
     pub model_used: String,
     pub created_at: String,
+    pub citation_check: Option<serde_json::Value>,
 }

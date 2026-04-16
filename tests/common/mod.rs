@@ -8,9 +8,9 @@ pub async fn test_app() -> (Router, SqlitePool) {
     let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
     sqlx::migrate!("./migrations").run(&pool).await.unwrap();
     let settings = Settings {
-        server: ServerConfig { host: "127.0.0.1".into(), port: 0 },
+        server: ServerConfig { host: "127.0.0.1".into(), port: 0, cors_origins: vec![] },
         database: DatabaseConfig { url: "sqlite::memory:".into() },
-        auth: AuthConfig { admin_token: "".into() },
+        auth: AuthConfig { admin_token: "".into(), clerk_jwks_url: "".into(), clerk_issuer: "".into() },
         http_client: HttpClientConfig {
             connect_timeout_secs: 5,
             request_timeout_secs: 30,

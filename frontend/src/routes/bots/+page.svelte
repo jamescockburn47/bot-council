@@ -10,8 +10,13 @@
   let actionLoading = $state<string | null>(null);
 
   let active = $derived(bots.filter(b => b.status === 'active'));
-  let pending = $derived(bots.filter(b => b.status === 'pending'));
+  let pending = $derived(bots.filter(b => b.status === 'pending' || b.status === 'smoke_test_failed'));
   let inactive = $derived(bots.filter(b => b.status === 'inactive' || b.status === 'rejected'));
+
+  // Reject modal state.
+  let rejectingBot = $state<BotResponse | null>(null);
+  let rejectReason = $state('');
+  let submittingReject = $state(false);
 
   const TABS = [
     { key: 'active' as const, label: 'Active', count: () => active.length },
@@ -39,16 +44,35 @@
     }
   }
 
-  async function handleAction(action: 'approve' | 'reject' | 'deactivate' | 'reactivate', id: string) {
+  async function handleAction(action: 'approve' | 'deactivate' | 'reactivate', id: string) {
     actionLoading = id;
     try {
       await api.bots[action](id);
       await loadBots();
     } catch (e) {
-      const msg = e instanceof ApiError ? `Error ${e.status}` : 'Action failed';
+      const msg = e instanceof ApiError
+        ? `Error ${e.status}: ${JSON.stringify(e.body)}`
+        : 'Action failed';
       error = msg;
     } finally {
       actionLoading = null;
+    }
+  }
+
+  async function confirmReject() {
+    if (!rejectingBot) return;
+    const reason = rejectReason.trim();
+    if (reason.length < 10) return;
+    submittingReject = true;
+    try {
+      await api.bots.reject(rejectingBot.id, reason);
+      await loadBots();
+      rejectingBot = null;
+      rejectReason = '';
+    } catch (e) {
+      error = e instanceof ApiError ? `Error ${e.status}: ${JSON.stringify(e.body)}` : 'Reject failed';
+    } finally {
+      submittingReject = false;
     }
   }
 
@@ -215,6 +239,14 @@
                     <span class="text-[var(--text-secondary)]">{formatDate(bot.created_at)}</span>
                   </p>
                 </div>
+                {#if bot.status === 'smoke_test_failed' && bot.rejection_reason}
+                  <div class="mt-3 bg-amber-500/10 border border-amber-500/30 rounded-md p-3">
+                    <div class="mono text-xs text-amber-400 uppercase tracking-wider mb-1">
+                      Smoke test failed
+                    </div>
+                    <p class="text-sm text-[var(--text-secondary)]">{bot.rejection_reason}</p>
+                  </div>
+                {/if}
               </div>
               <div class="flex gap-2 shrink-0">
                 <button
@@ -222,14 +254,16 @@
                   disabled={actionLoading === bot.id}
                   class="px-3 py-1.5 text-xs mono text-green-400 border border-green-500/30 rounded hover:bg-green-500/10 transition-colors disabled:opacity-50"
                 >
-                  {actionLoading === bot.id ? '...' : 'Approve'}
+                  {actionLoading === bot.id
+                    ? '...'
+                    : (bot.status === 'smoke_test_failed' ? 'Retry approval' : 'Approve')}
                 </button>
                 <button
-                  onclick={() => handleAction('reject', bot.id)}
+                  onclick={() => { rejectingBot = bot; rejectReason = ''; }}
                   disabled={actionLoading === bot.id}
                   class="px-3 py-1.5 text-xs mono text-red-400 border border-red-500/30 rounded hover:bg-red-500/10 transition-colors disabled:opacity-50"
                 >
-                  {actionLoading === bot.id ? '...' : 'Reject'}
+                  Reject
                 </button>
               </div>
             </div>
@@ -286,5 +320,52 @@
         </table>
       </div>
     {/if}
+  {/if}
+
+  <!-- Reject modal -->
+  {#if rejectingBot}
+    <div
+      class="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="reject-title"
+    >
+      <div class="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-6 w-full max-w-md mx-4">
+        <h3 id="reject-title" class="mono text-sm text-[var(--text-primary)] mb-3">
+          Reject {rejectingBot.name}
+        </h3>
+        <p class="text-xs text-[var(--text-muted)] mb-3">
+          Enter a reason (min 10 chars, max 500). This is shown to the submitter.
+        </p>
+        <textarea
+          bind:value={rejectReason}
+          rows={4}
+          maxlength={500}
+          placeholder="Reason for rejection..."
+          class="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded text-sm text-[var(--text-primary)]"
+        ></textarea>
+        <p class="text-xs text-[var(--text-muted)] mt-1 text-right">
+          {rejectReason.trim().length} / 500
+          {#if rejectReason.trim().length > 0 && rejectReason.trim().length < 10}
+            <span class="text-amber-400">(min 10)</span>
+          {/if}
+        </p>
+        <div class="mt-3 flex justify-end gap-2">
+          <button
+            onclick={() => { rejectingBot = null; rejectReason = ''; }}
+            class="px-3 py-1.5 text-sm rounded border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--border)]/20 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            disabled={rejectReason.trim().length < 10 || submittingReject}
+            onclick={confirmReject}
+            class="px-3 py-1.5 text-sm rounded bg-red-500 text-white hover:bg-red-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {submittingReject ? 'Rejecting...' : 'Reject'}
+          </button>
+        </div>
+      </div>
+    </div>
   {/if}
 </div>

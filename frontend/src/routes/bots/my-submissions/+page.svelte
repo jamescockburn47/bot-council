@@ -82,6 +82,14 @@
             <span class="text-xs text-[var(--text-muted)]">{formatDate(bot.created_at)}</span>
           </div>
           <p class="text-xs mono text-[var(--text-muted)] mt-1.5">{bot.endpoint_url}</p>
+          {#if bot.rejection_reason && (bot.status === 'rejected' || bot.status === 'smoke_test_failed')}
+            <div class="mt-3 bg-red-500/10 border border-red-500/30 rounded-md p-3">
+              <div class="mono text-xs text-red-400 uppercase tracking-wider mb-1">
+                {bot.status === 'rejected' ? 'Rejected' : 'Smoke test failed'}
+              </div>
+              <p class="text-sm text-[var(--text-secondary)]">{bot.rejection_reason}</p>
+            </div>
+          {/if}
         </div>
       {/each}
     </div>

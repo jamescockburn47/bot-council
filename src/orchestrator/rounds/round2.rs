@@ -6,7 +6,7 @@ use crate::db::models::BotRow;
 use crate::db::queries_phase1;
 use crate::analyser::challenge::validate_challenge;
 use crate::config::ModelsConfig;
-use crate::orchestrator::prompts;
+use crate::orchestrator::{prompts, response_parser};
 use crate::types::Role;
 
 /// Run Round 2: structured rebuttal with MiniMax challenge validation.
@@ -71,6 +71,7 @@ pub async fn run_round2(
                 final_results.push((bot_id, None));
             }
             Some(mut resp) => {
+                response_parser::normalise_response(&mut resp);
                 let bot = bots.iter().find(|b| b.id == bot_id);
                 let endpoint = bot.map(|b| b.endpoint_url.as_str()).unwrap_or("").to_string();
                 let token = bot_tokens.get(&bot_id).cloned().unwrap_or_default();

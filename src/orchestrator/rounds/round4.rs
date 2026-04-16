@@ -4,7 +4,7 @@ use reqwest_middleware::ClientWithMiddleware;
 use crate::bot_client::{self, DebateRoundRequest, RoundContext, DebateRoundResponse};
 use crate::db::models::BotRow;
 use crate::db::queries_phase1;
-use crate::orchestrator::prompts;
+use crate::orchestrator::{prompts, response_parser};
 use crate::types::Role;
 
 /// Run Round 4: final position with position_change declaration.
@@ -52,8 +52,13 @@ pub async fn run_round4(
         }
     }).collect();
 
-    let results = futures::future::join_all(futures).await;
+    let mut results = futures::future::join_all(futures).await;
 
+    for (_, resp_opt) in &mut results {
+        if let Some(r) = resp_opt {
+            response_parser::normalise_response(r);
+        }
+    }
     for (bot_id, resp_opt) in &results {
         let (response_text, confidence, pc_json, abstained) = match resp_opt {
             Some(r) => {

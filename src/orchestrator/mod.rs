@@ -1,6 +1,7 @@
 pub mod anonymiser;
 pub mod multi_round;
 pub mod prompts;
+pub mod response_parser;
 pub mod roles;
 pub mod rounds;
 pub mod state_machine;

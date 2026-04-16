@@ -24,7 +24,7 @@
 >
   <div class="p-4 border-b border-[var(--border)]">
     <a href="/" class="mono text-lg font-bold text-[var(--text-primary)] no-underline"
-      >Bot Council</a
+      >LQ Council</
     >
   </div>
   <div class="flex-1 py-4">

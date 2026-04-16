@@ -20,10 +20,13 @@ pub async fn insert_bot(
     description: Option<&str>,
     status: &str,
 ) -> Result<BotRow, sqlx::Error> {
+    // token_hash = '' satisfies the legacy NOT NULL constraint from the
+    // original migration. The column is dropped in a follow-up migration;
+    // new code reads token_ciphertext only.
     sqlx::query_as::<_, BotRow>(
-        "INSERT INTO bots (id, name, endpoint_url, token_ciphertext, model_family, \
-         submitted_by, description, status) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING *"
+        "INSERT INTO bots (id, name, endpoint_url, token_hash, token_ciphertext, \
+         model_family, submitted_by, description, status) \
+         VALUES (?, ?, ?, '', ?, ?, ?, ?, ?) RETURNING *"
     )
     .bind(id)
     .bind(name)

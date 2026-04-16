@@ -1,7 +1,6 @@
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::Json;
-use sha2::{Sha256, Digest};
 use crate::api::auth::{AuthIdentity, RequireAdmin};
 use crate::api::dto::{CreateBotRequest, BotResponse, UserInfoResponse, RejectBotRequest};
 use crate::db::{models::BotRow, queries};
@@ -40,15 +39,28 @@ pub async fn create_bot(
     if req.endpoint_url.is_empty() {
         return Err(AppError::BadRequest("endpoint_url is required".into()));
     }
+    // HTTPS enforcement. Allow http://localhost and 127.0.0.1 only in debug builds.
+    if !req.endpoint_url.starts_with("https://") {
+        let localhost_ok = cfg!(debug_assertions) && (
+            req.endpoint_url.starts_with("http://localhost")
+            || req.endpoint_url.starts_with("http://127.0.0.1")
+        );
+        if !localhost_ok {
+            return Err(AppError::BadRequest("endpoint_url must use https://".into()));
+        }
+    }
     if req.token.is_empty() {
         return Err(AppError::BadRequest("token is required".into()));
     }
     let id = BotId::new();
-    let token_hash = hex::encode(Sha256::digest(req.token.as_bytes()));
+    let ciphertext = crate::api::bot_token_crypto::encrypt(
+        state.bot_token_key(),
+        &req.token,
+    ).map_err(|_| AppError::Internal(anyhow::anyhow!("token encryption failed")))?;
     let status = if auth.is_admin() { "active" } else { "pending" };
     let submitted_by = auth.user_id().map(String::from);
     let row = queries::insert_bot(
-        state.db(), id.as_str(), &req.name, &req.endpoint_url, &token_hash,
+        state.db(), id.as_str(), &req.name, &req.endpoint_url, &ciphertext,
         req.model_family.as_deref(), submitted_by.as_deref(),
         req.description.as_deref(), status,
     ).await?;
@@ -99,12 +111,17 @@ fn classify_smoke_test_error(raw: &str) -> String {
 ///
 /// Sends a minimal POST with a dummy session, checks that the response is
 /// valid JSON containing a string `response` field. Uses a 30-second timeout.
-/// The harness does NOT send a bearer token — only the hash is stored, not the
-/// raw token, and this call is intentionally unauthenticated.
+/// Decrypts the stored token and sends `Authorization: Bearer <token>`.
 async fn smoke_test_bot(
     client: &reqwest_middleware::ClientWithMiddleware,
     bot: &BotRow,
+    key: &crate::api::bot_token_crypto::BotTokenKey,
 ) -> Result<(), String> {
+    let ciphertext = bot.token_ciphertext.as_ref()
+        .ok_or_else(|| "bot has no encrypted token (pre-migration row — resubmit)".to_string())?;
+    let token = crate::api::bot_token_crypto::decrypt(key, ciphertext)
+        .map_err(|_| "could not decrypt stored token (wrong key or corruption)".to_string())?;
+
     let body = serde_json::json!({
         "session_id": "smoke-test", "round": 0, "role": "proponent",
         "context": [],
@@ -113,6 +130,7 @@ async fn smoke_test_bot(
     let response = client
         .post(&bot.endpoint_url)
         .timeout(std::time::Duration::from_secs(30))
+        .header("authorization", format!("Bearer {token}"))
         .json(&body)
         .send().await
         .map_err(|e| format!("request failed: {e}"))?;
@@ -168,7 +186,7 @@ pub async fn approve_bot(
             bot.status
         )));
     }
-    match smoke_test_bot(state.http_client(), &bot).await {
+    match smoke_test_bot(state.http_client(), &bot, state.bot_token_key()).await {
         Ok(()) => {
             let row = do_transition(
                 &state, &admin, &id,

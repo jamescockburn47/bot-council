@@ -72,7 +72,7 @@ async fn test_get_transcript_not_found() {
             axum::http::Request::builder()
                 .method("GET")
                 .uri("/debates/nonexistent/transcript")
-                .header("Authorization", "Bearer test")
+                .header("Authorization", "Bearer test-admin-token")
                 .body(axum::body::Body::empty())
                 .unwrap(),
         )
@@ -89,7 +89,7 @@ async fn test_get_synthesis_not_found() {
             axum::http::Request::builder()
                 .method("GET")
                 .uri("/debates/nonexistent/synthesis")
-                .header("Authorization", "Bearer test")
+                .header("Authorization", "Bearer test-admin-token")
                 .body(axum::body::Body::empty())
                 .unwrap(),
         )

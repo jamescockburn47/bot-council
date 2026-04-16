@@ -48,7 +48,19 @@ pub async fn create_debate(
     for (i, bot) in bots.iter().enumerate() {
         let pseudonym = anonymiser::assign_pseudonym(i);
         queries::insert_debate_bot(state.db(), debate_id.as_str(), &bot.id, &pseudonym).await?;
-        bot_tokens.insert(bot.id.clone(), String::new());
+
+        let token = match &bot.token_ciphertext {
+            Some(ct) => crate::api::bot_token_crypto::decrypt(state.bot_token_key(), ct)
+                .map_err(|_| AppError::Internal(anyhow::anyhow!(
+                    "failed to decrypt token for bot {}", bot.id
+                )))?,
+            None => {
+                return Err(AppError::BadRequest(format!(
+                    "bot {} has no encrypted token — please re-submit", bot.id
+                )));
+            }
+        };
+        bot_tokens.insert(bot.id.clone(), token);
     }
 
     // Persist role assignments

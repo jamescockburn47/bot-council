@@ -4,7 +4,7 @@ use reqwest_middleware::ClientWithMiddleware;
 use crate::bot_client::{self, DebateRoundRequest, RoundContext, DebateRoundResponse};
 use crate::db::models::BotRow;
 use crate::db::queries_phase1;
-use crate::orchestrator::prompts;
+use crate::orchestrator::{prompts, response_parser};
 use crate::types::Role;
 
 /// Dispatch Round 1 (anonymous distribution) to all bots with anonymised Round 0 context.
@@ -55,8 +55,13 @@ pub async fn run_round1(
         }
     }).collect();
 
-    let results = futures::future::join_all(futures).await;
+    let mut results = futures::future::join_all(futures).await;
 
+    for (_, resp_opt) in &mut results {
+        if let Some(r) = resp_opt {
+            response_parser::normalise_response(r);
+        }
+    }
     for (bot_id, resp_opt) in &results {
         let (response_text, confidence, abstained) = match resp_opt {
             Some(r) => (r.response.clone(), r.confidence, false),

@@ -4,7 +4,7 @@ use reqwest_middleware::ClientWithMiddleware;
 use crate::bot_client::{self, DebateRoundRequest, DebateRoundResponse};
 use crate::db::models::BotRow;
 use crate::db::queries_phase1;
-use crate::orchestrator::prompts;
+use crate::orchestrator::{prompts, response_parser};
 use crate::types::Role;
 
 /// Dispatch Round 0 (blind formation) to all bots concurrently.
@@ -55,7 +55,13 @@ pub async fn run_round0(
 
     let results = futures::future::join_all(futures).await;
 
-    // Store responses
+    // Normalise and store responses
+    let mut results: Vec<(String, Option<DebateRoundResponse>)> = results;
+    for (_, resp_opt) in &mut results {
+        if let Some(r) = resp_opt {
+            response_parser::normalise_response(r);
+        }
+    }
     for (bot_id, resp_opt) in &results {
         let (response_text, abstained) = match resp_opt {
             Some(r) => (r.response.clone(), false),

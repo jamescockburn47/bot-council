@@ -1,12 +1,22 @@
 # Deploy Runbook — Clerk Auth Rollout (Plan 1)
 
-This document walks through deploying commits `de61b3d..4e2b14c` to the EVO X2 and
-cutting over authentication from the dev-mode auto-admin fallback to Clerk + admin
-user allowlist. Follow the steps in order.
+This runbook covers cutting the EVO over from the pre-Clerk dev-mode
+auto-admin state to Clerk JWT + in-app admin registry + AES-encrypted bot
+tokens. Everything it depends on is already on `main` — the deploy has not
+yet been performed.
 
-**Branch:** `claude/reverent-goldwasser` (to be merged to `main` after verification)
-**Release build verified on EVO:** Finished `release` profile [optimized] target(s) in 8.31s
-**Test suite:** 21 tests pass (unit + integration + 6 config validation tests)
+**What's already merged to `main`:**
+
+| PR | Subject |
+|---|---|
+| [#20](https://github.com/jamescockburn47/bot-council/pull/20) | Plan 1: Clerk RS256 JWKS verification, RequireAuth/RequireAdmin, AES-256-GCM bot tokens, submission feedback, handler collapse |
+| [#21](https://github.com/jamescockburn47/bot-council/pull/21) | In-app admin registry — `admins` table + `/admins` page, runtime promote/demote, no preset user_ids |
+| [#22](https://github.com/jamescockburn47/bot-council/pull/22) | SSE `?token=` query-param auth fallback (EventSource cannot set headers) |
+| [#23](https://github.com/jamescockburn47/bot-council/pull/23) | CLAUDE.md ops details + `scripts/sync-evo.sh` |
+| [#24](https://github.com/jamescockburn47/bot-council/pull/24) | `BotTokenKey` newtype with `ZeroizeOnDrop` |
+| [#25](https://github.com/jamescockburn47/bot-council/pull/25) | Drop legacy `token_hash` + `active` columns |
+
+52 backend tests + frontend build green on `main`.
 
 ---
 
@@ -28,20 +38,21 @@ openssl rand -hex 32
 ```
 
 Save the output. This is `APP__AUTH__ADMIN_TOKEN`. It grants full admin access via
-`Authorization: Bearer <token>` — use for CLI ops and emergency access if Clerk is
-down.
+`Authorization: Bearer <token>` — used for CLI ops, emergency access if Clerk is
+down, and bootstrapping the first in-app admin via `POST /admins`.
 
 ### 3. Confirm existing bot state on EVO
 
 ```bash
 ssh -i C:/Users/James/.ssh/id_ed25519 james@100.90.66.54 \
-  "sqlite3 ~/bot-council/data/council.db 'SELECT id, name, status, submitted_by FROM bots;'"
+  "sqlite3 ~/bot-council/data/council.db 'SELECT id, name, status FROM bots;'"
 ```
 
-If any bots are currently `active` in the DB they will have `token_ciphertext IS NULL`
-and their smoke tests / debate calls will fail after this rollout. Every such bot
-must be re-submitted by its owner (or by you, using their bearer token). Most likely
-candidate: Clint (James's admin bot). Re-submission takes 30 seconds via `/bots/submit`.
+Any pre-rollout bots (most likely candidate: Clint, James's admin bot) have their
+bearer tokens stored as the old `token_hash` — migration `20260416000003` drops
+that column, so those bots will have no usable token after the restart and their
+smoke tests / debate calls will fail. Re-submit each one via `/bots/submit` (Step 9
+below). Takes ~30 seconds per bot.
 
 ---
 
@@ -49,23 +60,30 @@ candidate: Clint (James's admin bot). Re-submission takes 30 seconds via `/bots/
 
 ### Step 1 — Push the source to EVO
 
+From any up-to-date checkout of `main`:
+
 ```bash
-cd "C:/Users/James/Desktop/LQ projects/Bot council/.claude/worktrees/reverent-goldwasser"
-scp -i C:/Users/James/.ssh/id_ed25519 -r \
-  src tests config migrations Cargo.toml Cargo.lock \
-  james@100.90.66.54:~/bot-council/
+./scripts/sync-evo.sh check    # sanity — cargo check --tests on EVO
 ```
 
-(The subagent workflow did this after most tasks, so this step may be a no-op.)
+The script scp's `src tests config migrations Cargo.toml Cargo.lock` to
+`james@100.90.66.54:~/bot-council/` and runs the chosen cargo command there.
 
-### Step 2 — Apply the new migration
+### Step 2 — Apply the new migrations
 
-The migration runs automatically on next startup via `sqlx::migrate!`. No manual step
-needed, but you can pre-apply it with:
+Migrations run automatically on next startup via `sqlx::migrate!`. No manual step
+required. Three migrations will run on the existing prod DB:
+
+1. `20260416000001_bot_submission_cleanup.sql` — adds `token_ciphertext`, `rejection_reason`, `idx_bots_status_reviewable`.
+2. `20260416000002_admin_registry.sql` — adds the `admins` and `seen_users` tables.
+3. `20260416000003_drop_legacy_bot_columns.sql` — drops `token_hash`, `active`.
+
+If you want to pre-apply them (e.g. to inspect the schema before the restart):
 
 ```bash
 ssh -i C:/Users/James/.ssh/id_ed25519 james@100.90.66.54 \
-  "sqlite3 ~/bot-council/data/council.db <~/bot-council/migrations/20260416000001_bot_submission_cleanup.sql"
+  "cd ~/bot-council && for f in migrations/202604160000*.sql; do \
+     echo '---' \$f; sqlite3 data/council.db <\$f; done"
 ```
 
 ### Step 3 — Set environment variables on the EVO
@@ -78,18 +96,17 @@ APP__AUTH__CLERK_ISSUER=https://<your-clerk-instance>.clerk.accounts.dev
 APP__AUTH__BOT_TOKEN_KEY=<your-64-char-hex-key>
 ```
 
-No preset admin list needed. Admins are managed at runtime via the `admins` table
-and the `/admins` page (see Step 7).
+No preset admin list required. Admins are managed at runtime via the `admins`
+table and the `/admins` page (see Step 7).
 
 ### Step 4 — Build and restart
 
 ```bash
-ssh -i C:/Users/James/.ssh/id_ed25519 james@100.90.66.54 \
-  "source ~/.cargo/env && cd ~/bot-council && cargo build --release && sudo systemctl restart bot-council"
+./scripts/sync-evo.sh restart   # sync + cargo build --release + sudo systemctl restart bot-council
 ```
 
-If the config is malformed, the service will refuse to start and the error will be in
-`journalctl -u bot-council`. Fix the config and retry.
+If the config is malformed, the service will refuse to start and the error will be
+in `journalctl -u bot-council`. Fix the config and retry.
 
 ### Step 5 — Smoke-test the API
 
@@ -108,36 +125,31 @@ curl -sI -X POST https://lqcouncil.com/debates \
   -H "content-type: application/json" -d '{"topic":"x"}' | head -1
 ```
 
-### Step 6 — Deploy the frontend
+### Step 6 — Frontend deploy (Vercel)
 
-```bash
-cd "C:/Users/James/Desktop/LQ projects/Bot council/.claude/worktrees/reverent-goldwasser/frontend"
+Vercel auto-deploys `main` on every push, so the frontend for this release is
+already built and hosted. You only need to intervene if the Clerk publishable key
+hasn't been set on the Vercel project:
 
-# Add the real Clerk publishable key to the frontend's .env.production (or
-# whatever Vercel uses)
-cat > .env.production <<EOF
-PUBLIC_API_URL=https://lqcouncil.com
-PUBLIC_CLERK_PUBLISHABLE_KEY=pk_live_<your-real-key>
-EOF
-
-npm run build
-# Deploy the build/ directory however you currently deploy the frontend
-# (Vercel, Cloudflare Pages, etc.)
-```
+1. Vercel dashboard → bot-council → Settings → Environment Variables.
+2. Ensure `PUBLIC_CLERK_PUBLISHABLE_KEY=pk_live_<real-key>` is set on **Production**
+   (and Preview, if you want preview deploys to work too).
+3. Ensure `PUBLIC_API_URL=https://lqcouncil.com`.
+4. If any were changed, trigger a redeploy from the Vercel dashboard.
 
 ### Step 7 — Bootstrap the first admin
 
-No admins exist yet in the DB. The bootstrap flow uses the static admin bearer token.
+No admins exist in the DB yet. The bootstrap flow uses the static admin bearer
+token to promote the first Clerk user into the `admins` table.
 
 1. Open https://lqcouncil.com in a browser → redirected to `/sign-in`.
-2. Sign up / sign in with your (James's) Clerk account.
-3. You'll land on `/` as a **member** — this is expected, no admin rows exist.
-4. Hit `/me` in your browser devtools or:
+2. Sign in with James's Clerk account.
+3. You'll land on `/` as a **member** — expected; `admins` is still empty.
+4. Retrieve your Clerk `user_id` (format `user_2…`). Either from `/me`:
    ```bash
    curl -s -H "Authorization: Bearer $CLERK_SESSION_JWT" https://lqcouncil.com/me
    ```
-   Record your Clerk user_id from the response (format `user_2abc...`). You can also
-   read it from the Clerk dashboard.
+   or from the Clerk dashboard.
 5. Promote yourself using the admin bearer token (one time only):
    ```bash
    curl -X POST https://lqcouncil.com/admins \
@@ -145,31 +157,32 @@ No admins exist yet in the DB. The bootstrap flow uses the static admin bearer t
      -H "content-type: application/json" \
      -d '{"user_id":"user_2YOUR_ID_HERE"}'
    ```
-6. Refresh the browser. You should now see the admin UI (New Debate button, Admins
-   nav entry, etc.).
+6. Refresh the browser. You should now see the admin UI (New Debate button,
+   Admins nav entry, etc.).
 7. Navigate to `/admins`. Promote the other 4 admins (Jamie, Artur, Ray, YC) by
-   clicking "Promote" next to each name. They must have signed in at least once to
-   appear in the Signed-in users table — ping them to sign in first if they haven't.
+   clicking "Promote" next to each name. They must have signed in at least once
+   to appear in the Signed-in users table — ping them to sign in first if they
+   haven't.
 
 ### Step 8 — Sign-in smoke test (browser)
 
 With yourself as admin:
 
 1. Submit a dummy bot via `/bots/submit` — as admin, it lands in `status=active`.
-2. Verify in `/bots` Active tab.
+2. Verify it appears in `/bots` under Active.
 
 Sign out, sign in as a non-admin test Clerk user:
 
-1. **Sidebar shows "Signed in as member"**.
-2. **No Admins nav entry**, **no New Debate button** on `/debates`.
+1. Sidebar shows "Signed in as member".
+2. No Admins nav entry; no New Debate button on `/debates`.
 3. Navigating directly to `/debates/new` or `/admins` redirects away.
 4. Submitting a bot via `/bots/submit` creates it with `status=pending`.
 5. `/bots/my-submissions` shows the pending bot.
 
 ### Step 9 — Resubmit existing bots
 
-If the pre-flight DB check found any `active` bots with null `token_ciphertext`,
-resubmit them now through `/bots/submit`. For Clint:
+If the Step 3 DB check found any pre-rollout bots, resubmit them now through
+`/bots/submit`. For Clint:
 
 ```
 Name:          Clint
@@ -179,74 +192,44 @@ Model family:  minimax
 Description:   LQ Council's own EVO-hosted bot.
 ```
 
-Task 10 / Plan 2 will enforce the MiniMax participant constraint — for now, model
-family is informational.
-
-### Step 10 — Tag and merge
-
-Once sign-in + submit + approve flow works end-to-end:
-
-```bash
-cd "C:/Users/James/Desktop/LQ projects/Bot council/.claude/worktrees/reverent-goldwasser"
-git tag plan1-clerk-rollout
-git push origin claude/reverent-goldwasser --tags
-gh pr create --base main --head claude/reverent-goldwasser \
-  --title "Plan 1: Clerk auth, RBAC, encrypted tokens, submission feedback" \
-  --body-file docs/deploy-clerk-auth-rollout.md
-```
+Plan 2 (spec §§18–19) will enforce the MiniMax participant constraint; until
+then, `model_family` is informational.
 
 ---
 
 ## Rollback
 
-Each of the 13 implementation commits is independently revertible. If a bug surfaces
-after step 4 (backend restart) but before step 6 (frontend deploy), the backend alone
-can be reverted with:
+This rollout is three PRs' worth of commits on `main` — rollback is squash-commit
+granularity, not per-file. Safe rollback order:
 
 ```bash
+# Revert the smallest / last-landed things first if the issue is narrow.
+# Full rollback of the auth/RBAC surface reverts #20 — do this last.
 ssh -i C:/Users/James/.ssh/id_ed25519 james@100.90.66.54 \
-  "cd ~/bot-council && git revert bb95481..4e2b14c && cargo build --release && sudo systemctl restart bot-council"
+  "cd ~/bot-council && git fetch && \
+   git revert --no-edit <merge-sha> && \
+   cargo build --release && sudo systemctl restart bot-council"
 ```
 
-The migration is additive (new columns only; legacy `token_hash` retained) so DB
-state survives a rollback without data loss.
+Merge SHAs (latest first): `fab2430` (#25), `a826fbe` (#24), `6183fa6` (#22),
+`b126770` (#21), `b471aa1` (#20).
 
----
-
-## What's in this rollout
-
-Summary of the 13 commits landed on `claude/reverent-goldwasser`:
-
-| Commit | Subject |
-|---|---|
-| `de61b3d` | AES-256-GCM crypto module |
-| `84251dd` | DB migration: token_ciphertext + rejection_reason |
-| `de8bce0` | AuthConfig: admin_user_ids + bot_token_key |
-| `6c74036` | JWKS cache with hot-swap + background refresh |
-| `3028e0c` | RS256 JWT verification + RequireAuth/RequireAdmin |
-| `ca5b27f` | Route wiring + POST /debates admin-only |
-| `17aaf02` | transition_bot_status + reject reason + smoke_test_failed |
-| `f480acb` | Smoke-test error classifier |
-| `bb95481` | Encrypt tokens on submit, decrypt on outbound |
-| `6464c7f` | Frontend Clerk integration |
-| `1c2d184` | Submission feedback banners + reject modal |
-| `c1d309e` | Hide new-debate controls from participants |
-| `4e2b14c` | Boot-time config validation + remove deprecated aliases |
+Migrations are additive (new columns, new tables). #25 is the only destructive
+one — it drops `token_hash` and `active`. A rollback past #25 would need to
+re-add those columns manually if the restored code still reads them. The live
+code on `main` after this rollout does not, so a revert of #25 alone has no
+effect on the runtime path.
 
 ---
 
 ## Known deferrals
 
-- **`token_hash` column** still exists on `bots` with an empty-string placeholder for
-  new rows. Dropped in a follow-up migration after one release.
-- **`active` column** still exists in the DB; the API no longer exposes it. Dropped
-  in the same follow-up migration.
-- **`BotTokenKey` zeroisation.** Raw `[u8; 32]` key lives in process memory without
-  `zeroize::Zeroizing`. Consider adding if the deployment threat model shifts (e.g.
-  multi-tenant, untrusted sidecar processes).
-- **`#[cfg(test)]` participant impersonation hook.** Not implemented; participant
-  path is verified manually in Step 7. Add if automated participant tests become
-  necessary.
-- **Plan 2** — bot author UX: response normaliser consolidation, `/bots/schema`
-  validator endpoint, MiniMax participant constraint, guide rewrites. Separate spec
-  section §§18–19. Not started yet.
+- `/bots/schema` validator endpoint and Plan 2 response-normaliser
+  consolidation — see spec §§18–19 in
+  `docs/superpowers/specs/2026-04-16-clerk-auth-and-bot-submission-cleanup-design.md`.
+- MiniMax participant-model constraint — spec §19.
+- Per-vendor JSON-mode guidance rewrite in `/bots/guide` — spec §18.2.
+- Admin UI "repair-rate" column for bot quality monitoring — spec §18.3.
+
+`BotTokenKey` zeroisation (#24) and the `token_hash` / `active` column drops
+(#25) landed before this deploy; they are not outstanding.

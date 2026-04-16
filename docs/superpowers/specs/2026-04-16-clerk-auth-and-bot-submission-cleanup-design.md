@@ -825,11 +825,13 @@ missing 'model_used' field (declared model_family=minimax)"`.
 
 ### 19.6 Clint and other admin bots
 
-Clint declares `model_family = "claude-sonnet"` (or whatever its debate-path
-model is — James to confirm during registration). As an admin bot it's exempt
-from the constraint. The transcript and bot list both surface the declared
-model so participants can see that Clint is playing on a different tier — the
-asymmetry is visible, not hidden.
+Clint declares `model_family = "minimax"` — its debate path is wired to
+MiniMax M2.7, matching the participant constraint by choice, not by force.
+The admin exemption is preserved for other potential admin bots that may
+use different models (e.g. a future showcase bot running Claude Opus for
+contrast). When any admin bot declares a non-default model, the transcript
+and bot list surface the declared model so the asymmetry is visible to all
+viewers — never hidden.
 
 ### 19.7 Grandfathering
 

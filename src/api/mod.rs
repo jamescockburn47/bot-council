@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod bot_token_crypto;
 pub mod bots;
 pub mod debates;
 pub mod dto;

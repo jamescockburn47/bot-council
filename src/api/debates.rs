@@ -62,6 +62,7 @@ pub async fn create_debate(
         .map_err(|e| AppError::Internal(anyhow::anyhow!(e)))?;
 
     // Spawn multi-round debate as background task
+    let event_tx = state.create_debate_stream(debate_id.as_str());
     let pool = state.db().clone();
     let client = state.http_client().clone();
     let topic = req.topic.clone();
@@ -69,14 +70,21 @@ pub async fn create_debate(
     let bots_clone = bots.clone();
     let models_config = state.settings().models.clone();
     let debate_config = state.settings().debate.clone();
+    let state_for_cleanup = state.clone();
+    let cleanup_id = debate_id.as_str().to_string();
     tokio::spawn(async move {
         if let Err(e) = orchestrator::multi_round::run_multi_round_debate(
             &pool, &client, &debate_id_clone, &topic, &bots_clone, &bot_tokens,
-            &models_config, &debate_config,
+            &models_config, &debate_config, Some(event_tx),
         ).await {
             tracing::error!(debate_id = %debate_id_clone, error = %e, "multi-round debate failed");
             let _ = queries::update_debate_status(&pool, debate_id_clone.as_str(), "failed").await;
         }
+        // Clean up the event stream after a grace period
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+            state_for_cleanup.remove_debate_stream(&cleanup_id);
+        });
     });
 
     // Build response with role info

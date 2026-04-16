@@ -2,6 +2,7 @@
   import { api } from '$lib/api/client';
   import StatusBadge from '$lib/components/StatusBadge.svelte';
   import type { DebateResponse } from '$lib/types';
+  import { me } from '$lib/stores/me';
 
   let debates = $state<DebateResponse[]>([]);
   let loading = $state(true);
@@ -35,12 +36,14 @@
 <div class="max-w-5xl">
   <div class="flex items-center justify-between mb-8">
     <h1 class="mono text-2xl font-bold">Debates</h1>
-    <a
-      href="/debates/new"
-      class="px-4 py-2 bg-[#8b5cf6] text-white rounded-lg text-sm font-medium hover:bg-[#7c3aed] transition-colors no-underline"
-    >
-      New Debate
-    </a>
+    {#if $me?.role === 'admin'}
+      <a
+        href="/debates/new"
+        class="px-4 py-2 bg-[#8b5cf6] text-white rounded-lg text-sm font-medium hover:bg-[#7c3aed] transition-colors no-underline"
+      >
+        New Debate
+      </a>
+    {/if}
   </div>
 
   <!-- Status filters -->
@@ -88,13 +91,17 @@
         <p class="text-[var(--text-muted)] mono text-sm">No {filter} debates found.</p>
       {:else}
         <p class="text-[var(--text-secondary)] mb-2">No debates yet.</p>
-        <p class="text-[var(--text-muted)] text-sm mb-4">Create your first debate to get started.</p>
-        <a
-          href="/debates/new"
-          class="inline-block px-4 py-2 bg-[#8b5cf6] text-white rounded-lg text-sm font-medium hover:bg-[#7c3aed] transition-colors no-underline"
-        >
-          New Debate
-        </a>
+        {#if $me?.role === 'admin'}
+          <p class="text-[var(--text-muted)] text-sm mb-4">Create your first debate to get started.</p>
+          <a
+            href="/debates/new"
+            class="inline-block px-4 py-2 bg-[#8b5cf6] text-white rounded-lg text-sm font-medium hover:bg-[#7c3aed] transition-colors no-underline"
+          >
+            New Debate
+          </a>
+        {:else}
+          <p class="text-[var(--text-muted)] text-sm">Only admins can create debates.</p>
+        {/if}
       {/if}
     </div>
 

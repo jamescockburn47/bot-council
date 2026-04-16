@@ -9,8 +9,8 @@
     try {
       const clerk = await getClerk();
       clerk.mountSignIn(container, {
-        afterSignInUrl: '/',
-        afterSignUpUrl: '/',
+        fallbackRedirectUrl: '/',
+        signUpFallbackRedirectUrl: '/',
       });
     } catch (e) {
       error = e instanceof Error ? e.message : 'Failed to load Clerk';

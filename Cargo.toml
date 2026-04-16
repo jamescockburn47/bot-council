@@ -28,6 +28,8 @@ futures = "0.3"
 rand = "0.9"
 jsonwebtoken = "9"
 regex = "1"
+dashmap = "6"
+tokio-stream = "0.1"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full", "test-util"] }

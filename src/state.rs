@@ -16,6 +16,8 @@ struct AppStateInner {
     http_client: reqwest_middleware::ClientWithMiddleware,
     settings: Settings,
     debate_streams: DashMap<String, broadcast::Sender<DebateEvent>>,
+    jwks: crate::api::jwks_cache::JwksCache,
+    bot_token_key: crate::api::bot_token_crypto::BotTokenKey,
 }
 
 impl AppState {
@@ -24,6 +26,8 @@ impl AppState {
         db: SqlitePool,
         http_client: reqwest_middleware::ClientWithMiddleware,
         settings: Settings,
+        jwks: crate::api::jwks_cache::JwksCache,
+        bot_token_key: crate::api::bot_token_crypto::BotTokenKey,
     ) -> Self {
         Self {
             inner: Arc::new(AppStateInner {
@@ -31,6 +35,8 @@ impl AppState {
                 http_client,
                 settings,
                 debate_streams: DashMap::new(),
+                jwks,
+                bot_token_key,
             }),
         }
     }
@@ -48,6 +54,16 @@ impl AppState {
     /// Return a reference to the loaded settings.
     pub fn settings(&self) -> &Settings {
         &self.inner.settings
+    }
+
+    /// Return a reference to the Clerk JWKS cache.
+    pub fn jwks(&self) -> &crate::api::jwks_cache::JwksCache {
+        &self.inner.jwks
+    }
+
+    /// Return a reference to the bot token encryption key.
+    pub fn bot_token_key(&self) -> &crate::api::bot_token_crypto::BotTokenKey {
+        &self.inner.bot_token_key
     }
 
     /// Create a broadcast channel for a debate and return the Sender.

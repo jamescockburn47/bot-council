@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use crate::analyser::call_minimax;
 use crate::config::ModelsConfig;
+use crate::sanitise::{frame_response, ANTI_INJECTION_PREAMBLE};
 
 /// MiniMax pairing result — which bots to pair for cross-examination.
 #[derive(Debug, Serialize, Deserialize)]
@@ -25,12 +26,13 @@ pub async fn compute_pairings(
     positions: &[(String, String)], // (pseudonym, round2_response)
 ) -> Result<PairingResult, String> {
     let positions_text: String = positions.iter()
-        .map(|(pseudo, resp)| format!("{pseudo}: {resp}"))
+        .map(|(pseudo, resp)| frame_response(pseudo, resp))
         .collect::<Vec<_>>()
         .join("\n\n");
 
     let prompt = format!(
-        "Given these {} debate positions, identify the two pairs of participants whose positions \
+        "{ANTI_INJECTION_PREAMBLE}\n\n\
+         Given these {} debate positions, identify the two pairs of participants whose positions \
          are most divergent. The remaining participant joins whichever pair has the most similar \
          positions (creating a 3-way). Return JSON: \
          {{ \"pair_1\": [\"Agent X\", \"Agent Y\"], \"pair_2\": [\"Agent W\", \"Agent Z\"], \

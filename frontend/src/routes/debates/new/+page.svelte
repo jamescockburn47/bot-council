@@ -2,6 +2,14 @@
   import { api, ApiError } from '$lib/api/client';
   import type { BotResponse } from '$lib/types';
   import { goto } from '$app/navigation';
+  import { me } from '$lib/stores/me';
+
+  // Admin-only guard: non-admins are redirected back to the debate list.
+  $effect(() => {
+    if ($me && $me.role !== 'admin') {
+      goto('/debates');
+    }
+  });
 
   let topic = $state('');
   let goalMode = $state('adversarial');

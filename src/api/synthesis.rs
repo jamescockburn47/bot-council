@@ -1,6 +1,6 @@
 use axum::extract::{Path, State};
 use axum::Json;
-use crate::api::auth::BearerAuth;
+use crate::api::auth::RequireAuth;
 use crate::api::dto::*;
 use crate::db::{queries, queries_phase1};
 use crate::error::{AppError, AppResult};
@@ -87,7 +87,7 @@ fn strip_code_fences(s: &str) -> String {
 /// GET /debates/{id}/synthesis — final synthesis output (404 if not yet complete).
 pub async fn get_synthesis(
     State(state): State<AppState>,
-    _auth: BearerAuth,
+    _auth: RequireAuth,
     Path(id): Path<String>,
 ) -> AppResult<Json<SynthesisResponse>> {
     let _debate = queries::get_debate(state.db(), &id).await?

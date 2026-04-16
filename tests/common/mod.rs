@@ -10,7 +10,14 @@ pub async fn test_app() -> (Router, SqlitePool) {
     let settings = Settings {
         server: ServerConfig { host: "127.0.0.1".into(), port: 0, cors_origins: vec![] },
         database: DatabaseConfig { url: "sqlite::memory:".into() },
-        auth: AuthConfig { admin_token: "".into(), clerk_jwks_url: "".into(), clerk_issuer: "".into() },
+        auth: AuthConfig {
+            admin_token: "test-admin-token".into(),
+            clerk_issuer: "".into(),
+            clerk_jwks_url: "".into(),
+            admin_user_ids: vec![],
+            // 32 bytes = 64 hex chars; deterministic for reproducible tests.
+            bot_token_key: "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff".into(),
+        },
         http_client: HttpClientConfig {
             connect_timeout_secs: 5,
             request_timeout_secs: 30,
@@ -32,7 +39,17 @@ pub async fn test_app() -> (Router, SqlitePool) {
         },
     };
     let http_client = bot_council::bot_client::build_http_client(&settings.http_client);
-    let state = AppState::new(pool.clone(), http_client, settings);
+    let jwks = bot_council::api::jwks_cache::JwksCache::new("http://localhost/unused");
+    let bot_token_key = [0u8; 32];
+    let state = AppState::new(pool.clone(), http_client, settings, jwks, bot_token_key);
     let app = bot_council::api::router(state);
     (app, pool)
+}
+
+use axum::http::HeaderValue;
+
+/// Helper: attach the test admin bearer token to a request builder.
+#[allow(dead_code)]
+pub fn admin_auth(req: axum::http::request::Builder) -> axum::http::request::Builder {
+    req.header("authorization", HeaderValue::from_static("Bearer test-admin-token"))
 }

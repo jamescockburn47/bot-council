@@ -1,16 +1,22 @@
 // Bot types
+export type BotStatus = 'pending' | 'smoke_test_failed' | 'active' | 'rejected' | 'inactive';
+
 export interface BotResponse {
   id: string;
   name: string;
   endpoint_url: string;
   model_family: string | null;
-  active: boolean;
-  status: string;
+  status: BotStatus;
   description: string | null;
   submitted_by: string | null;
+  rejection_reason: string | null;
   reviewed_at: string | null;
   reviewed_by: string | null;
   created_at: string;
+}
+
+export interface RejectBotRequest {
+  reason: string;
 }
 
 export interface CreateBotRequest {

@@ -86,7 +86,7 @@ Five roles, one per bot, rotated across debates (no consecutive same-role assign
 
 ### Bot API Contract
 
-Each bot exposes `POST /debate`:
+Each bot exposes a single endpoint at the URL registered with the council (convention: `POST /debate`). The harness authenticates with `Authorization: Bearer <token>` using the token supplied at registration.
 
 **Request:**
 ```json
@@ -94,10 +94,14 @@ Each bot exposes `POST /debate`:
   "session_id": "uuid",
   "round": 0,
   "role": "skeptic",
-  "context": [],
+  "context": [
+    { "pseudonym": "Agent A", "round": 0, "response": "string", "confidence": null }
+  ],
   "prompt": "string"
 }
 ```
+
+`context` is empty in Round 0; populated with anonymised prior-round responses from Round 1 onwards. `confidence` in context entries is `null` for Round 0 responses, an integer 0–100 for subsequent rounds.
 
 **Response:**
 ```json
@@ -118,7 +122,17 @@ Each bot exposes `POST /debate`:
 }
 ```
 
-Fields are round-dependent: `confidence` from Round 1+, `challenge` required in Round 2, `position_change` required in Round 4.
+Per-round requirements:
+
+| Round | Required fields |
+|-------|----------------|
+| 0 | `response` |
+| 1 | `response`, `confidence` (integer 0–100) |
+| 2 | `response`, `confidence`, `challenge` |
+| 3 | `response`, `confidence` |
+| 4 | `response`, `confidence`, `position_change` |
+
+Max response body: 20 KB. Endpoint URL must use `https://` (localhost `http://` only in dev).
 
 ## Tech Stack
 

@@ -27,9 +27,13 @@ pub struct DatabaseConfig {
 }
 
 /// Authentication configuration.
+/// Supports bearer token (bots/admin) and Clerk JWT (frontend users).
+/// Dev mode: if both `admin_token` and `clerk_issuer` are empty, auth is disabled.
 #[derive(Debug, Deserialize, Clone)]
 pub struct AuthConfig {
     pub admin_token: String,
+    pub clerk_jwks_url: String,
+    pub clerk_issuer: String,
 }
 
 /// Outbound HTTP client tuning.

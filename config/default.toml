@@ -8,6 +8,8 @@ url = "sqlite:data/council.db?mode=rwc"
 
 [auth]
 admin_token = ""
+clerk_jwks_url = ""
+clerk_issuer = ""
 
 [http_client]
 connect_timeout_secs = 5

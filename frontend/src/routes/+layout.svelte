@@ -4,31 +4,83 @@
   import { page } from '$app/stores';
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
+  import { env } from '$env/dynamic/public';
   import { getClerk, isSignedIn } from '$lib/auth/clerk';
   import { me, refreshMe } from '$lib/stores/me';
 
   let { children } = $props();
 
+  type Stage =
+    | 'init'
+    | 'loading-clerk'
+    | 'checking-session'
+    | 'redirecting-sign-in'
+    | 'fetching-me'
+    | 'ready';
+  let stage = $state<Stage>('init');
+  let fatalError = $state<string | null>(null);
+
+  const stageLabel: Record<Stage, string> = {
+    init: 'Starting…',
+    'loading-clerk': 'Loading Clerk…',
+    'checking-session': 'Checking session…',
+    'redirecting-sign-in': 'Redirecting to sign-in…',
+    'fetching-me': 'Fetching profile…',
+    ready: 'Ready',
+  };
+
   onMount(async () => {
     const path = $page.url.pathname;
-    if (path === '/sign-in') return;
+    if (path === '/sign-in') {
+      stage = 'ready';
+      return;
+    }
+
+    if (!env.PUBLIC_CLERK_PUBLISHABLE_KEY) {
+      fatalError = 'PUBLIC_CLERK_PUBLISHABLE_KEY is not set in the deployed bundle.';
+      return;
+    }
+    if (!env.PUBLIC_API_URL) {
+      fatalError = 'PUBLIC_API_URL is not set in the deployed bundle.';
+      return;
+    }
+
     try {
+      stage = 'loading-clerk';
       await getClerk();
-      if (!(await isSignedIn())) {
+
+      stage = 'checking-session';
+      const signedIn = await isSignedIn();
+      if (!signedIn) {
+        stage = 'redirecting-sign-in';
         await goto('/sign-in');
         return;
       }
+
+      stage = 'fetching-me';
       await refreshMe();
+      stage = 'ready';
     } catch (e) {
-      console.error('Auth failed', e);
-      await goto('/sign-in');
+      console.error('[layout] auth init failed at stage', stage, e);
+      fatalError = `Failed at stage "${stageLabel[stage]}": ${
+        e instanceof Error ? e.message : String(e)
+      }`;
     }
   });
 </script>
 
 {#if $page.url.pathname === '/sign-in'}
   {@render children()}
-{:else if $me}
+{:else if fatalError}
+  <div class="flex items-center justify-center min-h-screen flex-col gap-3 p-8">
+    <p class="mono text-sm text-red-400">Auth initialisation failed</p>
+    <p class="mono text-xs text-[var(--text-muted)] max-w-lg text-center whitespace-pre-wrap">{fatalError}</p>
+    <div class="flex gap-3 mt-2">
+      <a href="/sign-in" class="mono text-xs text-[#8b5cf6] hover:underline">Go to sign-in</a>
+      <button onclick={() => location.reload()} class="mono text-xs text-[#8b5cf6] hover:underline">Reload</button>
+    </div>
+  </div>
+{:else if stage === 'ready' && $me}
   <div class="flex min-h-screen">
     <Sidebar currentPath={$page.url.pathname} role={$me.role} />
     <main class="ml-56 flex-1 p-8">
@@ -36,7 +88,8 @@
     </main>
   </div>
 {:else}
-  <div class="flex items-center justify-center min-h-screen">
-    <p class="mono text-xs text-[var(--text-muted)]">Loading...</p>
+  <div class="flex items-center justify-center min-h-screen flex-col gap-2">
+    <p class="mono text-xs text-[var(--text-muted)]">{stageLabel[stage]}</p>
+    <p class="mono text-[10px] text-[var(--text-muted)]/60">stage: {stage}</p>
   </div>
 {/if}

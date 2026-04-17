@@ -1,5 +1,5 @@
 <script lang="ts">
-  let { currentPath = '/', role = 'member' }: { currentPath: string; role: string } = $props();
+  let { currentPath, role }: { currentPath: string; role: string } = $props();
 
   const navItems = [
     { href: '/debates', label: 'Debates', icon: '\u2694', minRole: 'member' },

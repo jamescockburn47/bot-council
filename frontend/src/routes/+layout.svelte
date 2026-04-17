@@ -20,7 +20,7 @@
       }
       await refreshMe();
     } catch (e) {
-      console.error('Clerk load failed', e);
+      console.error('Auth failed', e);
       await goto('/sign-in');
     }
   });
@@ -28,11 +28,15 @@
 
 {#if $page.url.pathname === '/sign-in'}
   {@render children()}
-{:else}
+{:else if $me}
   <div class="flex min-h-screen">
-    <Sidebar currentPath={$page.url.pathname} role={$me?.role ?? 'member'} />
+    <Sidebar currentPath={$page.url.pathname} role={$me.role} />
     <main class="ml-56 flex-1 p-8">
       {@render children()}
     </main>
+  </div>
+{:else}
+  <div class="flex items-center justify-center min-h-screen">
+    <p class="mono text-xs text-[var(--text-muted)]">Loading...</p>
   </div>
 {/if}

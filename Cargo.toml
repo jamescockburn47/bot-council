@@ -36,6 +36,7 @@ arc-swap = "1"
 zeroize = { version = "1", features = ["derive"] }
 sentry = { version = "0.47", features = ["tower-axum-matched-path"] }
 sentry-tracing = "0.47"
+schemars = { version = "0.8", features = ["preserve_order"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full", "test-util"] }

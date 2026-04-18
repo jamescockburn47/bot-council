@@ -180,29 +180,49 @@ Plan 1 (Clerk auth + RBAC + encrypted bot tokens) **live on EVO + Vercel**:
 - #20: RS256 JWKS verification, RequireAuth/RequireAdmin, encrypted tokens, submission feedback
 - #21: In-app admin registry — no preset user_ids, runtime promote/demote via `/admins`
 - #22: SSE `?token=` query-param fallback (EventSource can't set headers)
-- #27: Wire frontend to public API URL (council.sovren.xyz), fix Clerk v6 redirect
-  options, add 10s fetch timeout
+- #27: Wire frontend to public API URL, fix Clerk v6 redirect options, add 10s fetch timeout
+- #30: Repoint frontend to `api.lqcouncil.com` (the earlier `council.sovren.xyz`
+  wiring was wrong). Add Clerk load timeout, fix deprecated mount options.
+- #31–#34: Loading-state + auth-stage diagnostics, stop faking signed-in-as-member
+  when auth fails, surface env-var errors, correct bot-author instructions.
 
-**Backend**: running on EVO, accessible publicly via Cloudflare Tunnel at
-`https://council.sovren.xyz`. Env vars set in `/etc/bot-council.env`.
+**Backend**: running on EVO on :3100 under systemd unit `bot-council.service`
+(`active + enabled`), fronted publicly at **`https://api.lqcouncil.com`** by
+the Vercel proxy project **`lqcouncil-api-proxy`**, which rewrites onto the
+Tailscale Funnel URL `https://james-nucbox-evo-x2.taila41c86.ts.net` →
+`127.0.0.1:3100` on EVO. Env vars in `/etc/bot-council.env`. Full topology
+in [ARCHITECTURE.md](ARCHITECTURE.md).
 
-**Frontend**: Vercel production at `https://lqcouncil.com`, `PUBLIC_API_URL=https://council.sovren.xyz`.
+Historical note: before 2026-04-18 the Vercel proxy rewrote to
+`council.sovren.xyz`, served by a `cloudflared` tunnel (`sovren-evo`)
+whose :3100 ingress LQ Council's production accidentally depended on.
+That tunnel has been disabled and the route decommissioned.
+
+**Frontend**: Vercel production at `https://lqcouncil.com`, `PUBLIC_API_URL=https://api.lqcouncil.com`.
 
 **⚠ Admin bootstrap still needed.** No admins in DB yet. First session:
 1. Go to lqcouncil.com → sign in as James.
 2. Get your Clerk user_id from `/me` (or Clerk dashboard).
 3. Promote yourself:
    ```bash
-   curl -X POST https://council.sovren.xyz/admins \
+   curl -X POST https://api.lqcouncil.com/admins \
      -H "Authorization: Bearer af78eb543e9fa563096c2a004c37c53deae1bb1899a493e1a5d9d707716ec0a6" \
      -H "content-type: application/json" \
      -d '{"user_id":"user_2YOUR_ID"}'
    ```
 4. Refresh → admin UI visible. Then promote colleagues from `/admins` page.
 
-**Plan 2 pending**: bot author UX (response normaliser consolidation, `/bots/schema`
-validator endpoint, MiniMax participant model constraint, guide rewrites). Spec
-§§18–19 in `docs/superpowers/specs/2026-04-16-clerk-auth-and-bot-submission-cleanup-design.md`.
+**Plan 2 partially shipped**: PR #32 corrected the bot author instructions
+(confidence range `0-100`, HTTPS endpoints). Still pending: response normaliser
+consolidation, `/bots/schema` validator endpoint, MiniMax participant model
+constraint. Spec §§18–19 in
+`docs/superpowers/specs/2026-04-16-clerk-auth-and-bot-submission-cleanup-design.md`.
+
+## Architecture
+
+See [`ARCHITECTURE.md`](ARCHITECTURE.md) for a forensic, code-verified description
+of how the backend and frontend are built, served, and interact (process model,
+auth pipeline, SSE, bot token encryption, Vercel/Cloudflare topology, CORS).
 
 ## Specs + plans
 
@@ -230,9 +250,10 @@ Things learned the hard way in prior sessions. Do not rediscover them.
    let req = common::admin_auth(Request::builder().method("POST").uri("..."))
        .body(Body::from(...)).unwrap();
    ```
-4. **Empty `token_hash` placeholder.** Rows must write `token_hash = ''` alongside
-   `token_ciphertext` — the legacy column is `NOT NULL`. Drops in a later
-   migration.
+4. **Bot token storage is AES-256-GCM ciphertext only.** Stored in
+   `bots.token_ciphertext BLOB`. The legacy `token_hash` (and `active`) columns
+   were dropped in migration `20260416000003_drop_legacy_bot_columns.sql`
+   (PR #25). Do NOT re-introduce them or write placeholder values for them.
 5. **EventSource + auth.** `/debates/{id}/stream` cannot use the Authorization
    header from the browser. Always use `debateStreamUrl(id, token)` from the
    frontend; backend accepts `?token=` alongside the header.

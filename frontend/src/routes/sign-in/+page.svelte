@@ -1,23 +1,22 @@
 <script lang="ts">
   import { getClerk } from '$lib/auth/clerk';
 
-  let container = $state<HTMLDivElement | null>(null);
   let error = $state<string | null>(null);
-  let mounted = $state(false);
-  let didMountSignIn = false;
+  let didStartRedirect = false;
 
   $effect(() => {
-    if (didMountSignIn || !container) return;
-    didMountSignIn = true;
+    if (didStartRedirect) return;
+    didStartRedirect = true;
 
     void (async () => {
       try {
         const clerk = await getClerk();
-        clerk.mountSignIn(container, {
+        await clerk.redirectToSignIn({
+          redirectUrl: '/sign-in',
           fallbackRedirectUrl: '/',
-          signUpFallbackRedirectUrl: '/',
+          signInFallbackRedirectUrl: '/',
+          signUpFallbackRedirectUrl: '/'
         });
-        mounted = true;
       } catch (e) {
         error = e instanceof Error ? e.message : 'Failed to load Clerk';
       }
@@ -38,9 +37,6 @@
       </button>
     </div>
   {:else}
-    <div bind:this={container}></div>
-    {#if !mounted}
-      <p class="mono text-xs text-[var(--text-muted)] mt-4">Loading sign-in…</p>
-    {/if}
+    <p class="mono text-xs text-[var(--text-muted)] mt-4">Redirecting to sign-in…</p>
   {/if}
 </div>

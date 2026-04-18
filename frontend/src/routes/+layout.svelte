@@ -31,7 +31,9 @@
 
   onMount(async () => {
     const path = $page.url.pathname;
+    console.info('[layout] onMount start, path=', path);
     if (path === '/sign-in') {
+      console.info('[layout] stage=ready');
       stage = 'ready';
       return;
     }
@@ -46,19 +48,24 @@
     }
 
     try {
+      console.info('[layout] stage=loading-clerk');
       stage = 'loading-clerk';
       await getClerk();
 
+      console.info('[layout] stage=checking-session');
       stage = 'checking-session';
       const signedIn = await isSignedIn();
       if (!signedIn) {
+        console.info('[layout] stage=redirecting-sign-in');
         stage = 'redirecting-sign-in';
         await goto('/sign-in');
         return;
       }
 
+      console.info('[layout] stage=fetching-me');
       stage = 'fetching-me';
       await refreshMe();
+      console.info('[layout] stage=ready');
       stage = 'ready';
     } catch (e) {
       console.error('[layout] auth init failed at stage', stage, e);

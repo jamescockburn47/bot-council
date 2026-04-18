@@ -1,11 +1,24 @@
 # ARCHITECTURE.md — LQ Bot Council
 
 Forensic description of how LQ Council is built, served, and interacts
-end-to-end. Every claim here was verified against the code at commit
-`deaf2f1` (PR #34, 2026-04-17) and against live probes of the production
-hosts on 2026-04-18. Treat this file — not stale parts of `CLAUDE.md` — as the
-canonical architecture reference. When this file drifts, update it with the
-change; do not let new docs go out of sync.
+end-to-end. Keep this file and `CLAUDE.md` in lockstep: when one changes,
+update the other in the same branch.
+
+## 0. Regression prevention contract
+
+Primary regression cause: frontend and backend validated/deployed from different
+branches/worktrees.
+
+Required release contract:
+
+1. Test backend on EVO with the exact branch contents.
+2. Build frontend from that same commit.
+3. Run `scripts/check-auth-provider.sh`.
+4. Restart backend and verify `https://api.lqcouncil.com/health` returns 200.
+5. Deploy frontend with fresh cache: `vercel --cwd frontend deploy --prod --force --yes`.
+6. Smoke test auth flow (`/`, `/sign-in`, signed-in redirect, `/admins`).
+
+If any step fails, do not ship.
 
 ## 1. Deployment topology
 
@@ -138,8 +151,8 @@ Route groups (auth requirement in parens):
 | Group | Routes |
 |---|---|
 | Public | `GET /health` |
-| `RequireAuth` | `GET /me`, `GET /bots`, `POST /bots`, `GET /bots/my-submissions`, `GET /debates`, `GET /debates/{id}`, `GET /debates/{id}/transcript`, `GET /debates/{id}/synthesis`, `GET /debates/{id}/stream`, `GET /users` |
-| `RequireAdmin` | `PATCH /bots/{id}/{approve\|reject\|deactivate\|reactivate}`, `POST /debates`, `GET/POST /admins`, `DELETE /admins/{user_id}` |
+| `RequireAuth` | `GET /me`, `GET /bots`, `POST /bots`, `GET /bots/my-submissions`, `GET /debates`, `GET /debates/{id}`, `GET /debates/{id}/transcript`, `GET /debates/{id}/synthesis`, `GET /debates/{id}/stream` |
+| `RequireAdmin` | `PATCH /bots/{id}/{approve\|reject\|deactivate\|reactivate}`, `POST /debates`, `GET/POST /admins`, `DELETE /admins/{user_id}`, `GET /users` |
 
 ### 3.3 Auth pipeline
 
@@ -156,9 +169,9 @@ bare `AuthIdentity`). Flow:
    This is the bootstrap-first-admin path and the emergency/CLI path.
 3. Otherwise, if `APP__AUTH__CLERK_ISSUER` is set, run `verify_clerk_jwt()`:
    decode header → look up JWK by `kid` in the cache → RS256 verify with
-   issuer check and 30 s leeway → extract `sub` as Clerk `user_id` →
-   best-effort upsert into `seen_users` (never breaks auth) → check `admins`
-   table → return `AuthIdentity::Admin{…}` or `::Participant{user_id}`.
+   issuer check and 30 s leeway → extract `sub` as Clerk `user_id` and optional
+   email claims → best-effort upsert into `seen_users` (never breaks auth) →
+   check `admins` table → return `AuthIdentity::Admin{…}` or `::Participant{user_id}`.
 
 Failure modes:
 
@@ -243,6 +256,7 @@ File: [`src/orchestrator/multi_round.rs`](src/orchestrator/multi_round.rs).
   5. `20260416000001_bot_submission_cleanup.sql` — `token_ciphertext BLOB`, `rejection_reason`.
   6. `20260416000002_admin_registry.sql` — `admins`, `seen_users`.
   7. `20260416000003_drop_legacy_bot_columns.sql` — drops `token_hash`, `active`.
+  8. `20260418000004_seen_user_identity_metadata.sql` — adds `seen_users.email` and `seen_users.display_name`.
 - Pool: max 5 connections; WAL, `synchronous=NORMAL`, `busy_timeout=5000`,
   `foreign_keys=ON`.
 
@@ -350,15 +364,13 @@ has a default in `config/default.toml`. Prod must set:
 - Clerk singleton with a 12 s load timeout
   ([`src/lib/auth/clerk.ts:5-24`](frontend/src/lib/auth/clerk.ts:5)), added
   in PR #29 to stop indefinite loading spinners.
-- Sign-in page mounts `clerk.mountSignIn(container, { fallbackRedirectUrl: '/',
-  signUpFallbackRedirectUrl: '/' })` — both are Clerk v6's replacements for the
-  deprecated `redirectUrl` option (fixed in PR #30).
+- Sign-in page uses hosted Clerk redirect flow (`clerk.redirectToSignIn(...)`)
+  and sends successful sign-in to app-home (`/debates`).
 - Root layout ([`src/routes/+layout.svelte`](frontend/src/routes/+layout.svelte))
-  advances through named stages and surfaces the current stage + any error
-  in the UI (PRs #31, #33, #34):
-  `init → loading-clerk → checking-session → redirecting-sign-in →
-  fetching-me → ready`. Missing `PUBLIC_CLERK_PUBLISHABLE_KEY` or
-  `PUBLIC_API_URL` in the deployed bundle triggers an early fatal-error panel.
+  uses explicit route policy flags (`mustBeSignedIn`, `rendersWithoutSession`,
+  `signedInRedirectTo`) and stage-based bootstrap:
+  `init → loading-clerk → checking-session → redirecting-sign-in |
+  redirecting-signed-in → fetching-me → ready`.
 
 ### 4.5 Routes
 
@@ -366,8 +378,8 @@ All under `frontend/src/routes/`.
 
 | Path | Auth | Purpose |
 |---|---|---|
-| `/` | public | Landing + CTAs |
-| `/sign-in` | public | Clerk-mounted sign-in form |
+| `/` | public | Landing + CTAs; signed-in users redirect to `/debates` |
+| `/sign-in` | public | Hosted Clerk redirect shell |
 | `/how-it-works` | public | Protocol explanation |
 | `/security` | public | Security documentation |
 | `/debates` | auth | List debates |
@@ -416,6 +428,17 @@ Walk-through of a typical signed-in user loading `/debates/abc`:
   the plan for the Clint integration, which proposes `/diag/errors`.
 - No machine-readable bot validator endpoint; see the Clint plan proposing
   `/bots/validate` and `/bots/schema`.
+
+## 6.1 Branch/worktree discipline
+
+- Start every task from `origin/main`, never from `master` or stale feature branches.
+- Run branch preflight before creating new branch:
+  - `./scripts/branch-preflight.ps1`
+- Use clean worktrees for parallel tasks.
+- Merge and delete task branches promptly to prevent divergence buildup.
+- Run periodic stale-branch cleanup:
+  - `./scripts/branch-cleanup.ps1` (dry-run)
+  - `./scripts/branch-cleanup.ps1 -Apply` (delete gone-upstream branches not attached to worktrees)
 
 ## 7. How to keep this accurate
 

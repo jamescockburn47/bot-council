@@ -6,6 +6,12 @@ data/
 node_modules/
 .env
 .superpowers/
+.claude/
+.vercel/
+frontend/.svelte-kit/
+frontend/build/
+lqcouncil-api-proxy/.next/
+evo_sync/
 frontend/node_modules/
 frontend/build/
 frontend/.svelte-kit/

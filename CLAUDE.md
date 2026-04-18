@@ -51,6 +51,55 @@ ssh -i C:/Users/James/.ssh/id_ed25519 james@100.90.66.54 \
   "source ~/.cargo/env && cd ~/bot-council && cargo build --release && sudo systemctl restart bot-council"
 ```
 
+## Branch Hygiene — BINDING
+
+Most regressions came from branch/worktree drift. Use this sequence for all new work:
+
+```powershell
+./scripts/branch-preflight.ps1
+git switch -c "claude/<topic>" origin/main
+```
+
+If the current tree is dirty, create a clean worktree instead:
+
+```bash
+git worktree add "../bot-council-<topic>" -b "claude/<topic>" origin/main
+```
+
+Never implement on `master` or stale feature branches.
+
+Periodic local cleanup (safe dry-run first):
+
+```powershell
+./scripts/branch-cleanup.ps1
+./scripts/branch-cleanup.ps1 -Apply
+```
+
+## Unified Release Gate — BINDING
+
+Do not validate frontend and backend from different trees/commits.
+For auth/routing/API-shape changes, all steps below must pass in order:
+
+```bash
+# 1) backend tests on EVO with exact branch contents
+./scripts/sync-evo.sh
+
+# 2) frontend production build from same commit
+cd frontend && npm run build && cd ..
+
+# 3) auth provider dependency health
+bash ./scripts/check-auth-provider.sh
+
+# 4) backend deploy and health
+./scripts/sync-evo.sh restart
+curl -sS -o /dev/null -w "%{http_code}" https://api.lqcouncil.com/health
+
+# 5) frontend deploy with fresh cache
+vercel --cwd frontend deploy --prod --force --yes
+```
+
+Only claim complete when all five are green.
+
 ## GitHub Workflow — BINDING
 
 ### Before starting any multi-commit change
@@ -113,7 +162,8 @@ Before every commit (enforce yourself — no CI for the backend):
 
 1. `./scripts/sync-evo.sh` green.
 2. `cd frontend && npm run build` green (when frontend touched — see MEMORY.md).
-3. No stray `*.bak`, `*.step1`, `*.final` etc. in working tree.
+3. `bash ./scripts/check-auth-provider.sh` green (auth/routing changes).
+4. No stray `*.bak`, `*.step1`, `*.final` etc. in working tree.
 
 ### Merge hygiene
 
@@ -162,7 +212,7 @@ In-app `admins` table for runtime role management.
 | GET | /admins | RequireAdmin | List admins |
 | POST | /admins | RequireAdmin | Promote a user_id |
 | DELETE | /admins/{user_id} | RequireAdmin | Demote (cannot demote self) |
-| GET | /users | RequireAuth | List signed-in users with `is_admin` flag |
+| GET | /users | RequireAdmin | List signed-in users with `is_admin` + email |
 
 ## Auth model
 

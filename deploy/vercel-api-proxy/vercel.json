@@ -1,0 +1,9 @@
+{
+  "framework": null,
+  "buildCommand": null,
+  "installCommand": null,
+  "outputDirectory": null,
+  "rewrites": [
+    { "source": "/(.*)", "destination": "https://james-nucbox-evo-x2.taila41c86.ts.net/$1" }
+  ]
+}

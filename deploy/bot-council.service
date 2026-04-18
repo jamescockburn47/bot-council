@@ -1,0 +1,22 @@
+[Unit]
+Description=LQ Bot Council backend
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=james
+Group=james
+WorkingDirectory=/home/james/bot-council
+EnvironmentFile=/etc/bot-council.env
+ExecStart=/home/james/bot-council/target/release/bot-council
+Restart=on-failure
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=bot-council
+# Let /etc/bot-council.env (root:root 600) be readable by the service.
+# systemd loads EnvironmentFile as root before dropping to User, so this works.
+
+[Install]
+WantedBy=multi-user.target

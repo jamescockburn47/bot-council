@@ -1,6 +1,6 @@
 use bot_council::config::{
-    AuthConfig, DatabaseConfig, DebateConfig, HttpClientConfig, ModelsConfig, ServerConfig,
-    Settings,
+    AuthConfig, DatabaseConfig, DebateConfig, HttpClientConfig, ModelsConfig, SentryConfig,
+    ServerConfig, Settings,
 };
 
 fn base() -> Settings {
@@ -12,6 +12,7 @@ fn base() -> Settings {
             clerk_issuer: "".into(),
             clerk_jwks_url: "".into(),
             bot_token_key: "".into(),
+            test_mode: false,
         },
         http_client: HttpClientConfig {
             connect_timeout_secs: 1,
@@ -31,6 +32,11 @@ fn base() -> Settings {
             max_retries: 0,
             quorum: 3,
             synthesis_temperature: 0.0,
+        },
+        sentry: SentryConfig {
+            dsn: "".into(),
+            environment: "test".into(),
+            traces_sample_rate: 0.0,
         },
     }
 }
@@ -66,4 +72,14 @@ fn accepts_valid_clerk_config_without_preset_admins() {
     s.auth.bot_token_key = "0".repeat(64);
     // No admin_user_ids required any more — bootstrap happens in-app.
     assert!(s.validate().is_ok());
+}
+
+#[test]
+fn rejects_test_mode_with_clerk() {
+    let mut s = base();
+    s.auth.clerk_issuer = "https://example.clerk.accounts.dev".into();
+    s.auth.bot_token_key = "0".repeat(64);
+    s.auth.test_mode = true;
+    let err = s.validate().unwrap_err().to_string();
+    assert!(err.contains("test_mode"), "error was: {err}");
 }

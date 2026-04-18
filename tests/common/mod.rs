@@ -1,7 +1,7 @@
 use axum::Router;
 use sqlx::SqlitePool;
 use bot_council::state::AppState;
-use bot_council::config::{Settings, ServerConfig, DatabaseConfig, AuthConfig, HttpClientConfig, ModelsConfig, DebateConfig};
+use bot_council::config::{Settings, ServerConfig, DatabaseConfig, AuthConfig, HttpClientConfig, ModelsConfig, DebateConfig, SentryConfig};
 
 /// Build a test application with an in-memory SQLite database and no auth.
 pub async fn test_app() -> (Router, SqlitePool) {
@@ -16,6 +16,7 @@ pub async fn test_app() -> (Router, SqlitePool) {
             clerk_jwks_url: "".into(),
             // 32 bytes = 64 hex chars; deterministic for reproducible tests.
             bot_token_key: "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff".into(),
+            test_mode: true,
         },
         http_client: HttpClientConfig {
             connect_timeout_secs: 5,
@@ -35,6 +36,11 @@ pub async fn test_app() -> (Router, SqlitePool) {
             max_retries: 2,
             quorum: 3,
             synthesis_temperature: 0.0,
+        },
+        sentry: SentryConfig {
+            dsn: "".into(),
+            environment: "test".into(),
+            traces_sample_rate: 0.0,
         },
     };
     let http_client = bot_council::bot_client::build_http_client(&settings.http_client);

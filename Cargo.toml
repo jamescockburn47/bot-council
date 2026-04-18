@@ -34,6 +34,8 @@ aes-gcm = "0.10"
 base64 = "0.22"
 arc-swap = "1"
 zeroize = { version = "1", features = ["derive"] }
+sentry = "0.47"
+sentry-tracing = "0.47"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full", "test-util"] }

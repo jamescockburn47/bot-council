@@ -11,6 +11,9 @@ admin_token = ""
 clerk_issuer = ""
 clerk_jwks_url = ""
 bot_token_key = ""
+# test_mode: integration-test auth backdoor. Must be false in any real
+# deployment. Refused at boot when clerk_issuer is also set.
+test_mode = false
 
 [http_client]
 connect_timeout_secs = 5
@@ -30,3 +33,11 @@ default_timeout_secs = 300
 max_retries = 2
 quorum = 3
 synthesis_temperature = 0.0
+
+[sentry]
+# Leave dsn empty to disable. Set via APP__SENTRY__DSN.
+dsn = ""
+environment = "prod"
+# Error reporting is always 1.0 when DSN is set. This only controls
+# performance tracing sample rate (0.0 = disabled).
+traces_sample_rate = 0.0

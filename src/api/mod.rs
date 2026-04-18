@@ -14,6 +14,7 @@ pub mod transcript;
 use axum::{Router, http::HeaderValue, routing::{delete, get, patch}};
 use tower_http::cors::{Any, CorsLayer};
 use axum::http::Method;
+use sentry::integrations::tower::{NewSentryLayer, SentryHttpLayer};
 use crate::state::AppState;
 
 /// Build the CORS layer from the configured origins.
@@ -56,5 +57,10 @@ pub fn router(state: AppState) -> Router {
         .route("/admins/{user_id}", delete(admins::remove_admin))
         .route("/users", get(admins::list_users))
         .layer(cors)
+        // Sentry layers: outermost so every request gets its own hub and
+        // transactions carry the matched axum route path (e.g.
+        // "POST /bots/{id}/approve") rather than the raw URI.
+        .layer(SentryHttpLayer::new().enable_transaction())
+        .layer(NewSentryLayer::new_from_top())
         .with_state(state)
 }

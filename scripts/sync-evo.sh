@@ -38,7 +38,14 @@ case "${action}" in
     cmd="cargo run"
     ;;
   restart)
-    cmd="cargo build --release && sudo systemctl restart bot-council"
+    # Capture the local HEAD SHA so Sentry release tagging tracks the
+    # exact commit being deployed. The remote side refreshes the
+    # SENTRY_RELEASE line in /etc/bot-council.env before restarting.
+    sha="$(git rev-parse HEAD)"
+    cmd="cargo build --release && \
+         sudo sed -i -E '/^SENTRY_RELEASE=/d' /etc/bot-council.env && \
+         echo 'SENTRY_RELEASE=${sha}' | sudo tee -a /etc/bot-council.env >/dev/null && \
+         sudo systemctl restart bot-council"
     ;;
   *)
     # Treat the argument as a raw cargo-style tail.

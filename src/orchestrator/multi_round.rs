@@ -52,6 +52,10 @@ fn emit_round_responses(
 }
 
 /// Run a full 5-round adversarial debate (Phase 1 protocol).
+#[tracing::instrument(
+    skip_all,
+    fields(debate_id = %debate_id.as_str(), bot_count = bots.len())
+)]
 pub async fn run_multi_round_debate(
     pool: &SqlitePool,
     client: &ClientWithMiddleware,
@@ -63,6 +67,12 @@ pub async fn run_multi_round_debate(
     debate_config: &DebateConfig,
     event_tx: Option<broadcast::Sender<DebateEvent>>,
 ) -> Result<(), String> {
+    // Tag the current Sentry hub so any event (including panics) captured
+    // inside this task carries debate_id. Per-tokio-task isolation is
+    // provided by the spawn site binding a fresh Hub::new_from_top.
+    sentry::configure_scope(|scope| {
+        scope.set_tag("debate_id", debate_id.as_str());
+    });
     let id = debate_id.as_str();
     let timeout = debate_config.default_timeout_secs;
 

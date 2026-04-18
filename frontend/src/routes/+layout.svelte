@@ -56,8 +56,7 @@
 
   onMount(async () => {
     const path = $page.url.pathname;
-    // LQC-LAYOUT-BUILD-MARKER-2026-04-18
-    console.info('[layout v2] onMount start, path=', path);
+    console.info('[layout] onMount start, path=', path);
 
     // Public paths: render children immediately, optionally refresh `me` in
     // the background if a session already exists (so the sidebar still

@@ -10,18 +10,6 @@
 
   let { children } = $props();
 
-  // Paths that render without requiring an authenticated session. The landing
-  // page and the docs-style pages must not be gated on Clerk — they're public
-  // collateral and used to be completely unreachable when Clerk hung or
-  // returned a bad session. /sign-in is also public (it IS the gate).
-  const PUBLIC_PATHS = new Set(['/', '/sign-in', '/security', '/how-it-works']);
-  const PUBLIC_PREFIXES = ['/bots/guide', '/bots/criteria'];
-
-  function isPublicPath(path: string): boolean {
-    if (PUBLIC_PATHS.has(path)) return true;
-    return PUBLIC_PREFIXES.some((p) => path === p || path.startsWith(p + '/'));
-  }
-
   type Stage =
     | 'init'
     | 'loading-clerk'
@@ -41,32 +29,10 @@
     ready: 'Ready',
   };
 
-  // Safety net: if auth doesn't complete in 20 s, show the fatal-error panel
-  // rather than hanging forever at "Starting…". The specific stage tells us
-  // which step got stuck.
-  function scheduleAuthTimeout(): number {
-    return window.setTimeout(() => {
-      if (stage !== 'ready') {
-        const msg = `Auth timed out at stage "${stageLabel[stage]}" (after 20 s)`;
-        console.error('[layout]', msg);
-        fatalError = msg;
-      }
-    }, 20_000);
-  }
-
   onMount(async () => {
     const path = $page.url.pathname;
-    // LQC-LAYOUT-BUILD-MARKER-2026-04-18
-    console.info('[layout v2] onMount start, path=', path);
-
-    // Public paths: render children immediately, optionally refresh `me` in
-    // the background if a session already exists (so the sidebar still
-    // populates for signed-in users who land on a public page).
-    if (isPublicPath(path)) {
-      console.info('[layout] public path — skipping auth gate');
+    if (path === '/sign-in') {
       stage = 'ready';
-      // Best-effort background refresh of $me; don't block UI on it.
-      refreshMe().catch((e) => console.warn('[layout] background refreshMe failed', e));
       return;
     }
 
@@ -79,54 +45,32 @@
       return;
     }
 
-    const timeoutHandle = scheduleAuthTimeout();
-
     try {
       stage = 'loading-clerk';
-      console.info('[layout] stage=loading-clerk');
       await getClerk();
 
       stage = 'checking-session';
-      console.info('[layout] stage=checking-session');
       const signedIn = await isSignedIn();
       if (!signedIn) {
         stage = 'redirecting-sign-in';
-        console.info('[layout] stage=redirecting-sign-in');
         await goto('/sign-in');
-        window.clearTimeout(timeoutHandle);
         return;
       }
 
       stage = 'fetching-me';
-      console.info('[layout] stage=fetching-me');
       await refreshMe();
-
       stage = 'ready';
-      console.info('[layout] stage=ready');
     } catch (e) {
       console.error('[layout] auth init failed at stage', stage, e);
       fatalError = `Failed at stage "${stageLabel[stage]}": ${
         e instanceof Error ? e.message : String(e)
       }`;
-    } finally {
-      window.clearTimeout(timeoutHandle);
     }
   });
 </script>
 
-{#if isPublicPath($page.url.pathname) && !fatalError}
-  {#if $me}
-    <div class="flex min-h-screen">
-      <Sidebar currentPath={$page.url.pathname} role={$me.role} />
-      <main class="ml-56 flex-1 p-8">
-        {@render children()}
-      </main>
-    </div>
-  {:else}
-    <main class="p-8">
-      {@render children()}
-    </main>
-  {/if}
+{#if $page.url.pathname === '/sign-in'}
+  {@render children()}
 {:else if fatalError}
   <div class="flex items-center justify-center min-h-screen flex-col gap-3 p-8">
     <p class="mono text-sm text-red-400">Auth initialisation failed</p>

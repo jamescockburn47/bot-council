@@ -1,5 +1,7 @@
 <script lang="ts">
+  import { goto } from '$app/navigation';
   import { getClerk } from '$lib/auth/clerk';
+  import { isSignedIn } from '$lib/auth/clerk';
 
   let error = $state<string | null>(null);
   let didStartRedirect = false;
@@ -10,9 +12,14 @@
 
     void (async () => {
       try {
+        if (await isSignedIn()) {
+          await goto('/');
+          return;
+        }
+
         const clerk = await getClerk();
         await clerk.redirectToSignIn({
-          redirectUrl: '/sign-in',
+          redirectUrl: '/',
           fallbackRedirectUrl: '/',
           signInFallbackRedirectUrl: '/',
           signUpFallbackRedirectUrl: '/'

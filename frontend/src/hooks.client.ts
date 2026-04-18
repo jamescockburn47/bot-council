@@ -18,30 +18,28 @@ import { beforeBreadcrumb, beforeSend } from '$lib/observability/scrubber';
 const dsn = env.PUBLIC_SENTRY_DSN;
 
 if (dsn) {
-  Sentry.init({
-    dsn,
-    environment: env.PUBLIC_SENTRY_ENVIRONMENT || 'prod',
-    sampleRate: 1.0,
-    // Performance tracing off by default — low-traffic app, not worth the
-    // quota. Raise via env later if we want transaction traces.
-    tracesSampleRate: 0,
-    sendDefaultPii: false,
-    integrations: [
-      // Replay captures the last ~60 s of DOM + network before any error,
-      // so we get a video-like playback. Text and inputs are masked by
-      // default; network payload bodies are NOT allowed (URLs + statuses
-      // only) so bearer tokens in fetch headers are never stored.
-      Sentry.replayIntegration({
-        maskAllText: true,
-        maskAllInputs: true,
-        networkDetailAllowUrls: [],
-      }),
-    ],
-    replaysSessionSampleRate: 0,
-    replaysOnErrorSampleRate: 1.0,
-    beforeSend,
-    beforeBreadcrumb,
-  });
+  const doInit = () => {
+    Sentry.init({
+      dsn,
+      environment: env.PUBLIC_SENTRY_ENVIRONMENT || 'prod',
+      sampleRate: 1.0,
+      // Performance tracing off by default — low-traffic app, not worth the
+      // quota. Raise via env later if we want transaction traces.
+      tracesSampleRate: 0,
+      sendDefaultPii: false,
+      beforeSend,
+      beforeBreadcrumb,
+    });
+  };
+
+  // Defer init until after the first mount microtask to avoid startup races
+  // with app/bootstrap code. Trade-off: errors thrown during module evaluation
+  // before this callback runs are not captured.
+  if (typeof queueMicrotask === 'function') {
+    queueMicrotask(doInit);
+  } else {
+    setTimeout(doInit, 0);
+  }
 }
 
 // SvelteKit client-side error hook. Report unhandled navigation/render

@@ -84,7 +84,11 @@ pub async fn create_debate(
     let debate_config = state.settings().debate.clone();
     let state_for_cleanup = state.clone();
     let cleanup_id = debate_id.as_str().to_string();
-    tokio::spawn(async move {
+    // Bind a fresh Sentry hub so scope mutations inside the task (the
+    // debate_id tag set in run_multi_round_debate) don't leak into other
+    // concurrent tasks that happen to share the same runtime thread.
+    let task_hub = std::sync::Arc::new(sentry::Hub::new_from_top(sentry::Hub::current()));
+    let task_future = async move {
         if let Err(e) = orchestrator::multi_round::run_multi_round_debate(
             &pool, &client, &debate_id_clone, &topic, &bots_clone, &bot_tokens,
             &models_config, &debate_config, Some(event_tx),
@@ -97,7 +101,8 @@ pub async fn create_debate(
             tokio::time::sleep(std::time::Duration::from_secs(60)).await;
             state_for_cleanup.remove_debate_stream(&cleanup_id);
         });
-    });
+    };
+    tokio::spawn(sentry::SentryFutureExt::bind_hub(task_future, task_hub));
 
     // Build response with role info
     let debate_bots_rows = queries_phase1::get_debate_bots_with_roles(state.db(), debate_id.as_str()).await?;

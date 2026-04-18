@@ -132,6 +132,26 @@ async fn authenticate(parts: &Parts, state: &AppState) -> Result<AuthIdentity, A
         return verify_clerk_jwt(token, state).await;
     }
 
+    // 3. Test-mode backdoor (opt-in via APP__AUTH__TEST_MODE=true). Boot
+    //    validation refuses to start when `test_mode` coexists with a real
+    //    `clerk_issuer`, so this path cannot be enabled in production.
+    //    `Bearer admin:<user_id>` → Admin with that user_id.
+    //    Any other bearer value → Participant with `user_id = <token>`.
+    //    Each call best-effort seeds the `seen_users` row so /users works.
+    if cfg.test_mode {
+        if let Some(uid) = token.strip_prefix("admin:") {
+            let _ = queries::upsert_seen_user(state.db(), uid).await;
+            return Ok(AuthIdentity::Admin {
+                user_id: Some(uid.to_string()),
+                source: AuthSource::ClerkJwt,
+            });
+        }
+        let _ = queries::upsert_seen_user(state.db(), token).await;
+        return Ok(AuthIdentity::Participant {
+            user_id: token.to_string(),
+        });
+    }
+
     Err(AppError::Unauthorized)
 }
 

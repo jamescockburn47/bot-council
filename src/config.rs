@@ -9,6 +9,7 @@ pub struct Settings {
     pub http_client: HttpClientConfig,
     pub models: ModelsConfig,
     pub debate: DebateConfig,
+    pub sentry: SentryConfig,
 }
 
 /// HTTP server bind configuration.
@@ -44,6 +45,13 @@ pub struct AuthConfig {
     /// 64-character hex string (32 bytes) — AES-256 key for bot token
     /// encryption. Required when Clerk is configured.
     pub bot_token_key: String,
+    /// Test-only auth backdoor. When true, `Authorization: Bearer admin:<uid>`
+    /// is accepted as Admin with that user_id, and any other bearer value is
+    /// accepted as a Participant with `user_id = <token>`. Defaults to false.
+    /// `validate()` refuses to boot when both `test_mode` and `clerk_issuer`
+    /// are set, making it impossible to enable in any real Clerk deployment.
+    #[serde(default)]
+    pub test_mode: bool,
 }
 
 /// Outbound HTTP client tuning.
@@ -72,6 +80,18 @@ pub struct DebateConfig {
     pub max_retries: u32,
     pub quorum: usize,
     pub synthesis_temperature: f64,
+}
+
+/// Sentry error-tracking configuration. Empty DSN disables Sentry entirely.
+#[derive(Debug, Deserialize, Clone)]
+pub struct SentryConfig {
+    /// Sentry DSN. Empty string disables Sentry init (safe no-op).
+    pub dsn: String,
+    /// Environment tag attached to all events (e.g. "prod", "staging").
+    pub environment: String,
+    /// Performance tracing sample rate. 0.0 disables traces. Error events
+    /// are always captured at 100% when the DSN is set.
+    pub traces_sample_rate: f32,
 }
 
 impl Settings {
@@ -117,6 +137,15 @@ impl Settings {
                     "auth.bot_token_key must be exactly 64 hex characters (32 bytes)"
                 )
             })?;
+        }
+
+        // 3. test_mode is mutually exclusive with a real Clerk deployment.
+        //    Refusing to boot makes it impossible to accidentally expose the
+        //    backdoor in production.
+        if a.test_mode && !a.clerk_issuer.is_empty() {
+            anyhow::bail!(
+                "auth.test_mode must not be enabled when auth.clerk_issuer is set"
+            );
         }
 
         Ok(())

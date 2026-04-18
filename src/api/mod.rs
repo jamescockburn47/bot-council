@@ -2,11 +2,13 @@ pub mod admins;
 pub mod auth;
 pub mod bot_token_crypto;
 pub mod bots;
+pub mod diag;
 pub mod jwks_cache;
 pub mod debates;
 pub mod dto;
 pub mod events;
 pub mod health;
+pub mod schema;
 pub mod stream;
 pub mod synthesis;
 pub mod transcript;
@@ -43,11 +45,15 @@ pub fn router(state: AppState) -> Router {
         .route("/health", get(health::health))
         .route("/me", get(bots::get_me))
         .route("/bots/my-submissions", get(bots::my_submissions))
+        .route("/bots/schema", get(schema::get_schema))
+        .route("/bots/validate", axum::routing::post(bots::validate_bot))
         .route("/bots", get(bots::list_bots).post(bots::create_bot))
+        .route("/bots/{id}/history", get(bots::bot_history))
         .route("/bots/{id}/approve", patch(bots::approve_bot))
         .route("/bots/{id}/reject", patch(bots::reject_bot))
         .route("/bots/{id}/deactivate", patch(bots::deactivate_bot))
         .route("/bots/{id}/reactivate", patch(bots::reactivate_bot))
+        .route("/diag/health", get(diag::get_diag_health))
         .route("/debates", get(debates::list_debates).post(debates::create_debate))
         .route("/debates/{id}", get(debates::get_debate))
         .route("/debates/{id}/transcript", get(transcript::get_transcript))

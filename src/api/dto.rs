@@ -157,3 +157,58 @@ pub struct SynthesisResponse {
     pub created_at: String,
     pub citation_check: Option<serde_json::Value>,
 }
+
+/// Request body for POST /bots/validate — dry-run smoke test without
+/// persisting a bot. Mirrors a subset of CreateBotRequest.
+#[derive(Debug, Deserialize)]
+pub struct ValidateBotRequest {
+    pub endpoint_url: String,
+    pub token: String,
+}
+
+/// Result of a single check during validation.
+#[derive(Debug, Serialize)]
+pub struct ValidateCheck {
+    pub name: String,
+    pub passed: bool,
+    pub detail: String,
+}
+
+/// Response for POST /bots/validate.
+#[derive(Debug, Serialize)]
+pub struct ValidateBotResponse {
+    pub ok: bool,
+    pub checks: Vec<ValidateCheck>,
+}
+
+/// One entry in the per-bot history endpoint.
+#[derive(Debug, Serialize)]
+pub struct BotHistoryEntry {
+    pub debate_id: String,
+    pub round_number: i64,
+    pub created_at: String,
+    pub valid: bool,
+    pub abstained: bool,
+    pub error_kind: Option<String>,
+    pub error_detail: Option<String>,
+    pub elapsed_ms: Option<i64>,
+}
+
+/// Response for GET /diag/health — extended health surface for admins.
+#[derive(Debug, Serialize)]
+pub struct DiagHealthResponse {
+    /// Number of debates currently in a non-terminal status.
+    pub debates_in_flight: i64,
+    /// ISO-8601 timestamp of the most recent debate completion, or null
+    /// if the harness has never completed a debate.
+    pub last_completion_ts: Option<String>,
+    /// Failure rate over the last hour (0.0–1.0); null when no debates
+    /// terminated in the window.
+    pub failure_rate_1h: Option<f64>,
+    /// Number of debates with status 'failed' in the last hour.
+    pub failures_1h: i64,
+    /// Total debates that reached a terminal status in the last hour.
+    pub terminal_1h: i64,
+    /// Git SHA or cargo version currently running (mirrors SENTRY_RELEASE).
+    pub release: String,
+}

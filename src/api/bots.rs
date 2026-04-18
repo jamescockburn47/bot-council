@@ -1,9 +1,12 @@
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::Json;
 use crate::api::auth::{AuthIdentity, RequireAdmin};
-use crate::api::dto::{CreateBotRequest, BotResponse, UserInfoResponse, RejectBotRequest};
-use crate::db::{models::BotRow, queries};
+use crate::api::dto::{
+    BotHistoryEntry, BotResponse, CreateBotRequest, RejectBotRequest,
+    UserInfoResponse, ValidateBotRequest, ValidateBotResponse, ValidateCheck,
+};
+use crate::db::{models::BotRow, queries, queries_phase1};
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
 use crate::types::BotId;
@@ -257,6 +260,149 @@ pub async fn my_submissions(
         .ok_or_else(|| AppError::BadRequest("not a Clerk user".into()))?;
     let rows = queries::list_bots_by_submitter(state.db(), user_id).await?;
     Ok(Json(rows.iter().map(bot_to_response).collect()))
+}
+
+/// POST /bots/validate — dry-run the smoke-test logic against a
+/// candidate endpoint/token pair without persisting anything.
+///
+/// Returns a check list so bot authors can iterate before submitting.
+/// No bot row is inserted; no ciphertext is stored; nothing is logged at
+/// the DB layer.
+pub async fn validate_bot(
+    State(state): State<AppState>,
+    _auth: crate::api::auth::RequireAuth,
+    Json(req): Json<ValidateBotRequest>,
+) -> AppResult<Json<ValidateBotResponse>> {
+    let mut checks: Vec<ValidateCheck> = Vec::new();
+
+    // Check 1: URL must be HTTPS (or localhost in debug builds).
+    let https_ok = req.endpoint_url.starts_with("https://")
+        || (cfg!(debug_assertions)
+            && (req.endpoint_url.starts_with("http://localhost")
+                || req.endpoint_url.starts_with("http://127.0.0.1")));
+    checks.push(ValidateCheck {
+        name: "endpoint_url_https".into(),
+        passed: https_ok,
+        detail: if https_ok {
+            "scheme ok".into()
+        } else {
+            "endpoint_url must use https://".into()
+        },
+    });
+    if !https_ok {
+        return Ok(Json(ValidateBotResponse { ok: false, checks }));
+    }
+
+    // Check 2: token is non-empty.
+    let token_ok = !req.token.is_empty();
+    checks.push(ValidateCheck {
+        name: "token_present".into(),
+        passed: token_ok,
+        detail: if token_ok { "ok".into() } else { "token required".into() },
+    });
+    if !token_ok {
+        return Ok(Json(ValidateBotResponse { ok: false, checks }));
+    }
+
+    // Check 3: smoke test — same shape as approve_bot uses, but with the
+    // supplied plaintext token (no DB read, no decrypt).
+    let body = serde_json::json!({
+        "session_id": "validate-dry-run",
+        "round": 0,
+        "role": "proponent",
+        "context": [],
+        "prompt": "Dry-run validation: respond with any valid JSON containing a 'response' field.",
+    });
+    let start = std::time::Instant::now();
+    let result = state
+        .http_client()
+        .post(&req.endpoint_url)
+        .timeout(std::time::Duration::from_secs(30))
+        .header("authorization", format!("Bearer {}", req.token))
+        .json(&body)
+        .send()
+        .await;
+    let elapsed_ms = start.elapsed().as_millis() as i64;
+
+    let smoke = match result {
+        Err(e) => Err(format!("request failed: {e}")),
+        Ok(resp) => {
+            let status = resp.status();
+            if !status.is_success() {
+                Err(format!("bot returned HTTP {status}"))
+            } else {
+                match resp.json::<serde_json::Value>().await {
+                    Err(e) => Err(format!("response is not valid JSON: {e}")),
+                    Ok(json) => match json.get("response") {
+                        Some(serde_json::Value::String(_)) => Ok(()),
+                        Some(other) => Err(format!(
+                            "'response' field has wrong type: expected string, got {other}"
+                        )),
+                        None => Err("response JSON missing 'response' field".into()),
+                    },
+                }
+            }
+        }
+    };
+    let passed = smoke.is_ok();
+    let detail = match &smoke {
+        Ok(_) => format!("responded in {elapsed_ms} ms with valid schema"),
+        Err(e) => classify_smoke_test_error(e),
+    };
+    checks.push(ValidateCheck {
+        name: "smoke_test".into(),
+        passed,
+        detail,
+    });
+
+    Ok(Json(ValidateBotResponse {
+        ok: passed,
+        checks,
+    }))
+}
+
+/// GET /bots/{id}/history?limit=N — recent per-round outcomes for a bot.
+/// Participants can only see their own bots; admins can see any bot.
+/// `limit` defaults to 20 and is clamped to [1, 100].
+pub async fn bot_history(
+    State(state): State<AppState>,
+    auth: AuthIdentity,
+    Path(id): Path<String>,
+    Query(params): Query<HistoryQuery>,
+) -> AppResult<Json<Vec<BotHistoryEntry>>> {
+    let bot = queries::get_bot(state.db(), &id)
+        .await?
+        .ok_or_else(|| AppError::NotFound("bot not found".into()))?;
+
+    if !auth.is_admin() {
+        match (bot.submitted_by.as_deref(), auth.user_id()) {
+            (Some(owner), Some(caller)) if owner == caller => {}
+            _ => return Err(AppError::Forbidden),
+        }
+    }
+
+    let limit = params.limit.unwrap_or(20).clamp(1, 100);
+    let rows = queries_phase1::get_bot_history(state.db(), &id, limit).await?;
+    let out = rows
+        .into_iter()
+        .map(|r| BotHistoryEntry {
+            debate_id: r.debate_id,
+            round_number: r.round_number,
+            created_at: r.created_at,
+            valid: r.valid,
+            abstained: r.abstained,
+            error_kind: r.error_kind,
+            error_detail: r.error_detail,
+            elapsed_ms: r.elapsed_ms,
+        })
+        .collect();
+    Ok(Json(out))
+}
+
+/// Query params for GET /bots/{id}/history.
+#[derive(Debug, serde::Deserialize)]
+pub struct HistoryQuery {
+    pub limit: Option<i64>,
 }
 
 /// GET /me — return current user info from auth identity.

@@ -51,6 +51,16 @@ pub struct ResponseRow {
     pub retry_count: i64,
     pub abstained: bool,
     pub created_at: String,
+    /// Error taxonomy string (closed set). Populated on abstention or
+    /// validation failure; NULL on success. See
+    /// migration 20260419000001 for the allowed values.
+    pub error_kind: Option<String>,
+    /// Short human-readable detail paired with `error_kind`
+    /// (e.g. missing field name, HTTP status text). NULL on success.
+    pub error_detail: Option<String>,
+    /// Wall-clock elapsed time for the bot call in milliseconds.
+    /// NULL when the outcome was recorded without a timed call.
+    pub elapsed_ms: Option<i64>,
 }
 
 /// Database row for a peer score issued by one bot against another's pseudonym.

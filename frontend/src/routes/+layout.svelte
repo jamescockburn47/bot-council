@@ -2,7 +2,6 @@
   import '../app.css';
   import Sidebar from '$lib/components/Sidebar.svelte';
   import { page } from '$app/stores';
-  import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { env } from '$env/dynamic/public';
   import { getClerk, isSignedIn } from '$lib/auth/clerk';
@@ -19,6 +18,7 @@
     | 'ready';
   let stage = $state<Stage>('init');
   let fatalError = $state<string | null>(null);
+  let didRunAuthBootstrap = false;
 
   const stageLabel: Record<Stage, string> = {
     init: 'Starting…',
@@ -29,50 +29,55 @@
     ready: 'Ready',
   };
 
-  onMount(async () => {
-    const path = $page.url.pathname;
-    console.info('[layout] onMount start, path=', path);
-    if (path === '/sign-in') {
-      console.info('[layout] stage=ready');
-      stage = 'ready';
-      return;
-    }
+  $effect(() => {
+    if (didRunAuthBootstrap) return;
+    didRunAuthBootstrap = true;
 
-    if (!env.PUBLIC_CLERK_PUBLISHABLE_KEY) {
-      fatalError = 'PUBLIC_CLERK_PUBLISHABLE_KEY is not set in the deployed bundle.';
-      return;
-    }
-    if (!env.PUBLIC_API_URL) {
-      fatalError = 'PUBLIC_API_URL is not set in the deployed bundle.';
-      return;
-    }
-
-    try {
-      console.info('[layout] stage=loading-clerk');
-      stage = 'loading-clerk';
-      await getClerk();
-
-      console.info('[layout] stage=checking-session');
-      stage = 'checking-session';
-      const signedIn = await isSignedIn();
-      if (!signedIn) {
-        console.info('[layout] stage=redirecting-sign-in');
-        stage = 'redirecting-sign-in';
-        await goto('/sign-in');
+    void (async () => {
+      const path = $page.url.pathname;
+      console.info('[layout] onMount start, path=', path);
+      if (path === '/sign-in') {
+        console.info('[layout] stage=ready');
+        stage = 'ready';
         return;
       }
 
-      console.info('[layout] stage=fetching-me');
-      stage = 'fetching-me';
-      await refreshMe();
-      console.info('[layout] stage=ready');
-      stage = 'ready';
-    } catch (e) {
-      console.error('[layout] auth init failed at stage', stage, e);
-      fatalError = `Failed at stage "${stageLabel[stage]}": ${
-        e instanceof Error ? e.message : String(e)
-      }`;
-    }
+      if (!env.PUBLIC_CLERK_PUBLISHABLE_KEY) {
+        fatalError = 'PUBLIC_CLERK_PUBLISHABLE_KEY is not set in the deployed bundle.';
+        return;
+      }
+      if (!env.PUBLIC_API_URL) {
+        fatalError = 'PUBLIC_API_URL is not set in the deployed bundle.';
+        return;
+      }
+
+      try {
+        console.info('[layout] stage=loading-clerk');
+        stage = 'loading-clerk';
+        await getClerk();
+
+        console.info('[layout] stage=checking-session');
+        stage = 'checking-session';
+        const signedIn = await isSignedIn();
+        if (!signedIn) {
+          console.info('[layout] stage=redirecting-sign-in');
+          stage = 'redirecting-sign-in';
+          await goto('/sign-in');
+          return;
+        }
+
+        console.info('[layout] stage=fetching-me');
+        stage = 'fetching-me';
+        await refreshMe();
+        console.info('[layout] stage=ready');
+        stage = 'ready';
+      } catch (e) {
+        console.error('[layout] auth init failed at stage', stage, e);
+        fatalError = `Failed at stage "${stageLabel[stage]}": ${
+          e instanceof Error ? e.message : String(e)
+        }`;
+      }
+    })();
   });
 </script>
 

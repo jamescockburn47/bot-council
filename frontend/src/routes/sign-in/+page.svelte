@@ -1,22 +1,27 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
   import { getClerk } from '$lib/auth/clerk';
 
-  let container: HTMLDivElement;
+  let container = $state<HTMLDivElement | null>(null);
   let error = $state<string | null>(null);
   let mounted = $state(false);
+  let didMountSignIn = false;
 
-  onMount(async () => {
-    try {
-      const clerk = await getClerk();
-      clerk.mountSignIn(container, {
-        fallbackRedirectUrl: '/',
-        signUpFallbackRedirectUrl: '/',
-      });
-      mounted = true;
-    } catch (e) {
-      error = e instanceof Error ? e.message : 'Failed to load Clerk';
-    }
+  $effect(() => {
+    if (didMountSignIn || !container) return;
+    didMountSignIn = true;
+
+    void (async () => {
+      try {
+        const clerk = await getClerk();
+        clerk.mountSignIn(container, {
+          fallbackRedirectUrl: '/',
+          signUpFallbackRedirectUrl: '/',
+        });
+        mounted = true;
+      } catch (e) {
+        error = e instanceof Error ? e.message : 'Failed to load Clerk';
+      }
+    })();
   });
 </script>
 

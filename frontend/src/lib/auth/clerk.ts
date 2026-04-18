@@ -16,7 +16,8 @@ export function getClerk(): Promise<Clerk> {
   const timeout = new Promise<never>((_, reject) =>
     setTimeout(() => reject(new Error('Clerk load timeout')), 12_000)
   );
-  loadPromise = Promise.race([c.load(), timeout]).then(() => {
+  // Ensure Clerk UI components (e.g. mountSignIn) are available after load.
+  loadPromise = Promise.race([c.load({ standardBrowser: true }), timeout]).then(() => {
     clerkInstance = c;
     return c;
   });

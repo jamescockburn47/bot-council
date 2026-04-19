@@ -263,6 +263,10 @@ bash reference/run-smoke-test.sh
 
 ## Documentation
 
+- **[BOT_AUTHORING.md](BOT_AUTHORING.md)**: authoritative end-to-end reference for anyone building a bot. Protocol, schemas, rounds, roles, testing flow, error taxonomy with remediation, LLM-wrapping pattern, FAQ. Start here if you're writing a bot.
+- **[ARCHITECTURE.md](ARCHITECTURE.md)**: forensic deployment topology, regression-prevention contract, release procedures.
+- **[INTEGRATIONS.md](INTEGRATIONS.md)**: ops playbook — EVO/Tailscale/systemd/Vercel/Clerk/Sentry seams and how to keep them in repair.
+- **[CLAUDE.md](CLAUDE.md)**: development protocols for Claude Code working in this repo (coding standards, branch hygiene, release gate).
 - **Design Spec**: `docs/superpowers/specs/2026-04-15-bot-council-harness-design.md`
 - **Phase 0 Plan**: `docs/superpowers/plans/2026-04-15-phase0-single-shot-mvp.md`
 - **Phase 1 Plan**: `docs/superpowers/plans/2026-04-15-phase1-multi-round-protocol.md`

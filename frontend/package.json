@@ -12,6 +12,7 @@
     "@sveltejs/kit": "^2",
     "@sveltejs/vite-plugin-svelte": "^4",
     "@tailwindcss/vite": "^4",
+    "@types/d3-force": "^3",
     "svelte": "^5",
     "svelte-check": "^4",
     "tailwindcss": "^4",
@@ -21,7 +22,8 @@
   "dependencies": {
     "@clerk/clerk-js": "^6.7.2",
     "@sentry/browser": "^10.49.0",
-    "chart.js": "^4"
+    "chart.js": "^4",
+    "d3-force": "^3"
   },
   "type": "module"
 }

@@ -3,7 +3,7 @@
 // tag visible in a backend event looks the same when mirrored to the
 // frontend project.
 
-import type { Breadcrumb, Event } from '@sentry/browser';
+import type { Breadcrumb, ErrorEvent } from '@sentry/browser';
 
 const SENSITIVE =
   /(token|authorization|ciphertext|jwt|cookie|bearer|api[_-]?key|secret|password)/i;
@@ -18,7 +18,7 @@ function redactRecord<T extends Record<string, unknown>>(obj: T | undefined): T 
   return obj;
 }
 
-export function beforeSend(event: Event): Event {
+export function beforeSend(event: ErrorEvent): ErrorEvent {
   redactRecord(event.extra);
   redactRecord(event.tags as Record<string, unknown> | undefined);
   if (event.request) {

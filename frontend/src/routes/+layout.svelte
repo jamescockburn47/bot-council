@@ -3,7 +3,6 @@
   import Sidebar from '$lib/components/Sidebar.svelte';
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
-  import { env } from '$env/dynamic/public';
   import { getClerk, isSignedIn } from '$lib/auth/clerk';
   import { me, refreshMe } from '$lib/stores/me';
 
@@ -39,15 +38,6 @@
       if (path === '/sign-in') {
         console.info('[layout] stage=ready');
         stage = 'ready';
-        return;
-      }
-
-      if (!env.PUBLIC_CLERK_PUBLISHABLE_KEY) {
-        fatalError = 'PUBLIC_CLERK_PUBLISHABLE_KEY is not set in the deployed bundle.';
-        return;
-      }
-      if (!env.PUBLIC_API_URL) {
-        fatalError = 'PUBLIC_API_URL is not set in the deployed bundle.';
         return;
       }
 

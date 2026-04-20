@@ -13,6 +13,7 @@ fn base() -> Settings {
             clerk_jwks_url: "".into(),
             bot_token_key: "".into(),
             test_mode: false,
+            clerk_publishable_key: "".into(),
         },
         http_client: HttpClientConfig {
             connect_timeout_secs: 1,

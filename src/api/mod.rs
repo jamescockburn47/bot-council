@@ -3,6 +3,7 @@ pub mod auth;
 pub mod bot_token_crypto;
 pub mod bots;
 pub mod compat;
+pub mod config_json;
 pub mod jwks_cache;
 pub mod debates;
 pub mod diag;
@@ -42,6 +43,7 @@ pub fn router(state: AppState) -> Router {
     let cors = cors_layer(&state.settings().server.cors_origins);
     Router::new()
         .route("/health", get(health::health))
+        .route("/config.json", get(config_json::get_config_json))
         .route("/diag/health", get(health::health))
         .route("/diag/models", get(diag::get_model_diagnostics))
         .route("/me", get(bots::get_me))

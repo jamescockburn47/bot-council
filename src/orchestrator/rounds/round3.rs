@@ -16,6 +16,7 @@ pub async fn run_round3(
     pool: &SqlitePool,
     client: &ClientWithMiddleware,
     debate_id: &str,
+    topic: &str,
     bots: &[BotRow],
     bot_tokens: &HashMap<String, String>,
     role_assignments: &HashMap<String, Role>,
@@ -25,6 +26,7 @@ pub async fn run_round3(
     models_config: &ModelsConfig,
     timeout_secs: u64,
 ) -> Result<Vec<(String, Option<DebateRoundResponse>)>, String> {
+    let topic = topic.to_string();
     // Step 1: Compute pairings via MiniMax
     let positions: Vec<(String, String)> = round2_responses.iter()
         .map(|(p, r)| (p.clone(), r.clone()))
@@ -64,7 +66,7 @@ pub async fn run_round3(
         let token = bot_tokens.get(&q_bot_id).cloned().unwrap_or_default();
         let role = role_assignments.get(&q_bot_id).copied().unwrap_or(Role::Proponent);
         let target_response = round2_responses.get(t_pseudo.as_str()).cloned().unwrap_or_default();
-        let prompt = prompts::round3_question_prompt(t_pseudo, &target_response);
+        let prompt = prompts::round3_question_prompt(&topic, t_pseudo, &target_response);
         let session_id = debate_id.to_string();
         let client = client.clone();
         let bot_id = q_bot_id.clone();
@@ -115,7 +117,7 @@ pub async fn run_round3(
         let combined_prompt = if questions.len() == 1 {
             let (q_pseudo, q_text) = &questions[0];
             let partner_response = round2_responses.get(q_pseudo.as_str()).cloned().unwrap_or_default();
-            prompts::round3_answer_prompt(q_pseudo, &partner_response, q_text)
+            prompts::round3_answer_prompt(&topic, q_pseudo, &partner_response, q_text)
         } else {
             // Multiple questioners — format all questions
             let mut parts = Vec::new();
@@ -126,7 +128,8 @@ pub async fn run_round3(
                 ));
             }
             format!(
-                "You are being cross-examined by multiple participants.\n\n{}\n\n\
+                "Topic: {topic}\n\
+                 You are being cross-examined by multiple participants.\n\n{}\n\n\
                  Address each question directly and substantively.",
                 parts.join("\n\n")
             )

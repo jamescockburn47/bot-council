@@ -1,18 +1,19 @@
-use axum::extract::{Path, Query, State};
+use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::Json;
+use sqlx::SqlitePool;
+use std::collections::HashMap;
 use crate::api::auth::{AuthIdentity, RequireAdmin};
 use crate::api::dto::{
-    BotHistoryEntry, BotResponse, CreateBotRequest, RejectBotRequest,
-    UserInfoResponse, ValidateBotRequest, ValidateBotResponse, ValidateCheck,
+    BotAnalyticsResponse, BotDebateAnalytics, BotHealthCheckResponse, BotPerformanceSummary, BotResponse, CreateBotRequest, RejectBotRequest, UserInfoResponse,
 };
-use crate::db::{models::BotRow, queries, queries_phase1};
+use crate::db::{models::BotRow, queries};
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
 use crate::types::BotId;
 
 /// Convert a database row to an API response.
-fn bot_to_response(row: &BotRow) -> BotResponse {
+fn bot_to_response(row: &BotRow, performance: Option<BotPerformanceSummary>) -> BotResponse {
     BotResponse {
         id: row.id.clone(),
         name: row.name.clone(),
@@ -25,6 +26,464 @@ fn bot_to_response(row: &BotRow) -> BotResponse {
         reviewed_at: row.reviewed_at.clone(),
         reviewed_by: row.reviewed_by.clone(),
         created_at: row.created_at.clone(),
+        performance,
+    }
+}
+
+const RESPONSE_SAMPLE_LIMIT: i64 = 24;
+
+#[derive(Debug, Clone, Copy)]
+struct ScoringDimensions {
+    critical_thinking: f64,
+    resource_use: f64,
+    instruction_following: f64,
+    functionality: f64,
+    usefulness: f64,
+    debate_engagement: f64,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct TextDimensionScores {
+    critical_thinking: f64,
+    resource_use: f64,
+    usefulness: f64,
+    debate_engagement: f64,
+    short_response_rate: f64,
+}
+
+fn round_score(value: f64) -> f64 {
+    ((value.clamp(0.0, 10.0) * 10.0).round()) / 10.0
+}
+
+fn count_keyword_hits(text: &str, keywords: &[&str]) -> usize {
+    keywords.iter().filter(|k| text.contains(**k)).count()
+}
+
+fn text_score_dimensions(samples: &[queries::BotResponseSampleRow]) -> TextDimensionScores {
+    let mut critical_sum: f64 = 0.0;
+    let mut resource_sum: f64 = 0.0;
+    let mut usefulness_sum: f64 = 0.0;
+    let mut engagement_sum: f64 = 0.0;
+    let mut count: f64 = 0.0;
+    let mut short_count: f64 = 0.0;
+
+    const CAUSAL_KEYWORDS: &[&str] = &[
+        "because", "therefore", "thus", "hence", "as a result",
+    ];
+    const TRADEOFF_KEYWORDS: &[&str] = &[
+        "however", "but", "trade-off", "tradeoff", "on the other hand", "risk", "downside",
+    ];
+    const EVIDENCE_KEYWORDS: &[&str] = &[
+        "data", "evidence", "benchmark", "metric", "source", "study", "measured", "baseline",
+    ];
+    const ACTION_KEYWORDS: &[&str] = &[
+        "recommend", "should", "must", "next", "first", "second", "priorit", "roadmap",
+        "implement", "ship",
+    ];
+    const ENGAGEMENT_KEYWORDS: &[&str] = &[
+        "agent", "challenge", "counter", "rebut", "respond", "agree", "disagree",
+        "your argument", "you claim", "round ",
+    ];
+
+    for sample in samples {
+        if sample.abstained || !sample.valid {
+            continue;
+        }
+        let lower = sample.response_json.to_lowercase();
+        let word_count = lower.split_whitespace().count();
+        let numeric_tokens = lower
+            .split_whitespace()
+            .filter(|token| token.chars().any(|c| c.is_ascii_digit()))
+            .count();
+        let has_url = lower.contains("http://") || lower.contains("https://");
+        let has_citation = lower.contains("[agent ") || lower.contains(", round ");
+        let causal_hits = count_keyword_hits(&lower, CAUSAL_KEYWORDS);
+        let tradeoff_hits = count_keyword_hits(&lower, TRADEOFF_KEYWORDS);
+        let evidence_hits = count_keyword_hits(&lower, EVIDENCE_KEYWORDS);
+        let action_hits = count_keyword_hits(&lower, ACTION_KEYWORDS);
+        let engagement_hits = count_keyword_hits(&lower, ENGAGEMENT_KEYWORDS);
+
+        let mut critical: f64 = 1.8;
+        if word_count >= 50 { critical += 1.2; }
+        if word_count >= 90 { critical += 1.0; }
+        if word_count >= 140 { critical += 0.7; }
+        if causal_hits > 0 { critical += 1.5; }
+        if tradeoff_hits > 0 { critical += 2.1; }
+        if lower.contains("if ") || lower.contains("unless") { critical += 0.8; }
+        if lower.contains("however") && lower.contains("therefore") { critical += 1.0; }
+
+        let mut resource_use: f64 = 1.5;
+        if numeric_tokens >= 2 { resource_use += 2.2; }
+        else if numeric_tokens >= 1 { resource_use += 1.0; }
+        if evidence_hits > 0 { resource_use += 2.3; }
+        if has_citation { resource_use += 1.8; }
+        if has_url { resource_use += 1.3; }
+        if lower.contains('%') || lower.contains('$') { resource_use += 1.0; }
+        if word_count >= 90 { resource_use += 0.8; }
+
+        let mut usefulness: f64 = 1.8;
+        if action_hits >= 2 { usefulness += 2.4; }
+        else if action_hits >= 1 { usefulness += 1.2; }
+        if lower.contains("recommend") || lower.contains("should") { usefulness += 1.5; }
+        if lower.contains("next") || lower.contains("first") || lower.contains("phase") { usefulness += 1.2; }
+        if tradeoff_hits > 0 { usefulness += 1.0; }
+        if word_count >= 80 { usefulness += 1.2; }
+        if lower.contains("enterprise") || lower.contains("institution") || lower.contains("gc") {
+            usefulness += 0.8;
+        }
+
+        let mut engagement: f64 = 1.6;
+        if engagement_hits >= 2 { engagement += 2.4; }
+        else if engagement_hits >= 1 { engagement += 1.2; }
+        if lower.contains("agent ") || lower.contains("round ") { engagement += 1.1; }
+        if lower.contains("challenge") || lower.contains("rebut") || lower.contains("counter") {
+            engagement += 1.6;
+        }
+        if lower.contains("agree") || lower.contains("disagree") {
+            engagement += 0.9;
+        }
+        if lower.contains("your argument") || lower.contains("you claim") {
+            engagement += 1.1;
+        }
+        if word_count >= 70 { engagement += 0.8; }
+
+        if word_count < 35 {
+            short_count += 1.0;
+        }
+
+        critical_sum += critical.clamp(0.0, 10.0);
+        resource_sum += resource_use.clamp(0.0, 10.0);
+        usefulness_sum += usefulness.clamp(0.0, 10.0);
+        engagement_sum += engagement.clamp(0.0, 10.0);
+        count += 1.0;
+    }
+
+    if count == 0.0 {
+        return TextDimensionScores {
+            critical_thinking: 2.0,
+            resource_use: 2.0,
+            usefulness: 2.0,
+            debate_engagement: 2.0,
+            short_response_rate: 1.0,
+        };
+    }
+
+    let mut critical: f64 = critical_sum / count;
+    let mut resource_use: f64 = resource_sum / count;
+    let mut usefulness: f64 = usefulness_sum / count;
+    let mut debate_engagement: f64 = engagement_sum / count;
+    if count < 3.0 {
+        critical -= 0.7;
+        resource_use -= 0.7;
+        usefulness -= 0.7;
+        debate_engagement -= 0.7;
+    }
+    TextDimensionScores {
+        critical_thinking: critical.clamp(0.0, 10.0),
+        resource_use: resource_use.clamp(0.0, 10.0),
+        usefulness: usefulness.clamp(0.0, 10.0),
+        debate_engagement: debate_engagement.clamp(0.0, 10.0),
+        short_response_rate: (short_count / count).clamp(0.0, 1.0),
+    }
+}
+
+fn instruction_following_score(
+    total_rounds: i64,
+    abstained_rounds: i64,
+    invalid_rounds: i64,
+    degraded_rounds: i64,
+    short_response_rate: f64,
+) -> f64 {
+    if total_rounds == 0 {
+        return 3.0;
+    }
+    let total = total_rounds as f64;
+    let abstain_rate = abstained_rounds as f64 / total;
+    let invalid_rate = invalid_rounds as f64 / total;
+    let degraded_rate = degraded_rounds as f64 / total;
+    let mut score = 9.2
+        - abstain_rate * 5.5
+        - invalid_rate * 7.0
+        - degraded_rate * 4.5
+        - short_response_rate * 2.3;
+    if total_rounds < 6 {
+        score -= 1.2;
+    }
+    if total_rounds < 3 {
+        score -= 0.8;
+    }
+    score.clamp(0.0, 10.0)
+}
+
+fn usefulness_score(
+    base_usefulness: f64,
+    total_rounds: i64,
+    abstained_rounds: i64,
+    degraded_rounds: i64,
+) -> f64 {
+    if total_rounds == 0 {
+        return 4.0;
+    }
+    let total = total_rounds as f64;
+    let abstain_rate = abstained_rounds as f64 / total;
+    let degraded_rate = degraded_rounds as f64 / total;
+    let participation_rate = (total - abstained_rounds as f64).max(0.0) / total;
+    let mut score = base_usefulness
+        - abstain_rate * 3.0
+        - degraded_rate * 1.4;
+    if participation_rate < 0.70 {
+        score -= (0.70 - participation_rate) * 2.0;
+    }
+    if total_rounds < 3 {
+        score -= 0.6;
+    }
+    score.clamp(0.0, 10.0)
+}
+
+fn functionality_score(
+    total_rounds: i64,
+    abstained_rounds: i64,
+    invalid_rounds: i64,
+    degraded_rounds: i64,
+) -> f64 {
+    if total_rounds == 0 {
+        return 3.0;
+    }
+    let total = total_rounds as f64;
+    let abstain_rate = abstained_rounds as f64 / total;
+    let invalid_rate = invalid_rounds as f64 / total;
+    let degraded_rate = degraded_rounds as f64 / total;
+    let mut score = 10.0
+        - abstain_rate * 6.5
+        - invalid_rate * 5.0
+        - degraded_rate * 4.0;
+    if total_rounds < 6 {
+        score -= 1.0;
+    }
+    if total_rounds < 3 {
+        score -= 1.0;
+    }
+    score.clamp(0.0, 10.0)
+}
+
+fn score_out_of_10(
+    total_rounds: i64,
+    abstained_rounds: i64,
+    invalid_rounds: i64,
+    degraded_rounds: i64,
+    dimensions: ScoringDimensions,
+) -> f64 {
+    if total_rounds == 0 {
+        return 4.0;
+    }
+    let total = total_rounds as f64;
+    let abstain_rate = abstained_rounds as f64 / total;
+    let invalid_rate = invalid_rounds as f64 / total;
+    let degraded_rate = degraded_rounds as f64 / total;
+
+    let mut score = dimensions.critical_thinking * 0.20
+        + dimensions.resource_use * 0.15
+        + dimensions.instruction_following * 0.20
+        + dimensions.functionality * 0.20
+        + dimensions.usefulness * 0.15
+        + dimensions.debate_engagement * 0.10;
+
+    // Institutional-grade calibration: keep top scores intentionally rare.
+    score = score * 0.92 - 0.35;
+
+    if total_rounds < 6 {
+        score *= 0.88;
+    }
+    if abstain_rate > 0.20 {
+        score -= 0.9;
+    }
+    if invalid_rate > 0.10 {
+        score -= 0.8;
+    }
+    if degraded_rate > 0.20 {
+        score -= 0.7;
+    }
+    if dimensions.instruction_following < 6.0 {
+        score -= 0.6;
+    }
+    if dimensions.functionality < 6.0 {
+        score -= 0.5;
+    }
+
+    round_score(score)
+}
+
+fn build_suggestions(
+    agg: &queries::BotPerformanceAggregate,
+    dimensions: ScoringDimensions,
+) -> Vec<String> {
+    let mut suggestions = Vec::new();
+    if agg.total_rounds == 0 {
+        suggestions.push("Run at least 3 debates to establish a reliability baseline.".into());
+        suggestions.push("Use the Test button before debates to verify endpoint readiness.".into());
+        return suggestions;
+    }
+
+    let total = agg.total_rounds as f64;
+    let abstain_rate = agg.abstained_rounds as f64 / total;
+    let invalid_rate = agg.invalid_rounds as f64 / total;
+    let degraded_rate = agg.degraded_rounds as f64 / total;
+
+    if dimensions.critical_thinking < 6.0 {
+        suggestions.push("Strengthen critical thinking by explicitly evaluating assumptions, risks, and trade-offs before concluding.".into());
+    }
+    if dimensions.resource_use < 6.0 {
+        suggestions.push("Ground claims with concrete resources (metrics, benchmarks, or citations) instead of generic statements.".into());
+    }
+    if dimensions.instruction_following < 6.0 {
+        suggestions.push("Improve instruction following: stay on task in every round, keep structure valid, and avoid low-information fallback responses.".into());
+    }
+    if dimensions.functionality < 7.0 {
+        suggestions.push("Improve functional reliability: reduce abstentions, enforce schema-valid responses, and keep round >=1 context stable.".into());
+    }
+    if dimensions.usefulness < 6.0 {
+        suggestions.push("Increase practical usefulness with clearer recommendations, sequencing, and implementation-ready next steps.".into());
+    }
+    if dimensions.debate_engagement < 6.0 {
+        suggestions.push("Engage opponent arguments directly (quote/challenge/respond) rather than giving isolated monologues.".into());
+    }
+    if abstain_rate > 0.20 {
+        suggestions.push("Reduce latency/timeouts and harden round >=1 handling to avoid abstentions.".into());
+    }
+    if invalid_rate > 0.10 {
+        suggestions.push("Return schema-valid JSON on every round (response required, optional fields typed correctly).".into());
+    }
+    if degraded_rate > 0.0 {
+        suggestions.push("Replace fallback 'unable to formulate' responses with a structured minimum argument template.".into());
+    }
+    if suggestions.is_empty() {
+        suggestions.push("Solid baseline; next gains come from denser evidence, sharper trade-off framing, and more implementation-ready advice.".into());
+    }
+    suggestions
+}
+
+fn default_performance() -> BotPerformanceSummary {
+    BotPerformanceSummary {
+        score_out_of_10: 4.0,
+        critical_thinking_score_out_of_10: 4.0,
+        resource_use_score_out_of_10: 4.0,
+        instruction_following_score_out_of_10: 4.0,
+        functionality_score_out_of_10: 4.0,
+        usefulness_score_out_of_10: 4.0,
+        debate_engagement_score_out_of_10: 4.0,
+        total_rounds: 0,
+        debates_participated: 0,
+        abstained_rounds: 0,
+        invalid_rounds: 0,
+        degraded_rounds: 0,
+        last_debate_at: None,
+        suggestions: vec![
+            "Run at least 3 debates to establish a reliability baseline.".into(),
+            "Use the Test button before debates to verify endpoint readiness.".into(),
+        ],
+    }
+}
+
+fn build_performance(
+    agg: &queries::BotPerformanceAggregate,
+    samples: &[queries::BotResponseSampleRow],
+) -> BotPerformanceSummary {
+    let text_scores = text_score_dimensions(samples);
+    let instruction_following = instruction_following_score(
+        agg.total_rounds,
+        agg.abstained_rounds,
+        agg.invalid_rounds,
+        agg.degraded_rounds,
+        text_scores.short_response_rate,
+    );
+    let functionality = functionality_score(
+        agg.total_rounds,
+        agg.abstained_rounds,
+        agg.invalid_rounds,
+        agg.degraded_rounds,
+    );
+    let usefulness = usefulness_score(
+        text_scores.usefulness,
+        agg.total_rounds,
+        agg.abstained_rounds,
+        agg.degraded_rounds,
+    );
+    let dimensions = ScoringDimensions {
+        critical_thinking: text_scores.critical_thinking,
+        resource_use: text_scores.resource_use,
+        instruction_following,
+        functionality,
+        usefulness,
+        debate_engagement: text_scores.debate_engagement,
+    };
+    BotPerformanceSummary {
+        score_out_of_10: score_out_of_10(
+            agg.total_rounds,
+            agg.abstained_rounds,
+            agg.invalid_rounds,
+            agg.degraded_rounds,
+            dimensions,
+        ),
+        critical_thinking_score_out_of_10: round_score(text_scores.critical_thinking),
+        resource_use_score_out_of_10: round_score(text_scores.resource_use),
+        instruction_following_score_out_of_10: round_score(instruction_following),
+        functionality_score_out_of_10: round_score(functionality),
+        usefulness_score_out_of_10: round_score(usefulness),
+        debate_engagement_score_out_of_10: round_score(text_scores.debate_engagement),
+        total_rounds: agg.total_rounds,
+        debates_participated: agg.debates_participated,
+        abstained_rounds: agg.abstained_rounds,
+        invalid_rounds: agg.invalid_rounds,
+        degraded_rounds: agg.degraded_rounds,
+        last_debate_at: agg.last_debate_at.clone(),
+        suggestions: build_suggestions(agg, dimensions),
+    }
+}
+
+fn performance_for_bot(
+    aggregates: &HashMap<String, queries::BotPerformanceAggregate>,
+    response_samples: &HashMap<String, Vec<queries::BotResponseSampleRow>>,
+    bot_id: &str,
+) -> BotPerformanceSummary {
+    aggregates
+        .get(bot_id)
+        .map(|agg| {
+            let samples = response_samples.get(bot_id).map(Vec::as_slice).unwrap_or(&[]);
+            build_performance(agg, samples)
+        })
+        .unwrap_or_else(default_performance)
+}
+
+pub(crate) async fn build_performance_map(
+    pool: &SqlitePool,
+    bot_ids: &[String],
+) -> Result<HashMap<String, BotPerformanceSummary>, sqlx::Error> {
+    let aggregates = queries::get_bot_performance_aggregates(pool, bot_ids).await?;
+    let response_samples = queries::get_bot_response_samples(
+        pool,
+        bot_ids,
+        RESPONSE_SAMPLE_LIMIT,
+    ).await?;
+    let mut map = HashMap::new();
+    for bot_id in bot_ids {
+        map.insert(
+            bot_id.clone(),
+            performance_for_bot(&aggregates, &response_samples, bot_id),
+        );
+    }
+    Ok(map)
+}
+
+fn ensure_can_view_bot(auth: &AuthIdentity, bot: &BotRow) -> AppResult<()> {
+    if auth.is_admin() {
+        return Ok(());
+    }
+    let Some(user_id) = auth.user_id() else {
+        return Err(AppError::Unauthorized);
+    };
+    match bot.submitted_by.as_deref() {
+        Some(owner_id) if owner_id == user_id => Ok(()),
+        _ => Err(AppError::Forbidden),
     }
 }
 
@@ -36,38 +495,58 @@ pub async fn create_bot(
     auth: AuthIdentity,
     Json(req): Json<CreateBotRequest>,
 ) -> AppResult<(StatusCode, Json<BotResponse>)> {
+    let simple_mode = state.settings().debate.test_mode_simple;
+
     if req.name.is_empty() {
         return Err(AppError::BadRequest("name is required".into()));
     }
     if req.endpoint_url.is_empty() {
         return Err(AppError::BadRequest("endpoint_url is required".into()));
     }
-    // HTTPS enforcement. Allow http://localhost and 127.0.0.1 only in debug builds.
+    // HTTPS enforcement. In simple test mode, HTTP endpoints are allowed.
+    // Outside test mode, allow http://localhost and 127.0.0.1 only in debug builds.
     if !req.endpoint_url.starts_with("https://") {
-        let localhost_ok = cfg!(debug_assertions) && (
-            req.endpoint_url.starts_with("http://localhost")
-            || req.endpoint_url.starts_with("http://127.0.0.1")
-        );
-        if !localhost_ok {
-            return Err(AppError::BadRequest("endpoint_url must use https://".into()));
+        if !simple_mode {
+            let localhost_ok = cfg!(debug_assertions) && (
+                req.endpoint_url.starts_with("http://localhost")
+                || req.endpoint_url.starts_with("http://127.0.0.1")
+            );
+            if !localhost_ok {
+                return Err(AppError::BadRequest("endpoint_url must use https://".into()));
+            }
         }
     }
-    if req.token.is_empty() {
+    if req.token.is_empty() && !simple_mode {
         return Err(AppError::BadRequest("token is required".into()));
     }
-    let id = BotId::new();
-    let ciphertext = crate::api::bot_token_crypto::encrypt(
-        state.bot_token_key(),
-        &req.token,
-    ).map_err(|_| AppError::Internal(anyhow::anyhow!("token encryption failed")))?;
-    let status = if auth.is_admin() { "active" } else { "pending" };
     let submitted_by = auth.user_id().map(String::from);
+    if let Some(user_id) = submitted_by.as_deref() {
+        queries::archive_prior_submissions_for_submitter(
+            state.db(),
+            user_id,
+            &req.name,
+        ).await?;
+    }
+    let id = BotId::new();
+    let ciphertext = if req.token.is_empty() {
+        None
+    } else {
+        Some(
+            crate::api::bot_token_crypto::encrypt(state.bot_token_key(), &req.token)
+                .map_err(|_| AppError::Internal(anyhow::anyhow!("token encryption failed")))?,
+        )
+    };
+    let status = if auth.is_admin() || (simple_mode && auth.user_id().is_some()) {
+        "active"
+    } else {
+        "pending"
+    };
     let row = queries::insert_bot(
-        state.db(), id.as_str(), &req.name, &req.endpoint_url, &ciphertext,
+        state.db(), id.as_str(), &req.name, &req.endpoint_url, ciphertext.as_deref(),
         req.model_family.as_deref(), submitted_by.as_deref(),
         req.description.as_deref(), status,
     ).await?;
-    Ok((StatusCode::CREATED, Json(bot_to_response(&row))))
+    Ok((StatusCode::CREATED, Json(bot_to_response(&row, None))))
 }
 
 /// GET /bots — list bots.
@@ -82,13 +561,60 @@ pub async fn list_bots(
     } else {
         queries::list_active_bots(state.db()).await?
     };
-    let bots = rows.iter().map(bot_to_response).collect();
+    let bot_ids: Vec<String> = rows.iter().map(|b| b.id.clone()).collect();
+    let performance = build_performance_map(state.db(), &bot_ids).await?;
+    let bots = rows.iter().map(|row| {
+        let perf = performance
+            .get(&row.id)
+            .cloned()
+            .unwrap_or_else(default_performance);
+        bot_to_response(row, Some(perf))
+    }).collect();
     Ok(Json(bots))
+}
+
+/// GET /bots/{id}/analytics — detailed per-bot analytics.
+///
+/// Access:
+/// - Admins can view any bot analytics.
+/// - Participants can only view analytics for bots they submitted.
+pub async fn get_bot_analytics(
+    State(state): State<AppState>,
+    auth: AuthIdentity,
+    Path(id): Path<String>,
+) -> AppResult<Json<BotAnalyticsResponse>> {
+    let bot = queries::get_bot(state.db(), &id).await?
+        .ok_or_else(|| AppError::NotFound("bot not found".into()))?;
+    ensure_can_view_bot(&auth, &bot)?;
+
+    let mut perf_map = build_performance_map(state.db(), &[id.clone()]).await?;
+    let performance = perf_map
+        .remove(&id)
+        .unwrap_or_else(default_performance);
+
+    let recent = queries::get_bot_debate_summaries(state.db(), &id, 25).await?;
+    let recent_debates = recent.into_iter().map(|row| BotDebateAnalytics {
+        debate_id: row.debate_id,
+        topic: row.topic,
+        status: row.status,
+        created_at: row.created_at,
+        completed_at: row.completed_at,
+        role: row.role,
+        rounds_total: row.rounds_total,
+        abstained_rounds: row.abstained_rounds,
+        invalid_rounds: row.invalid_rounds,
+        degraded_rounds: row.degraded_rounds,
+    }).collect();
+
+    Ok(Json(BotAnalyticsResponse {
+        bot: bot_to_response(&bot, Some(performance)),
+        recent_debates,
+    }))
 }
 
 /// Convert a raw smoke-test error into plain-English feedback for the submitter.
 /// Pure function; separately tested.
-fn classify_smoke_test_error(raw: &str) -> String {
+pub(crate) fn classify_smoke_test_error(raw: &str) -> String {
     let lower = raw.to_lowercase();
     if lower.contains("dns") || lower.contains("name resolution") || lower.contains("failed to lookup") {
         "Endpoint hostname could not be resolved. Check the URL.".into()
@@ -110,42 +636,116 @@ fn classify_smoke_test_error(raw: &str) -> String {
     }
 }
 
-/// Send a smoke-test request to a bot's endpoint before approval.
-///
-/// Sends a minimal POST with a dummy session, checks that the response is
-/// valid JSON containing a string `response` field. Uses a 30-second timeout.
-/// Decrypts the stored token and sends `Authorization: Bearer <token>`.
-async fn smoke_test_bot(
-    client: &reqwest_middleware::ClientWithMiddleware,
-    bot: &BotRow,
-    key: &crate::api::bot_token_crypto::BotTokenKey,
-) -> Result<(), String> {
-    let ciphertext = bot.token_ciphertext.as_ref()
-        .ok_or_else(|| "bot has no encrypted token (pre-migration row — resubmit)".to_string())?;
-    let token = crate::api::bot_token_crypto::decrypt(key, ciphertext)
-        .map_err(|_| "could not decrypt stored token (wrong key or corruption)".to_string())?;
-
-    let body = serde_json::json!({
-        "session_id": "smoke-test", "round": 0, "role": "proponent",
-        "context": [],
-        "prompt": "Smoke test: respond with any valid JSON containing a 'response' field."
-    });
-    let response = client
-        .post(&bot.endpoint_url)
-        .timeout(std::time::Duration::from_secs(30))
-        .header("authorization", format!("Bearer {token}"))
-        .json(&body)
-        .send().await
-        .map_err(|e| format!("request failed: {e}"))?;
-    let status = response.status();
-    if !status.is_success() { return Err(format!("bot returned HTTP {status}")); }
-    let json: serde_json::Value = response.json().await
-        .map_err(|e| format!("response is not valid JSON: {e}"))?;
+fn validate_smoke_json(json: serde_json::Value) -> Result<(), String> {
     match json.get("response") {
-        Some(serde_json::Value::String(_)) => Ok(()),
+        Some(serde_json::Value::String(text)) if !text.trim().is_empty() => Ok(()),
+        Some(serde_json::Value::String(_)) => Err("'response' field is empty".into()),
         Some(other) => Err(format!("'response' field has wrong type: expected string, got {other}")),
         None => Err("response JSON missing 'response' field".into()),
     }
+}
+
+async fn send_smoke_probe(
+    client: &reqwest::Client,
+    endpoint_url: &str,
+    token: Option<&str>,
+    body: serde_json::Value,
+    label: &str,
+) -> Result<(), String> {
+    let mut last_transport_error: Option<String> = None;
+    let mut response = None;
+    for attempt in 1..=2 {
+        let mut request = client
+            .post(endpoint_url)
+            .timeout(std::time::Duration::from_secs(60));
+        if let Some(token) = token {
+            if !token.is_empty() {
+                request = request.header("authorization", format!("Bearer {token}"));
+            }
+        }
+        match request.json(&body).send().await {
+            Ok(res) => {
+                response = Some(res);
+                break;
+            }
+            Err(err) => {
+                last_transport_error = Some(format!("{label} request failed: {err}"));
+                if attempt < 2 {
+                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                }
+            }
+        }
+    }
+    let response = match response {
+        Some(res) => res,
+        None => {
+            return Err(last_transport_error.unwrap_or_else(|| {
+                format!("{label} request failed: unknown transport error")
+            }));
+        }
+    };
+    let status = response.status();
+    if !status.is_success() {
+        return Err(format!("{label} bot returned HTTP {status}"));
+    }
+    let json: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("{label} response is not valid JSON: {e}"))?;
+    validate_smoke_json(json).map_err(|e| format!("{label} {e}"))
+}
+
+/// Send a multi-step smoke test to a bot endpoint.
+///
+/// Runs both a round-0 and round-1 style probe to catch integrations that only
+/// handle the simplest payload shape.
+pub(crate) async fn smoke_test_bot(
+    _client: &reqwest_middleware::ClientWithMiddleware,
+    bot: &BotRow,
+    key: &crate::api::bot_token_crypto::BotTokenKey,
+) -> Result<(), String> {
+    let direct_client = reqwest::Client::builder()
+        // Debate endpoint probes should always connect directly so local
+        // addresses (for co-hosted bots) are not routed via any proxy env.
+        .no_proxy()
+        .connect_timeout(std::time::Duration::from_secs(5))
+        .timeout(std::time::Duration::from_secs(60))
+        .build()
+        .map_err(|e| format!("failed to build smoke-test client: {e}"))?;
+
+    let token = if let Some(ciphertext) = bot.token_ciphertext.as_ref() {
+        Some(
+            crate::api::bot_token_crypto::decrypt(key, ciphertext)
+                .map_err(|_| "could not decrypt stored token (wrong key or corruption)".to_string())?,
+        )
+    } else {
+        None
+    };
+
+    let round0 = serde_json::json!({
+        "session_id": "smoke-test", "round": 0, "role": "proponent",
+        "context": [],
+        "prompt": "Smoke test round 0: return valid JSON with a non-empty 'response' string."
+    });
+    let round1 = serde_json::json!({
+        "session_id": "smoke-test",
+        "round": 1,
+        "role": "skeptic",
+        "context": [
+            {
+                "pseudonym": "Argon",
+                "round": 0,
+                "response": "The proposal improves reliability by introducing preflight checks.",
+                "confidence": 72
+            }
+        ],
+        "prompt": "Smoke test round 1: engage with the context and return valid JSON with a non-empty 'response' string."
+    });
+    // Probe sequentially to avoid overloading single-threaded bot servers that
+    // cannot safely process two smoke requests at once.
+    send_smoke_probe(&direct_client, &bot.endpoint_url, token.as_deref(), round0, "round0").await?;
+    send_smoke_probe(&direct_client, &bot.endpoint_url, token.as_deref(), round1, "round1").await?;
+    Ok(())
 }
 
 /// Shared transition helper: maps `transition_bot_status` results to either the
@@ -195,7 +795,7 @@ pub async fn approve_bot(
                 &state, &admin, &id,
                 &["pending", "smoke_test_failed"], "active", None,
             ).await?;
-            Ok(Json(bot_to_response(&row)))
+            Ok(Json(bot_to_response(&row, None)))
         }
         Err(reason) => {
             let classified = classify_smoke_test_error(&reason);
@@ -204,9 +804,34 @@ pub async fn approve_bot(
                 &["pending", "smoke_test_failed"], "smoke_test_failed",
                 Some(&classified),
             ).await?;
-            Ok(Json(bot_to_response(&row)))
+            Ok(Json(bot_to_response(&row, None)))
         }
     }
+}
+
+/// PATCH /bots/{id}/test — admin-triggered smoke test without state transition.
+pub async fn test_bot(
+    State(state): State<AppState>,
+    _admin: RequireAdmin,
+    Path(id): Path<String>,
+) -> AppResult<Json<BotHealthCheckResponse>> {
+    let bot = queries::get_bot(state.db(), &id).await?
+        .ok_or_else(|| AppError::NotFound("bot not found".into()))?;
+    let started = std::time::Instant::now();
+    let response = match smoke_test_bot(state.http_client(), &bot, state.bot_token_key()).await {
+        Ok(()) => BotHealthCheckResponse {
+            ok: true,
+            message: format!(
+                "Smoke test passed (round0+round1) in {} ms.",
+                started.elapsed().as_millis()
+            ),
+        },
+        Err(reason) => BotHealthCheckResponse {
+            ok: false,
+            message: classify_smoke_test_error(&reason),
+        },
+    };
+    Ok(Json(response))
 }
 
 /// PATCH /bots/{id}/reject — admin rejects a pending or smoke-test-failed bot
@@ -228,7 +853,7 @@ pub async fn reject_bot(
         &state, &admin, &id,
         &["pending", "smoke_test_failed"], "rejected", Some(reason),
     ).await?;
-    Ok(Json(bot_to_response(&row)))
+    Ok(Json(bot_to_response(&row, None)))
 }
 
 /// PATCH /bots/{id}/deactivate — deactivate an active bot (admin only).
@@ -238,7 +863,7 @@ pub async fn deactivate_bot(
     Path(id): Path<String>,
 ) -> AppResult<Json<BotResponse>> {
     let row = do_transition(&state, &admin, &id, &["active"], "inactive", None).await?;
-    Ok(Json(bot_to_response(&row)))
+    Ok(Json(bot_to_response(&row, None)))
 }
 
 /// PATCH /bots/{id}/reactivate — reactivate an inactive bot (admin only).
@@ -248,7 +873,7 @@ pub async fn reactivate_bot(
     Path(id): Path<String>,
 ) -> AppResult<Json<BotResponse>> {
     let row = do_transition(&state, &admin, &id, &["inactive"], "active", None).await?;
-    Ok(Json(bot_to_response(&row)))
+    Ok(Json(bot_to_response(&row, None)))
 }
 
 /// GET /bots/my-submissions — list bots submitted by the current user.
@@ -259,150 +884,7 @@ pub async fn my_submissions(
     let user_id = auth.user_id()
         .ok_or_else(|| AppError::BadRequest("not a Clerk user".into()))?;
     let rows = queries::list_bots_by_submitter(state.db(), user_id).await?;
-    Ok(Json(rows.iter().map(bot_to_response).collect()))
-}
-
-/// POST /bots/validate — dry-run the smoke-test logic against a
-/// candidate endpoint/token pair without persisting anything.
-///
-/// Returns a check list so bot authors can iterate before submitting.
-/// No bot row is inserted; no ciphertext is stored; nothing is logged at
-/// the DB layer.
-pub async fn validate_bot(
-    State(state): State<AppState>,
-    _auth: crate::api::auth::RequireAuth,
-    Json(req): Json<ValidateBotRequest>,
-) -> AppResult<Json<ValidateBotResponse>> {
-    let mut checks: Vec<ValidateCheck> = Vec::new();
-
-    // Check 1: URL must be HTTPS (or localhost in debug builds).
-    let https_ok = req.endpoint_url.starts_with("https://")
-        || (cfg!(debug_assertions)
-            && (req.endpoint_url.starts_with("http://localhost")
-                || req.endpoint_url.starts_with("http://127.0.0.1")));
-    checks.push(ValidateCheck {
-        name: "endpoint_url_https".into(),
-        passed: https_ok,
-        detail: if https_ok {
-            "scheme ok".into()
-        } else {
-            "endpoint_url must use https://".into()
-        },
-    });
-    if !https_ok {
-        return Ok(Json(ValidateBotResponse { ok: false, checks }));
-    }
-
-    // Check 2: token is non-empty.
-    let token_ok = !req.token.is_empty();
-    checks.push(ValidateCheck {
-        name: "token_present".into(),
-        passed: token_ok,
-        detail: if token_ok { "ok".into() } else { "token required".into() },
-    });
-    if !token_ok {
-        return Ok(Json(ValidateBotResponse { ok: false, checks }));
-    }
-
-    // Check 3: smoke test — same shape as approve_bot uses, but with the
-    // supplied plaintext token (no DB read, no decrypt).
-    let body = serde_json::json!({
-        "session_id": "validate-dry-run",
-        "round": 0,
-        "role": "proponent",
-        "context": [],
-        "prompt": "Dry-run validation: respond with any valid JSON containing a 'response' field.",
-    });
-    let start = std::time::Instant::now();
-    let result = state
-        .http_client()
-        .post(&req.endpoint_url)
-        .timeout(std::time::Duration::from_secs(30))
-        .header("authorization", format!("Bearer {}", req.token))
-        .json(&body)
-        .send()
-        .await;
-    let elapsed_ms = start.elapsed().as_millis() as i64;
-
-    let smoke = match result {
-        Err(e) => Err(format!("request failed: {e}")),
-        Ok(resp) => {
-            let status = resp.status();
-            if !status.is_success() {
-                Err(format!("bot returned HTTP {status}"))
-            } else {
-                match resp.json::<serde_json::Value>().await {
-                    Err(e) => Err(format!("response is not valid JSON: {e}")),
-                    Ok(json) => match json.get("response") {
-                        Some(serde_json::Value::String(_)) => Ok(()),
-                        Some(other) => Err(format!(
-                            "'response' field has wrong type: expected string, got {other}"
-                        )),
-                        None => Err("response JSON missing 'response' field".into()),
-                    },
-                }
-            }
-        }
-    };
-    let passed = smoke.is_ok();
-    let detail = match &smoke {
-        Ok(_) => format!("responded in {elapsed_ms} ms with valid schema"),
-        Err(e) => classify_smoke_test_error(e),
-    };
-    checks.push(ValidateCheck {
-        name: "smoke_test".into(),
-        passed,
-        detail,
-    });
-
-    Ok(Json(ValidateBotResponse {
-        ok: passed,
-        checks,
-    }))
-}
-
-/// GET /bots/{id}/history?limit=N — recent per-round outcomes for a bot.
-/// Participants can only see their own bots; admins can see any bot.
-/// `limit` defaults to 20 and is clamped to [1, 100].
-pub async fn bot_history(
-    State(state): State<AppState>,
-    auth: AuthIdentity,
-    Path(id): Path<String>,
-    Query(params): Query<HistoryQuery>,
-) -> AppResult<Json<Vec<BotHistoryEntry>>> {
-    let bot = queries::get_bot(state.db(), &id)
-        .await?
-        .ok_or_else(|| AppError::NotFound("bot not found".into()))?;
-
-    if !auth.is_admin() {
-        match (bot.submitted_by.as_deref(), auth.user_id()) {
-            (Some(owner), Some(caller)) if owner == caller => {}
-            _ => return Err(AppError::Forbidden),
-        }
-    }
-
-    let limit = params.limit.unwrap_or(20).clamp(1, 100);
-    let rows = queries_phase1::get_bot_history(state.db(), &id, limit).await?;
-    let out = rows
-        .into_iter()
-        .map(|r| BotHistoryEntry {
-            debate_id: r.debate_id,
-            round_number: r.round_number,
-            created_at: r.created_at,
-            valid: r.valid,
-            abstained: r.abstained,
-            error_kind: r.error_kind,
-            error_detail: r.error_detail,
-            elapsed_ms: r.elapsed_ms,
-        })
-        .collect();
-    Ok(Json(out))
-}
-
-/// Query params for GET /bots/{id}/history.
-#[derive(Debug, serde::Deserialize)]
-pub struct HistoryQuery {
-    pub limit: Option<i64>,
+    Ok(Json(rows.iter().map(|row| bot_to_response(row, None)).collect()))
 }
 
 /// GET /me — return current user info from auth identity.

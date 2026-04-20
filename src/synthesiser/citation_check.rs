@@ -119,7 +119,8 @@ fn check_text(
 ) {
     for cap in re.captures_iter(text) {
         *total += 1;
-        let agent = cap[1].trim().to_string();
+        let agent_raw = cap[1].trim().to_string();
+        let agent = canonical_agent_name(&agent_raw, valid_pseudonyms);
         let round: i64 = match cap[2].parse() {
             Ok(r) => r,
             Err(_) => {
@@ -132,12 +133,12 @@ fn check_text(
             }
         };
 
-        let citation_str = format!("[{}, Round {}]", agent, round);
+        let citation_str = format!("[{}, Round {}]", agent_raw, round);
 
         if !valid_pseudonyms.contains(&agent) {
             invalid.push(InvalidCitation {
                 citation: citation_str,
-                reason: format!("{} is not a participant", agent),
+                reason: format!("{} is not a participant", agent_raw),
                 location: location.into(),
             });
         } else if round < 0 || round > max_round {
@@ -151,14 +152,14 @@ fn check_text(
                 Some(&abstained) if abstained => {
                     invalid.push(InvalidCitation {
                         citation: citation_str,
-                        reason: format!("{} abstained in Round {}", agent, round),
+                        reason: format!("{} abstained in Round {}", agent_raw, round),
                         location: location.into(),
                     });
                 }
                 None => {
                     invalid.push(InvalidCitation {
                         citation: citation_str,
-                        reason: format!("{} has no response in Round {}", agent, round),
+                        reason: format!("{} has no response in Round {}", agent_raw, round),
                         location: location.into(),
                     });
                 }
@@ -166,6 +167,27 @@ fn check_text(
             }
         }
     }
+}
+
+/// Canonicalize human-readable alias forms (e.g. `Agent A (Clint)`) to pseudonyms.
+fn canonical_agent_name(agent_raw: &str, valid_pseudonyms: &HashSet<String>) -> String {
+    if valid_pseudonyms.contains(agent_raw) {
+        return agent_raw.to_string();
+    }
+    // Most common format after alias expansion: "Agent A (Clint)"
+    if let Some((left, _)) = agent_raw.split_once('(') {
+        let trimmed = left.trim();
+        if valid_pseudonyms.contains(trimmed) {
+            return trimmed.to_string();
+        }
+    }
+    // Generic prefix fallback if an alias is appended via punctuation.
+    for pseudo in valid_pseudonyms {
+        if agent_raw.starts_with(pseudo) {
+            return pseudo.clone();
+        }
+    }
+    agent_raw.to_string()
 }
 
 #[cfg(test)]
@@ -311,6 +333,29 @@ mod tests {
         let result = check_citations(&synthesis, &pseudonyms, &responses, 4);
         assert_eq!(result.citations_total, 2);
         assert_eq!(result.citations_valid, 2);
+        assert!(result.citations_invalid.is_empty());
+    }
+
+    #[test]
+    fn test_citations_accept_alias_expanded_agent_names() {
+        let synthesis = serde_json::json!({
+            "consensus_points": [{
+                "point": "Alias citation",
+                "supporting_bots": ["Agent A"],
+                "evidence": "As shown by [Agent A (Clint), Round 2]"
+            }],
+            "live_disagreements": [],
+            "minority_positions": [],
+            "flagged_capitulations": []
+        });
+        let mut pseudonyms = HashSet::new();
+        pseudonyms.insert("Agent A".to_string());
+        let mut responses = HashMap::new();
+        responses.insert(("Agent A".to_string(), 2), false);
+
+        let result = check_citations(&synthesis, &pseudonyms, &responses, 4);
+        assert_eq!(result.citations_total, 1);
+        assert_eq!(result.citations_valid, 1);
         assert!(result.citations_invalid.is_empty());
     }
 

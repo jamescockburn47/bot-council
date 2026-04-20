@@ -63,7 +63,7 @@ pub struct HttpClientConfig {
     pub retry_delay_secs: u64,
 }
 
-/// LLM model configuration for MiniMax (analysis) and Opus (synthesis).
+/// LLM model configuration for analysis and synthesis calls.
 #[derive(Debug, Deserialize, Clone)]
 pub struct ModelsConfig {
     pub minimax_api_key: String,
@@ -71,6 +71,128 @@ pub struct ModelsConfig {
     pub minimax_base_url: String,
     pub opus_api_key: String,
     pub opus_model: String,
+    #[serde(default = "default_analysis_base_url")]
+    pub analysis_base_url: String,
+    #[serde(default = "default_analysis_model")]
+    pub analysis_model: String,
+    #[serde(default = "default_analysis_connect_timeout_secs")]
+    pub analysis_connect_timeout_secs: u64,
+    #[serde(default = "default_analysis_request_timeout_secs")]
+    pub analysis_request_timeout_secs: u64,
+    #[serde(default = "default_analysis_max_concurrency")]
+    pub analysis_max_concurrency: usize,
+    #[serde(default = "default_final_synthesis_base_url")]
+    pub final_synthesis_base_url: String,
+    #[serde(default = "default_final_synthesis_model")]
+    pub final_synthesis_model: String,
+    #[serde(default = "default_final_synthesis_connect_timeout_secs")]
+    pub final_synthesis_connect_timeout_secs: u64,
+    #[serde(default = "default_final_synthesis_request_timeout_secs")]
+    pub final_synthesis_request_timeout_secs: u64,
+    #[serde(default = "default_final_synthesis_warmup_enabled")]
+    pub final_synthesis_warmup_enabled: bool,
+    #[serde(default = "default_final_synthesis_warmup_max_attempts")]
+    pub final_synthesis_warmup_max_attempts: u32,
+    #[serde(default = "default_final_synthesis_warmup_delay_secs")]
+    pub final_synthesis_warmup_delay_secs: u64,
+    #[serde(default = "default_local_synthesis_base_url")]
+    pub local_synthesis_base_url: String,
+    #[serde(default = "default_local_synthesis_model")]
+    pub local_synthesis_model: String,
+}
+
+fn default_analysis_base_url() -> String {
+    default_local_synthesis_base_url()
+}
+
+fn default_analysis_model() -> String {
+    default_local_synthesis_model()
+}
+
+fn default_analysis_connect_timeout_secs() -> u64 {
+    5
+}
+
+fn default_analysis_request_timeout_secs() -> u64 {
+    120
+}
+
+fn default_analysis_max_concurrency() -> usize {
+    2
+}
+
+fn default_final_synthesis_base_url() -> String {
+    default_local_synthesis_base_url()
+}
+
+fn default_final_synthesis_model() -> String {
+    default_local_synthesis_model()
+}
+
+fn default_final_synthesis_connect_timeout_secs() -> u64 {
+    10
+}
+
+fn default_final_synthesis_request_timeout_secs() -> u64 {
+    900
+}
+
+fn default_final_synthesis_warmup_enabled() -> bool {
+    true
+}
+
+fn default_final_synthesis_warmup_max_attempts() -> u32 {
+    // Bounded by default so a dead final-synthesis port cannot wedge every
+    // debate in an infinite warmup loop (proxy 502 / "API unstable").
+    // Set to 0 for infinite retries (block-until-ready) when the 122B server
+    // is guaranteed to come up.
+    24
+}
+
+fn default_final_synthesis_warmup_delay_secs() -> u64 {
+    5
+}
+
+fn default_local_synthesis_base_url() -> String {
+    "http://127.0.0.1:8086".into()
+}
+
+fn default_local_synthesis_model() -> String {
+    "gemma-4-31B-it-Q4_K_M.gguf".into()
+}
+
+impl ModelsConfig {
+    pub fn effective_analysis_base_url(&self) -> &str {
+        if self.analysis_base_url.trim().is_empty() {
+            &self.local_synthesis_base_url
+        } else {
+            &self.analysis_base_url
+        }
+    }
+
+    pub fn effective_analysis_model(&self) -> &str {
+        if self.analysis_model.trim().is_empty() {
+            &self.local_synthesis_model
+        } else {
+            &self.analysis_model
+        }
+    }
+
+    pub fn effective_final_synthesis_base_url(&self) -> &str {
+        if self.final_synthesis_base_url.trim().is_empty() {
+            &self.local_synthesis_base_url
+        } else {
+            &self.final_synthesis_base_url
+        }
+    }
+
+    pub fn effective_final_synthesis_model(&self) -> &str {
+        if self.final_synthesis_model.trim().is_empty() {
+            &self.local_synthesis_model
+        } else {
+            &self.final_synthesis_model
+        }
+    }
 }
 
 /// Debate protocol tuning.
@@ -80,6 +202,8 @@ pub struct DebateConfig {
     pub max_retries: u32,
     pub quorum: usize,
     pub synthesis_temperature: f64,
+    #[serde(default)]
+    pub test_mode_simple: bool,
 }
 
 /// Sentry error-tracking configuration. Empty DSN disables Sentry entirely.
@@ -111,10 +235,10 @@ impl Settings {
     /// Fail-fast validation of boot-time configuration invariants.
     /// Returns the first error found; the caller should refuse to start.
     pub fn validate(&self) -> anyhow::Result<()> {
-        let a = &self.auth;
+        let auth = &self.auth;
 
         // 1. At least one auth path must be configured (tests skip this).
-        if a.admin_token.is_empty() && a.clerk_issuer.is_empty() && !cfg!(test) {
+        if auth.admin_token.is_empty() && auth.clerk_issuer.is_empty() && !cfg!(test) {
             anyhow::bail!(
                 "auth.admin_token OR auth.clerk_issuer must be set. \
                  Dev-mode auto-admin has been removed."
@@ -125,14 +249,14 @@ impl Settings {
         //    at runtime via the `admins` table, so no allowlist check here.
         //    First admin is bootstrapped via the admin_token bearer POSTing to
         //    /admins after sign-in — see docs/deploy-clerk-auth-rollout.md.
-        if !a.clerk_issuer.is_empty() {
-            if a.bot_token_key.is_empty() {
+        if !auth.clerk_issuer.is_empty() {
+            if auth.bot_token_key.is_empty() {
                 anyhow::bail!(
                     "auth.clerk_issuer is set but auth.bot_token_key is not; \
                      bot tokens cannot be encrypted"
                 );
             }
-            crate::api::bot_token_crypto::parse_key_hex(&a.bot_token_key).map_err(|_| {
+            crate::api::bot_token_crypto::parse_key_hex(&auth.bot_token_key).map_err(|_| {
                 anyhow::anyhow!(
                     "auth.bot_token_key must be exactly 64 hex characters (32 bytes)"
                 )
@@ -142,7 +266,7 @@ impl Settings {
         // 3. test_mode is mutually exclusive with a real Clerk deployment.
         //    Refusing to boot makes it impossible to accidentally expose the
         //    backdoor in production.
-        if a.test_mode && !a.clerk_issuer.is_empty() {
+        if auth.test_mode && !auth.clerk_issuer.is_empty() {
             anyhow::bail!(
                 "auth.test_mode must not be enabled when auth.clerk_issuer is set"
             );

@@ -16,7 +16,7 @@ pub struct SynthesisOutput {
     pub minority_positions: Vec<MinorityPosition>,
     /// Per-pseudonym confidence values across rounds 0–4 (None = absent).
     pub confidence_trajectories: HashMap<String, Vec<Option<i64>>>,
-    /// High-level meta-observations (max 200 words).
+    /// High-level meta-observations (deterministic evidence-grounded narrative).
     pub meta_observations: String,
 }
 
@@ -77,6 +77,6 @@ pub struct MinorityPosition {
     pub position: String,
     /// The strongest argument offered, with citation.
     pub key_argument: String,
-    /// Confidence level at the end of the debate.
-    pub confidence: i64,
+    /// Confidence level at the end of the debate, if provided.
+    pub confidence: Option<i64>,
 }

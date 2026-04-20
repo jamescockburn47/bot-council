@@ -2,13 +2,13 @@ pub mod admins;
 pub mod auth;
 pub mod bot_token_crypto;
 pub mod bots;
-pub mod diag;
+pub mod compat;
 pub mod jwks_cache;
 pub mod debates;
+pub mod diag;
 pub mod dto;
 pub mod events;
 pub mod health;
-pub mod schema;
 pub mod stream;
 pub mod synthesis;
 pub mod transcript;
@@ -16,7 +16,6 @@ pub mod transcript;
 use axum::{Router, http::HeaderValue, routing::{delete, get, patch}};
 use tower_http::cors::{Any, CorsLayer};
 use axum::http::Method;
-use sentry::integrations::tower::{NewSentryLayer, SentryHttpLayer};
 use crate::state::AppState;
 
 /// Build the CORS layer from the configured origins.
@@ -43,17 +42,19 @@ pub fn router(state: AppState) -> Router {
     let cors = cors_layer(&state.settings().server.cors_origins);
     Router::new()
         .route("/health", get(health::health))
+        .route("/diag/health", get(health::health))
+        .route("/diag/models", get(diag::get_model_diagnostics))
         .route("/me", get(bots::get_me))
         .route("/bots/my-submissions", get(bots::my_submissions))
-        .route("/bots/schema", get(schema::get_schema))
-        .route("/bots/validate", axum::routing::post(bots::validate_bot))
         .route("/bots", get(bots::list_bots).post(bots::create_bot))
-        .route("/bots/{id}/history", get(bots::bot_history))
+        .route("/bots/schema", get(compat::legacy_bot_schema))
+        .route("/bots/{id}/history", get(compat::legacy_bot_history))
+        .route("/bots/{id}/analytics", get(bots::get_bot_analytics))
         .route("/bots/{id}/approve", patch(bots::approve_bot))
+        .route("/bots/{id}/test", patch(bots::test_bot))
         .route("/bots/{id}/reject", patch(bots::reject_bot))
         .route("/bots/{id}/deactivate", patch(bots::deactivate_bot))
         .route("/bots/{id}/reactivate", patch(bots::reactivate_bot))
-        .route("/diag/health", get(diag::get_diag_health))
         .route("/debates", get(debates::list_debates).post(debates::create_debate))
         .route("/debates/{id}", get(debates::get_debate))
         .route("/debates/{id}/transcript", get(transcript::get_transcript))
@@ -63,10 +64,5 @@ pub fn router(state: AppState) -> Router {
         .route("/admins/{user_id}", delete(admins::remove_admin))
         .route("/users", get(admins::list_users))
         .layer(cors)
-        // Sentry layers: outermost so every request gets its own hub and
-        // transactions carry the matched axum route path (e.g.
-        // "POST /bots/{id}/approve") rather than the raw URI.
-        .layer(SentryHttpLayer::new().enable_transaction())
-        .layer(NewSentryLayer::new_from_top())
         .with_state(state)
 }

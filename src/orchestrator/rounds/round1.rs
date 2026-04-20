@@ -12,6 +12,7 @@ pub async fn run_round1(
     pool: &SqlitePool,
     client: &ClientWithMiddleware,
     debate_id: &str,
+    topic: &str,
     bots: &[BotRow],
     bot_tokens: &HashMap<String, String>,
     role_assignments: &HashMap<String, Role>,
@@ -19,6 +20,7 @@ pub async fn run_round1(
     round0_context: Vec<RoundContext>,
     timeout_secs: u64,
 ) -> Result<Vec<(String, Option<DebateRoundResponse>)>, String> {
+    let topic = topic.to_string();
     let futures: Vec<_> = bots.iter().map(|bot| {
         let client = client.clone();
         let endpoint = bot.endpoint_url.clone();
@@ -26,7 +28,7 @@ pub async fn run_round1(
         let session_id = debate_id.to_string();
         let role = role_assignments.get(&bot.id).copied().unwrap_or(Role::Proponent);
         let own_pseudonym = pseudonym_map.get(&bot.id).cloned().unwrap_or_default();
-        let prompt = prompts::round1_prompt(&own_pseudonym);
+        let prompt = prompts::round1_prompt(&topic, &own_pseudonym, role);
         let context = round0_context.clone();
         let bot_id = bot.id.clone();
         async move {

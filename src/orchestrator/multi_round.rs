@@ -1,4 +1,5 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use futures::StreamExt;
 use sqlx::SqlitePool;
 use reqwest_middleware::ClientWithMiddleware;
 use tokio::sync::broadcast;
@@ -7,7 +8,7 @@ use crate::bot_client::RoundContext;
 use crate::config::{ModelsConfig, DebateConfig};
 use crate::db::{models::BotRow, queries, queries_phase1};
 use crate::analyser::divergence::analyse_divergence;
-use crate::synthesiser::{self, precompute};
+use crate::synthesiser::{self, citation_check, precompute};
 use crate::orchestrator::{rounds, state_machine};
 use crate::types::{DebateId, Role};
 
@@ -51,11 +52,40 @@ fn emit_round_responses(
     });
 }
 
-/// Run a full 5-round adversarial debate (Phase 1 protocol).
-#[tracing::instrument(
-    skip_all,
-    fields(debate_id = %debate_id.as_str(), bot_count = bots.len())
-)]
+/// True when synthesis contains no claim-bearing sections.
+fn is_conservative_empty_synthesis(s: &serde_json::Value) -> bool {
+    let arrays_empty = |key: &str| {
+        s.get(key)
+            .and_then(|v| v.as_array())
+            .map(|a| a.is_empty())
+            .unwrap_or(false)
+    };
+    arrays_empty("consensus_points")
+        && arrays_empty("live_disagreements")
+        && arrays_empty("flagged_capitulations")
+        && arrays_empty("minority_positions")
+}
+
+fn is_effective_abstention_response(text: &str) -> bool {
+    let normalized = text.trim().to_lowercase();
+    if normalized.is_empty() {
+        return true;
+    }
+    let fallback_markers = [
+        "(abstained)",
+        "unable to formulate",
+        "unable to provide",
+        "cannot provide a response",
+        "cannot formulate",
+        "no substantive response",
+        "i abstain",
+    ];
+    fallback_markers
+        .iter()
+        .any(|marker| normalized.contains(marker))
+}
+
+/// Run the configured adversarial debate protocol (5-round standard or 3-round simple mode).
 pub async fn run_multi_round_debate(
     pool: &SqlitePool,
     client: &ClientWithMiddleware,
@@ -67,14 +97,9 @@ pub async fn run_multi_round_debate(
     debate_config: &DebateConfig,
     event_tx: Option<broadcast::Sender<DebateEvent>>,
 ) -> Result<(), String> {
-    // Tag the current Sentry hub so any event (including panics) captured
-    // inside this task carries debate_id. Per-tokio-task isolation is
-    // provided by the spawn site binding a fresh Hub::new_from_top.
-    sentry::configure_scope(|scope| {
-        scope.set_tag("debate_id", debate_id.as_str());
-    });
     let id = debate_id.as_str();
     let timeout = debate_config.default_timeout_secs;
+    let simple_mode = debate_config.test_mode_simple;
 
     // Build maps from debate_bots table
     let debate_bots = queries_phase1::get_debate_bots_with_roles(pool, id)
@@ -92,6 +117,16 @@ pub async fn run_multi_round_debate(
                 .map(|role| (db.bot_id.clone(), role))
         })
         .collect();
+    let bot_name_by_id: HashMap<String, String> = bots.iter()
+        .map(|b| (b.id.clone(), b.name.clone()))
+        .collect();
+    let participant_map_text = debate_bots.iter()
+        .map(|db| {
+            let bot_name = bot_name_by_id.get(&db.bot_id).cloned().unwrap_or_else(|| db.bot_id.clone());
+            format!("{} = {}", db.pseudonym, bot_name)
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
 
     // Resumption: find where to start
     let resume_round = state_machine::find_resume_point(pool, id).await?.unwrap_or(0);
@@ -108,7 +143,7 @@ pub async fn run_multi_round_debate(
         state_machine::start_round(pool, id, 0).await?;
         emit(&event_tx, DebateEvent::RoundStarted {
             round_number: 0,
-            name: round_name(0).to_string(),
+            name: if simple_mode { "Opening" } else { round_name(0) }.to_string(),
         });
         let r0 = rounds::round0::run_round0(
             pool, client, id, topic, bots, bot_tokens, &role_assignments, timeout,
@@ -144,10 +179,10 @@ pub async fn run_multi_round_debate(
         state_machine::start_round(pool, id, 1).await?;
         emit(&event_tx, DebateEvent::RoundStarted {
             round_number: 1,
-            name: round_name(1).to_string(),
+            name: if simple_mode { "Rebuttal" } else { round_name(1) }.to_string(),
         });
         rounds::round1::run_round1(
-            pool, client, id, bots, bot_tokens, &role_assignments,
+            pool, client, id, topic, bots, bot_tokens, &role_assignments,
             &pseudonym_map, round0_context.clone(), timeout,
         ).await?;
         state_machine::complete_round(pool, id, 1).await?;
@@ -167,23 +202,40 @@ pub async fn run_multi_round_debate(
         })
         .collect();
 
-    // === ROUND 2 — Structured Rebuttal ===
+    // === ROUND 2 — Structured Rebuttal (standard) / Final Position (simple mode) ===
     if resume_round <= 2 {
         queries::update_debate_status(pool, id, "round_2").await.map_err(|e| format!("db: {e}"))?;
         state_machine::start_round(pool, id, 2).await?;
         emit(&event_tx, DebateEvent::RoundStarted {
             round_number: 2,
-            name: round_name(2).to_string(),
+            name: if simple_mode { "Final Position" } else { round_name(2) }.to_string(),
         });
         rounds::round2::run_round2(
-            pool, client, id, bots, bot_tokens, &role_assignments,
+            pool, client, id, topic, bots, bot_tokens, &role_assignments,
             round1_context.clone(), models_config, timeout, debate_config.max_retries,
+            !simple_mode,
         ).await?;
         state_machine::complete_round(pool, id, 2).await?;
         {
             let responses = queries::get_responses(pool, id, 2).await.map_err(|e| format!("db: {e}"))?;
             emit_round_responses(&event_tx, 2, &responses, &pseudonym_map, &role_assignments);
         }
+    }
+
+    if simple_mode {
+        return run_divergence_and_synthesis(
+            pool,
+            id,
+            topic,
+            models_config,
+            debate_config,
+            &pseudonym_map,
+            &r0_responses,
+            2,
+            &participant_map_text,
+            &event_tx,
+        )
+        .await;
     }
 
     // Build Round 2 response map for pairing
@@ -202,7 +254,7 @@ pub async fn run_multi_round_debate(
             name: round_name(3).to_string(),
         });
         rounds::round3::run_round3(
-            pool, client, id, bots, bot_tokens, &role_assignments,
+            pool, client, id, topic, bots, bot_tokens, &role_assignments,
             &pseudonym_map, &reverse_pseudonym_map, &round2_responses,
             models_config, timeout,
         ).await?;
@@ -244,11 +296,11 @@ pub async fn run_multi_round_debate(
     // === DIVERGENCE ANALYSIS ===
     run_divergence_and_synthesis(
         pool, id, topic, models_config, debate_config, &pseudonym_map, &r0_responses,
-        &event_tx,
+        4, &participant_map_text, &event_tx,
     ).await
 }
 
-/// Post-Round 4: run divergence analysis per bot, then Opus synthesis.
+/// Post-final-round: run divergence analysis per bot, then final synthesis.
 async fn run_divergence_and_synthesis(
     pool: &SqlitePool,
     debate_id: &str,
@@ -257,28 +309,34 @@ async fn run_divergence_and_synthesis(
     debate_config: &DebateConfig,
     pseudonym_map: &HashMap<String, String>,
     r0_responses: &[crate::db::models::ResponseRow],
+    final_round_number: i64,
+    participant_map_text: &str,
     event_tx: &Option<broadcast::Sender<DebateEvent>>,
 ) -> Result<(), String> {
     queries::update_debate_status(pool, debate_id, "analysing").await.map_err(|e| format!("db: {e}"))?;
     emit(event_tx, DebateEvent::SynthesisStarted);
 
-    let r4_responses = queries::get_responses(pool, debate_id, 4).await.map_err(|e| format!("db: {e}"))?;
-    let div_futures: Vec<_> = r4_responses.iter()
+    let final_round_responses = queries::get_responses(pool, debate_id, final_round_number)
+        .await
+        .map_err(|e| format!("db: {e}"))?;
+    let div_futures: Vec<_> = final_round_responses.iter()
         .filter(|r| !r.abstained)
-        .map(|r4| {
-            let bot_id = r4.bot_id.clone();
+        .map(|final_resp| {
+            let bot_id = final_resp.bot_id.clone();
             let r0_resp = r0_responses.iter()
                 .find(|r| r.bot_id == bot_id && !r.abstained)
                 .map(|r| r.response_json.clone())
                 .unwrap_or_default();
-            let r4_resp = r4.response_json.clone();
-            let pc_json = r4.position_change_json.clone().unwrap_or_else(|| "{}".into());
+            let final_text = final_resp.response_json.clone();
+            let pc_json = final_resp.position_change_json.clone().unwrap_or_else(|| "{}".into());
             let config = models_config.clone();
-            async move { (bot_id, analyse_divergence(&config, &r0_resp, &r4_resp, &pc_json).await) }
+            async move { (bot_id, analyse_divergence(&config, &r0_resp, &final_text, &pc_json).await) }
         })
         .collect();
-
-    let div_results = futures::future::join_all(div_futures).await;
+    let div_results: Vec<_> = futures::stream::iter(div_futures)
+        .buffer_unordered(models_config.analysis_max_concurrency.max(1))
+        .collect()
+        .await;
 
     for (bot_id, result) in &div_results {
         match result {
@@ -289,7 +347,7 @@ async fn run_divergence_and_synthesis(
                 // intentional: log and continue if insert fails
                 let _ = queries_phase1::insert_analysis(
                     pool, &aid, debate_id, Some(bot_id), "divergence",
-                    &input, &result_json, &models_config.minimax_model,
+                    &input, &result_json, models_config.effective_analysis_model(),
                 ).await;
             }
             Err(e) => tracing::warn!(bot_id = %bot_id, error = %e, "divergence analysis failed"),
@@ -301,10 +359,34 @@ async fn run_divergence_and_synthesis(
 
     let all_responses = queries_phase1::get_all_responses(pool, debate_id).await.map_err(|e| format!("db: {e}"))?;
     let mut transcript_lines: Vec<String> = Vec::new();
+    let mut grounding_rows: Vec<serde_json::Value> = Vec::new();
     for resp in &all_responses {
-        if resp.abstained { continue; }
         let pseudo = pseudonym_map.get(&resp.bot_id).cloned().unwrap_or_default();
-        transcript_lines.push(format!("[{pseudo}, Round {}]: {}", resp.round_number, resp.response_json));
+        let effective_abstained = is_effective_abstention_response(&resp.response_json);
+        grounding_rows.push(serde_json::json!({
+            "agent": pseudo,
+            "round": resp.round_number,
+            "abstained": resp.abstained,
+            "effective_abstained": effective_abstained,
+            "valid": resp.valid,
+            "response": resp.response_json,
+        }));
+        if resp.abstained || effective_abstained {
+            continue;
+        }
+        let mut lines = resp.response_json.lines();
+        let first_line = lines.next().unwrap_or_default();
+        let mut sanitized_response = first_line.to_string();
+        for line in lines {
+            sanitized_response.push('\n');
+            sanitized_response.push_str("  ");
+            sanitized_response.push_str(line);
+        }
+        transcript_lines.push(format!(
+            "[{pseudo}, Round {}]: {}",
+            resp.round_number,
+            sanitized_response
+        ));
     }
 
     let precomputed = precompute::precompute(&all_responses, pseudonym_map);
@@ -318,25 +400,108 @@ async fn run_divergence_and_synthesis(
         })
         .collect();
     let divergence_json = serde_json::to_string(&div_json).unwrap_or_default();
+    let grounding_evidence_json = serde_json::to_string(&grounding_rows).unwrap_or_default();
+
+    let warmup_report = synthesiser::wait_for_final_synthesis_ready(models_config).await;
+    if !warmup_report.succeeded {
+        tracing::warn!(
+            debate_id = %debate_id,
+            model = models_config.effective_final_synthesis_model(),
+            attempts = warmup_report.attempts,
+            elapsed_ms = warmup_report.elapsed_ms,
+            "final synthesis warmup did not succeed within retry budget; continuing"
+        );
+    } else {
+        tracing::info!(
+            debate_id = %debate_id,
+            model = models_config.effective_final_synthesis_model(),
+            attempts = warmup_report.attempts,
+            elapsed_ms = warmup_report.elapsed_ms,
+            "final synthesis warmup completed"
+        );
+    }
+    let warmup_analysis_id = uuid::Uuid::new_v4().to_string();
+    let warmup_input = serde_json::json!({
+        "base_url": models_config.effective_final_synthesis_base_url(),
+        "model": models_config.effective_final_synthesis_model(),
+    });
+    let warmup_result = serde_json::json!({
+        "attempts": warmup_report.attempts,
+        "elapsed_ms": warmup_report.elapsed_ms,
+        "succeeded": warmup_report.succeeded,
+    });
+    let _ = queries_phase1::insert_analysis(
+        pool,
+        &warmup_analysis_id,
+        debate_id,
+        None,
+        "synthesis_warmup",
+        &warmup_input.to_string(),
+        &warmup_result.to_string(),
+        models_config.effective_final_synthesis_model(),
+    )
+    .await;
 
     let (synthesis_output, prompt_hash) = synthesiser::run_synthesis(
-        models_config, topic, &transcript_lines.join("\n\n"),
-        &precomputed_json, &divergence_json, debate_config.synthesis_temperature,
+        models_config, topic, participant_map_text, &transcript_lines.join("\n\n"),
+        &precomputed_json, &divergence_json, &grounding_evidence_json, debate_config.synthesis_temperature,
     ).await.map_err(|e| {
         let reason = format!("synthesis failed: {e}");
         emit(event_tx, DebateEvent::DebateFailed { reason: reason.clone() });
         reason
     })?;
 
-    queries_phase1::insert_synthesis(pool, debate_id, &synthesis_output, &models_config.opus_model, &prompt_hash, None)
-        .await.map_err(|e| format!("db error storing synthesis: {e}"))?;
+    let synthesis_value: serde_json::Value = serde_json::from_str(&synthesis_output)
+        .map_err(|e| format!("failed to parse synthesis JSON for citation check: {e}"))?;
+
+    let valid_pseudonyms: HashSet<String> = pseudonym_map.values().cloned().collect();
+    let responses_by_pseudonym_round: HashMap<(String, i64), bool> = all_responses.iter()
+        .filter_map(|r| {
+            pseudonym_map.get(&r.bot_id).cloned().map(|pseudo| {
+                (
+                    (pseudo, r.round_number),
+                    r.abstained || is_effective_abstention_response(&r.response_json),
+                )
+            })
+        })
+        .collect();
+    let citation_result = citation_check::check_citations(
+        &synthesis_value,
+        &valid_pseudonyms,
+        &responses_by_pseudonym_round,
+        final_round_number,
+    );
+    if !citation_result.citations_invalid.is_empty() {
+        tracing::warn!(
+            debate_id = %debate_id,
+            total = citation_result.citations_total,
+            invalid = citation_result.citations_invalid.len(),
+            "synthesis contains invalid citations; accepting with warning"
+        );
+    }
+    if citation_result.citations_total == 0 && !is_conservative_empty_synthesis(&synthesis_value) {
+        tracing::warn!(
+            debate_id = %debate_id,
+            "synthesis contains substantive content without citations; accepting with warning"
+        );
+    }
+    let citation_json = serde_json::to_string(&citation_result)
+        .map_err(|e| format!("failed to serialize citation check: {e}"))?;
+
+    queries_phase1::insert_synthesis(
+        pool,
+        debate_id,
+        &synthesis_output,
+        models_config.effective_final_synthesis_model(),
+        &prompt_hash,
+        Some(&citation_json),
+    )
+    .await.map_err(|e| format!("db error storing synthesis: {e}"))?;
 
     // Emit synthesis completed with parsed JSON
-    let synthesis_value: serde_json::Value = serde_json::from_str(&synthesis_output)
-        .unwrap_or_else(|_| serde_json::Value::String(synthesis_output));
     emit(event_tx, DebateEvent::SynthesisCompleted {
         synthesis: synthesis_value,
-        citation_check: None,
+        citation_check: serde_json::from_str(&citation_json).ok(),
     });
 
     queries::update_debate_status(pool, debate_id, "complete").await.map_err(|e| format!("db: {e}"))?;

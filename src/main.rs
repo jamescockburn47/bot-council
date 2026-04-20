@@ -6,6 +6,7 @@ use tracing_subscriber::{EnvFilter, prelude::*};
 /// thread must outlive the runtime, which `#[tokio::main]` can't
 /// guarantee).
 fn main() -> anyhow::Result<()> {
+    let command = std::env::args().nth(1);
     let settings = Settings::load()?;
     settings.validate()?;
 
@@ -24,7 +25,10 @@ fn main() -> anyhow::Result<()> {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?;
-    runtime.block_on(async_main())
+    match command.as_deref() {
+        Some("scoreboard-weekly") => runtime.block_on(async_scoreboard_weekly(settings)),
+        _ => runtime.block_on(async_main()),
+    }
 }
 
 async fn async_main() -> anyhow::Result<()> {
@@ -32,5 +36,11 @@ async fn async_main() -> anyhow::Result<()> {
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3100").await?;
     tracing::info!("Bot Council listening on {}", listener.local_addr()?);
     axum::serve(listener, app).await?;
+    Ok(())
+}
+
+async fn async_scoreboard_weekly(settings: Settings) -> anyhow::Result<()> {
+    let count = bot_council::scoreboard::run_weekly_snapshot(&settings).await?;
+    tracing::info!(snapshot_count = count, "weekly scoreboard job finished");
     Ok(())
 }

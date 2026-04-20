@@ -1,5 +1,4 @@
 pub mod anonymiser;
-pub mod error_kind;
 pub mod multi_round;
 pub mod prompts;
 pub mod response_parser;

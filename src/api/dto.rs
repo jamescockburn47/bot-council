@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 pub struct CreateBotRequest {
     pub name: String,
     pub endpoint_url: String,
+    #[serde(default)]
     pub token: String,
     pub model_family: Option<String>,
     pub description: Option<String>,
@@ -24,12 +25,61 @@ pub struct BotResponse {
     pub reviewed_at: Option<String>,
     pub reviewed_by: Option<String>,
     pub created_at: String,
+    pub performance: Option<BotPerformanceSummary>,
+}
+
+/// Aggregated performance summary for a bot.
+#[derive(Debug, Serialize, Clone)]
+pub struct BotPerformanceSummary {
+    pub score_out_of_10: f64,
+    pub critical_thinking_score_out_of_10: f64,
+    pub resource_use_score_out_of_10: f64,
+    pub instruction_following_score_out_of_10: f64,
+    pub functionality_score_out_of_10: f64,
+    pub usefulness_score_out_of_10: f64,
+    pub debate_engagement_score_out_of_10: f64,
+    pub total_rounds: i64,
+    pub debates_participated: i64,
+    pub abstained_rounds: i64,
+    pub invalid_rounds: i64,
+    pub degraded_rounds: i64,
+    pub last_debate_at: Option<String>,
+    pub suggestions: Vec<String>,
+}
+
+/// Analytics view for a single bot.
+#[derive(Debug, Serialize)]
+pub struct BotAnalyticsResponse {
+    pub bot: BotResponse,
+    pub recent_debates: Vec<BotDebateAnalytics>,
+}
+
+/// Per-debate summary row in bot analytics.
+#[derive(Debug, Serialize)]
+pub struct BotDebateAnalytics {
+    pub debate_id: String,
+    pub topic: String,
+    pub status: String,
+    pub created_at: String,
+    pub completed_at: Option<String>,
+    pub role: Option<String>,
+    pub rounds_total: i64,
+    pub abstained_rounds: i64,
+    pub invalid_rounds: i64,
+    pub degraded_rounds: i64,
 }
 
 /// Request body for rejecting a bot; requires a human-readable reason.
 #[derive(Debug, Deserialize)]
 pub struct RejectBotRequest {
     pub reason: String,
+}
+
+/// Response body for a manual bot endpoint health check.
+#[derive(Debug, Serialize)]
+pub struct BotHealthCheckResponse {
+    pub ok: bool,
+    pub message: String,
 }
 
 /// Response body for GET /me.
@@ -97,6 +147,7 @@ pub struct RankedArgument {
 pub struct ListDebatesQuery {
     pub status: Option<String>,
     pub limit: Option<i64>,
+    pub test: Option<bool>,
 }
 
 /// Response for GET /debates/{id}/transcript.
@@ -156,59 +207,4 @@ pub struct SynthesisResponse {
     pub model_used: String,
     pub created_at: String,
     pub citation_check: Option<serde_json::Value>,
-}
-
-/// Request body for POST /bots/validate — dry-run smoke test without
-/// persisting a bot. Mirrors a subset of CreateBotRequest.
-#[derive(Debug, Deserialize)]
-pub struct ValidateBotRequest {
-    pub endpoint_url: String,
-    pub token: String,
-}
-
-/// Result of a single check during validation.
-#[derive(Debug, Serialize)]
-pub struct ValidateCheck {
-    pub name: String,
-    pub passed: bool,
-    pub detail: String,
-}
-
-/// Response for POST /bots/validate.
-#[derive(Debug, Serialize)]
-pub struct ValidateBotResponse {
-    pub ok: bool,
-    pub checks: Vec<ValidateCheck>,
-}
-
-/// One entry in the per-bot history endpoint.
-#[derive(Debug, Serialize)]
-pub struct BotHistoryEntry {
-    pub debate_id: String,
-    pub round_number: i64,
-    pub created_at: String,
-    pub valid: bool,
-    pub abstained: bool,
-    pub error_kind: Option<String>,
-    pub error_detail: Option<String>,
-    pub elapsed_ms: Option<i64>,
-}
-
-/// Response for GET /diag/health — extended health surface for admins.
-#[derive(Debug, Serialize)]
-pub struct DiagHealthResponse {
-    /// Number of debates currently in a non-terminal status.
-    pub debates_in_flight: i64,
-    /// ISO-8601 timestamp of the most recent debate completion, or null
-    /// if the harness has never completed a debate.
-    pub last_completion_ts: Option<String>,
-    /// Failure rate over the last hour (0.0–1.0); null when no debates
-    /// terminated in the window.
-    pub failure_rate_1h: Option<f64>,
-    /// Number of debates with status 'failed' in the last hour.
-    pub failures_1h: i64,
-    /// Total debates that reached a terminal status in the last hour.
-    pub terminal_1h: i64,
-    /// Git SHA or cargo version currently running (mirrors SENTRY_RELEASE).
-    pub release: String,
 }

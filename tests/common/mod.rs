@@ -1,21 +1,31 @@
 use axum::Router;
-use sqlx::SqlitePool;
+use bot_council::config::{
+    AuthConfig, DatabaseConfig, DebateConfig, HttpClientConfig, ModelsConfig, SentryConfig,
+    ServerConfig, Settings,
+};
 use bot_council::state::AppState;
-use bot_council::config::{Settings, ServerConfig, DatabaseConfig, AuthConfig, HttpClientConfig, ModelsConfig, DebateConfig, SentryConfig};
+use sqlx::SqlitePool;
 
 /// Build a test application with an in-memory SQLite database and no auth.
 pub async fn test_app() -> (Router, SqlitePool) {
     let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
     sqlx::migrate!("./migrations").run(&pool).await.unwrap();
     let settings = Settings {
-        server: ServerConfig { host: "127.0.0.1".into(), port: 0, cors_origins: vec![] },
-        database: DatabaseConfig { url: "sqlite::memory:".into() },
+        server: ServerConfig {
+            host: "127.0.0.1".into(),
+            port: 0,
+            cors_origins: vec![],
+        },
+        database: DatabaseConfig {
+            url: "sqlite::memory:".into(),
+        },
         auth: AuthConfig {
             admin_token: "test-admin-token".into(),
             clerk_issuer: "".into(),
             clerk_jwks_url: "".into(),
             // 32 bytes = 64 hex chars; deterministic for reproducible tests.
-            bot_token_key: "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff".into(),
+            bot_token_key: "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
+                .into(),
             test_mode: true,
             clerk_publishable_key: "pk_test_Y29uZmlnLmpzb24tdGVzdA".into(),
         },
@@ -72,13 +82,20 @@ pub async fn test_app_simple_mode() -> (Router, SqlitePool) {
     let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
     sqlx::migrate!("./migrations").run(&pool).await.unwrap();
     let settings = Settings {
-        server: ServerConfig { host: "127.0.0.1".into(), port: 0, cors_origins: vec![] },
-        database: DatabaseConfig { url: "sqlite::memory:".into() },
+        server: ServerConfig {
+            host: "127.0.0.1".into(),
+            port: 0,
+            cors_origins: vec![],
+        },
+        database: DatabaseConfig {
+            url: "sqlite::memory:".into(),
+        },
         auth: AuthConfig {
             admin_token: "test-admin-token".into(),
             clerk_issuer: "".into(),
             clerk_jwks_url: "".into(),
-            bot_token_key: "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff".into(),
+            bot_token_key: "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
+                .into(),
             test_mode: true,
             clerk_publishable_key: "pk_test_Y29uZmlnLmpzb24tdGVzdA".into(),
         },
@@ -135,5 +152,8 @@ use axum::http::HeaderValue;
 /// Helper: attach the test admin bearer token to a request builder.
 #[allow(dead_code)]
 pub fn admin_auth(req: axum::http::request::Builder) -> axum::http::request::Builder {
-    req.header("authorization", HeaderValue::from_static("Bearer test-admin-token"))
+    req.header(
+        "authorization",
+        HeaderValue::from_static("Bearer test-admin-token"),
+    )
 }

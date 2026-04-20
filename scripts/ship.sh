@@ -27,6 +27,10 @@ set -euo pipefail
 KEY="${SSH_KEY:-C:/Users/James/.ssh/id_ed25519}"
 HOST="${EVO_HOST:-james@100.90.66.54}"
 REMOTE="~/bot-council"
+# The bot-council Vercel frontend project was retired; lqcouncil.com now
+# points at the single lqcouncil-api-proxy Vercel project whose only job
+# is `rewrites: [{source:"/(.*)", destination: tailscale-funnel-url/$1}]`.
+# Axum on EVO serves both the static frontend and the /api/* routes.
 PUBLIC_URL="${PUBLIC_URL:-https://lqcouncil.com}"
 SKIP_FRONTEND=0
 
@@ -132,12 +136,25 @@ for i in $(seq 1 15); do
   fi
 done
 
-# Stage 7: public smoke test.
+# Stage 7: public smoke test. Checks actual JSON content, not just HTTP 200 —
+# a misconfigured frontend rewrite can return 200 with an HTML SPA shell.
 stage "7/7 public smoke"
-if curl -fsS --max-time 10 "$PUBLIC_URL/api/health" >/dev/null; then
-  echo "public path $PUBLIC_URL/api/health: 200"
+# Try /api/health first; if that's HTML, also try /health (backward-compat path
+# that still works until Phase F drops the Vercel proxy).
+probe() {
+  local url=$1
+  local body
+  body=$(curl -fsS --max-time 10 "$url" 2>/dev/null || true)
+  if [[ "$body" == *'"status":"ok"'* ]]; then
+    echo "public $url: {\"status\":\"ok\"}"
+    return 0
+  fi
+  return 1
+}
+if probe "$PUBLIC_URL/api/health" || probe "$PUBLIC_URL/health"; then
+  true
 else
-  echo "WARNING: public $PUBLIC_URL/api/health unreachable — deploy is live on EVO but the public DNS/proxy may not be routing yet" >&2
+  echo "WARNING: public smoke failed at $PUBLIC_URL — deploy is live on EVO but the public path may be stale. Check api.lqcouncil.com proxy rewrites." >&2
 fi
 
 echo

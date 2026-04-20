@@ -2,6 +2,13 @@
 Description=LQ Bot Council backend
 After=network-online.target
 Wants=network-online.target
+# Rate-limit restarts so a broken config (e.g. Clerk DNS down at boot,
+# missing env var, checksum-mismatched migration) escalates to a failed
+# unit instead of cycling forever and burning CPU. After 5 failed starts
+# within 300s, systemd gives up and the unit stays failed until a human
+# intervenes — at which point `journalctl -u bot-council` tells the story.
+StartLimitIntervalSec=300
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -9,9 +16,18 @@ User=james
 Group=james
 WorkingDirectory=/home/james/bot-council
 EnvironmentFile=/etc/bot-council.env
+# Refuse to start if the env file is missing or empty — otherwise the
+# binary would boot with defaults (empty admin token, no Clerk, etc.)
+# and silently serve a broken API surface.
+ExecStartPre=/usr/bin/test -s /etc/bot-council.env
 ExecStart=/home/james/bot-council/target/release/bot-council
 Restart=on-failure
 RestartSec=3
+# Cap how long a single start attempt can hang before systemd reports
+# failure. The JWKS startup-wait in src/lib.rs is bounded to ~91s worst
+# case; 120s leaves headroom without letting a truly dead service drag
+# on indefinitely.
+TimeoutStartSec=120
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=bot-council

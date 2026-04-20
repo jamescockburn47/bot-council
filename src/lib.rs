@@ -41,9 +41,14 @@ pub async fn build_app() -> anyhow::Result<Router> {
 
     if !settings.auth.clerk_issuer.is_empty() {
         let raw_client = reqwest::Client::new();
-        if let Err(e) = jwks.refresh(&raw_client).await {
-            tracing::warn!(error = %e, "initial JWKS fetch failed; continuing with empty cache");
-        }
+        // Hard-fail if JWKS can't be loaded at boot. Previously logged a warn
+        // and continued with an empty cache, which meant every authenticated
+        // request returned 500 "JWKS not yet loaded" for up to the refresh
+        // interval (600s) whenever Clerk DNS was briefly flaky at startup.
+        // Systemd's StartLimitBurst=5 / StartLimitIntervalSec=300 (see
+        // deploy/bot-council.service) bounds retries so a sustained Clerk
+        // outage surfaces to monitoring instead of silently degrading.
+        retry_initial_jwks(&jwks, &raw_client).await?;
         api::jwks_cache::spawn_refresh_loop(jwks.clone(), raw_client, 600);
     }
 
@@ -69,4 +74,42 @@ pub async fn build_app() -> anyhow::Result<Router> {
         .nest("/api", api_nested)
         .merge(api_root)
         .fallback_service(static_service))
+}
+
+/// Retry the initial JWKS fetch with exponential backoff.
+///
+/// Attempts: 0s, +1s, +2s, +4s, +8s, +16s — roughly 31s of total wait
+/// before we give up and `anyhow::bail!`. Each attempt has the 10s timeout
+/// that [`api::jwks_cache::JwksCache::refresh`] applies internally, so the
+/// worst-case wall time is ~91s (6 × 10s request timeouts + the backoff
+/// waits). Systemd's `TimeoutStartSec=60` means a truly dead Clerk will
+/// be flagged as a startup failure rather than a hung service.
+async fn retry_initial_jwks(
+    jwks: &api::jwks_cache::JwksCache,
+    client: &reqwest::Client,
+) -> anyhow::Result<()> {
+    let mut delay = std::time::Duration::from_secs(1);
+    let max_delay = std::time::Duration::from_secs(16);
+    let mut last_err: Option<anyhow::Error> = None;
+    for attempt in 1..=6 {
+        match jwks.refresh(client).await {
+            Ok(()) => {
+                if attempt > 1 {
+                    tracing::info!(attempt, "JWKS loaded after backoff");
+                }
+                return Ok(());
+            }
+            Err(e) => {
+                tracing::warn!(attempt, error = %e, "initial JWKS fetch failed, retrying");
+                last_err = Some(e);
+                if attempt < 6 {
+                    tokio::time::sleep(delay).await;
+                    delay = std::cmp::min(delay * 2, max_delay);
+                }
+            }
+        }
+    }
+    Err(last_err
+        .unwrap_or_else(|| anyhow::anyhow!("JWKS never loaded"))
+        .context("gave up loading JWKS after 6 attempts"))
 }

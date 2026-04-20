@@ -1,7 +1,7 @@
 //! Operator diagnostics (no secrets).
 
-use axum::extract::State;
 use axum::Json;
+use axum::extract::State;
 use serde::Serialize;
 
 use crate::api::auth::RequireAdmin;

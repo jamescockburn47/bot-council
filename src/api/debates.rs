@@ -1,8 +1,5 @@
 // src/api/debates.rs
-use axum::extract::{Path, Query, State};
-use axum::http::StatusCode;
-use axum::Json;
-use crate::api::auth::{RequireAuth, RequireAdmin};
+use crate::api::auth::{RequireAdmin, RequireAuth};
 use crate::api::{bots as bot_checks, dto::*};
 use crate::db::models::{BotRow, DebateBotWithRoleRow};
 use crate::db::{queries, queries_phase1};
@@ -11,6 +8,9 @@ use crate::orchestrator;
 use crate::orchestrator::anonymiser;
 use crate::state::AppState;
 use crate::types::DebateId;
+use axum::Json;
+use axum::extract::{Path, Query, State};
+use axum::http::StatusCode;
 use futures::future::join_all;
 
 fn build_debate_bot_infos(
@@ -52,7 +52,10 @@ pub async fn create_debate(
     };
 
     if selected_bots.len() < 3 {
-        return Err(AppError::BadRequest(format!("need at least 3 bots, found {}", selected_bots.len())));
+        return Err(AppError::BadRequest(format!(
+            "need at least 3 bots, found {}",
+            selected_bots.len()
+        )));
     }
     if selected_bots.len() > 5 {
         return Err(AppError::BadRequest(
@@ -70,21 +73,23 @@ pub async fn create_debate(
             return (
                 bot.id.clone(),
                 Some(format!(
-                "{} ({}): bot has no encrypted token — please re-submit",
-                bot.name, bot.id
+                    "{} ({}): bot has no encrypted token — please re-submit",
+                    bot.name, bot.id
                 )),
                 started.elapsed().as_millis(),
             );
         }
-        let failure = match bot_checks::smoke_test_bot(state.http_client(), bot, state.bot_token_key()).await {
-            Ok(()) => None,
-            Err(reason) => Some(format!(
-                "{} ({}): {}",
-                bot.name,
-                bot.id,
-                bot_checks::classify_smoke_test_error(&reason)
-            )),
-        };
+        let failure =
+            match bot_checks::smoke_test_bot(state.http_client(), bot, state.bot_token_key()).await
+            {
+                Ok(()) => None,
+                Err(reason) => Some(format!(
+                    "{} ({}): {}",
+                    bot.name,
+                    bot.id,
+                    bot_checks::classify_smoke_test_error(&reason)
+                )),
+            };
         (bot.id.clone(), failure, started.elapsed().as_millis())
     });
     let preflight_results = join_all(preflight_checks).await;
@@ -94,7 +99,9 @@ pub async fn create_debate(
         .collect();
     let preflight_failures: Vec<String> = preflight_results
         .into_iter()
-        .filter_map(|(_, failure, elapsed_ms)| failure.map(|f| format!("{f} [preflight={}ms]", elapsed_ms)))
+        .filter_map(|(_, failure, elapsed_ms)| {
+            failure.map(|f| format!("{f} [preflight={}ms]", elapsed_ms))
+        })
         .collect();
 
     selected_bots.retain(|bot| !failing_bot_ids.contains(&bot.id));
@@ -140,19 +147,27 @@ pub async fn create_debate(
         queries::insert_debate_bot(state.db(), debate_id.as_str(), &bot.id, &pseudonym).await?;
 
         let token = match &bot.token_ciphertext {
-            Some(ct) => crate::api::bot_token_crypto::decrypt(state.bot_token_key(), ct)
-                .map_err(|_| AppError::Internal(anyhow::anyhow!(
-                    "failed to decrypt token for bot {}", bot.id
-                )))?,
+            Some(ct) => {
+                crate::api::bot_token_crypto::decrypt(state.bot_token_key(), ct).map_err(|_| {
+                    AppError::Internal(anyhow::anyhow!(
+                        "failed to decrypt token for bot {}",
+                        bot.id
+                    ))
+                })?
+            }
             None => String::new(),
         };
         bot_tokens.insert(bot.id.clone(), token);
     }
 
     // Persist role assignments
-    orchestrator::roles::persist_role_assignments(state.db(), debate_id.as_str(), &role_assignments)
-        .await
-        .map_err(|e| AppError::Internal(anyhow::anyhow!(e)))?;
+    orchestrator::roles::persist_role_assignments(
+        state.db(),
+        debate_id.as_str(),
+        &role_assignments,
+    )
+    .await
+    .map_err(|e| AppError::Internal(anyhow::anyhow!(e)))?;
 
     // Init round state machine
     let total_rounds = if simple_mode { 3 } else { 5 };
@@ -173,9 +188,18 @@ pub async fn create_debate(
     let cleanup_id = debate_id.as_str().to_string();
     tokio::spawn(async move {
         if let Err(e) = orchestrator::multi_round::run_multi_round_debate(
-            &pool, &client, &debate_id_clone, &topic, &bots_clone, &bot_tokens,
-            &models_config, &debate_config, Some(event_tx),
-        ).await {
+            &pool,
+            &client,
+            &debate_id_clone,
+            &topic,
+            &bots_clone,
+            &bot_tokens,
+            &models_config,
+            &debate_config,
+            Some(event_tx),
+        )
+        .await
+        {
             tracing::error!(debate_id = %debate_id_clone, error = %e, "multi-round debate failed");
             let _ = queries::update_debate_status(&pool, debate_id_clone.as_str(), "failed").await;
         }
@@ -187,18 +211,22 @@ pub async fn create_debate(
     });
 
     // Build response with role info
-    let debate_bots_rows = queries_phase1::get_debate_bots_with_roles(state.db(), debate_id.as_str()).await?;
+    let debate_bots_rows =
+        queries_phase1::get_debate_bots_with_roles(state.db(), debate_id.as_str()).await?;
     let bot_infos = build_debate_bot_infos(&debate_bots_rows, &selected_bots);
 
-    Ok((StatusCode::CREATED, Json(DebateResponse {
-        id: debate_id.to_string(),
-        topic: req.topic,
-        status: "created".to_string(),
-        created_at: chrono::Utc::now().to_rfc3339(),
-        completed_at: None,
-        bots: bot_infos,
-        results: None,
-    })))
+    Ok((
+        StatusCode::CREATED,
+        Json(DebateResponse {
+            id: debate_id.to_string(),
+            topic: req.topic,
+            status: "created".to_string(),
+            created_at: chrono::Utc::now().to_rfc3339(),
+            completed_at: None,
+            bots: bot_infos,
+            results: None,
+        }),
+    ))
 }
 
 /// GET /debates — list debates.
@@ -213,7 +241,8 @@ pub async fn list_debates(
         params.status.as_deref(),
         limit,
         params.test.unwrap_or(false),
-    ).await?;
+    )
+    .await?;
 
     let mut debates = Vec::new();
     for row in rows {
@@ -222,9 +251,13 @@ pub async fn list_debates(
         let bots_for_debate = queries::get_any_bots_by_ids(state.db(), &bot_ids).await?;
         let bot_infos = build_debate_bot_infos(&debate_bots, &bots_for_debate);
         debates.push(DebateResponse {
-            id: row.id, topic: row.topic, status: row.status,
-            created_at: row.created_at, completed_at: row.completed_at,
-            bots: bot_infos, results: None,
+            id: row.id,
+            topic: row.topic,
+            status: row.status,
+            created_at: row.created_at,
+            completed_at: row.completed_at,
+            bots: bot_infos,
+            results: None,
         });
     }
     Ok(Json(debates))
@@ -236,7 +269,8 @@ pub async fn get_debate(
     _auth: RequireAuth,
     Path(id): Path<String>,
 ) -> AppResult<Json<DebateResponse>> {
-    let debate = queries::get_debate(state.db(), &id).await?
+    let debate = queries::get_debate(state.db(), &id)
+        .await?
         .ok_or_else(|| AppError::NotFound(format!("debate {id} not found")))?;
 
     let debate_bots = queries_phase1::get_debate_bots_with_roles(state.db(), &id).await?;
@@ -248,42 +282,75 @@ pub async fn get_debate(
         let responses = queries::get_responses(state.db(), &id, 0).await?;
         let scores = queries::get_peer_scores(state.db(), &id).await?;
 
-        let anon_responses: Vec<AnonymisedResponse> = responses.iter().map(|r| {
-            let pseudonym = debate_bots.iter()
-                .find(|db| db.bot_id == r.bot_id)
-                .map(|db| db.pseudonym.clone())
-                .unwrap_or_else(|| "Unknown".to_string());
-            AnonymisedResponse { pseudonym, response: r.response_json.clone(), abstained: r.abstained }
-        }).collect();
+        let anon_responses: Vec<AnonymisedResponse> = responses
+            .iter()
+            .map(|r| {
+                let pseudonym = debate_bots
+                    .iter()
+                    .find(|db| db.bot_id == r.bot_id)
+                    .map(|db| db.pseudonym.clone())
+                    .unwrap_or_else(|| "Unknown".to_string());
+                AnonymisedResponse {
+                    pseudonym,
+                    response: r.response_json.clone(),
+                    abstained: r.abstained,
+                }
+            })
+            .collect();
 
         let pseudonyms: Vec<String> = debate_bots.iter().map(|db| db.pseudonym.clone()).collect();
-        let mut rankings: Vec<RankedArgument> = pseudonyms.iter().map(|p| {
-            let s: Vec<_> = scores.iter().filter(|s| s.target_pseudonym == *p).collect();
-            let count = s.len();
-            if count == 0 {
-                return RankedArgument {
-                    pseudonym: p.clone(), avg_reasoning_quality: 0.0,
-                    avg_factual_grounding: 0.0, avg_overall: 0.0, total_scores: 0,
-                };
-            }
-            RankedArgument {
-                pseudonym: p.clone(),
-                avg_reasoning_quality: s.iter().map(|x| x.reasoning_quality as f64).sum::<f64>() / count as f64,
-                avg_factual_grounding: s.iter().map(|x| x.factual_grounding as f64).sum::<f64>() / count as f64,
-                avg_overall: s.iter().map(|x| x.overall as f64).sum::<f64>() / count as f64,
-                total_scores: count,
-            }
-        }).collect();
-        rankings.sort_by(|a, b| b.avg_overall.partial_cmp(&a.avg_overall).unwrap_or(std::cmp::Ordering::Equal));
+        let mut rankings: Vec<RankedArgument> = pseudonyms
+            .iter()
+            .map(|p| {
+                let s: Vec<_> = scores.iter().filter(|s| s.target_pseudonym == *p).collect();
+                let count = s.len();
+                if count == 0 {
+                    return RankedArgument {
+                        pseudonym: p.clone(),
+                        avg_reasoning_quality: 0.0,
+                        avg_factual_grounding: 0.0,
+                        avg_overall: 0.0,
+                        total_scores: 0,
+                    };
+                }
+                RankedArgument {
+                    pseudonym: p.clone(),
+                    avg_reasoning_quality: s
+                        .iter()
+                        .map(|x| x.reasoning_quality as f64)
+                        .sum::<f64>()
+                        / count as f64,
+                    avg_factual_grounding: s
+                        .iter()
+                        .map(|x| x.factual_grounding as f64)
+                        .sum::<f64>()
+                        / count as f64,
+                    avg_overall: s.iter().map(|x| x.overall as f64).sum::<f64>() / count as f64,
+                    total_scores: count,
+                }
+            })
+            .collect();
+        rankings.sort_by(|a, b| {
+            b.avg_overall
+                .partial_cmp(&a.avg_overall)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
-        Some(DebateResults { responses: anon_responses, rankings })
+        Some(DebateResults {
+            responses: anon_responses,
+            rankings,
+        })
     } else {
         None
     };
 
     Ok(Json(DebateResponse {
-        id: debate.id, topic: debate.topic, status: debate.status,
-        created_at: debate.created_at, completed_at: debate.completed_at,
-        bots: bot_infos, results,
+        id: debate.id,
+        topic: debate.topic,
+        status: debate.status,
+        created_at: debate.created_at,
+        completed_at: debate.completed_at,
+        bots: bot_infos,
+        results,
     }))
 }

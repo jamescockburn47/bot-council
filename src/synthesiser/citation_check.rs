@@ -49,25 +49,40 @@ pub fn check_citations(
         for (i, item) in arr.iter().enumerate() {
             if let Some(text) = item.get("evidence").and_then(|v| v.as_str()) {
                 check_text(
-                    &re, text, &format!("consensus_points[{}].evidence", i),
-                    valid_pseudonyms, responses, max_round, &mut total, &mut invalid,
+                    &re,
+                    text,
+                    &format!("consensus_points[{}].evidence", i),
+                    valid_pseudonyms,
+                    responses,
+                    max_round,
+                    &mut total,
+                    &mut invalid,
                 );
             }
         }
     }
 
     // Check live_disagreements[].side_a.best_argument and side_b.best_argument
-    if let Some(arr) = synthesis.get("live_disagreements").and_then(|v| v.as_array()) {
+    if let Some(arr) = synthesis
+        .get("live_disagreements")
+        .and_then(|v| v.as_array())
+    {
         for (i, item) in arr.iter().enumerate() {
             for side in &["side_a", "side_b"] {
-                if let Some(text) = item.get(side)
+                if let Some(text) = item
+                    .get(side)
                     .and_then(|s| s.get("best_argument"))
                     .and_then(|v| v.as_str())
                 {
                     check_text(
-                        &re, text,
+                        &re,
+                        text,
                         &format!("live_disagreements[{}].{}.best_argument", i, side),
-                        valid_pseudonyms, responses, max_round, &mut total, &mut invalid,
+                        valid_pseudonyms,
+                        responses,
+                        max_round,
+                        &mut total,
+                        &mut invalid,
                     );
                 }
             }
@@ -75,24 +90,42 @@ pub fn check_citations(
     }
 
     // Check minority_positions[].key_argument
-    if let Some(arr) = synthesis.get("minority_positions").and_then(|v| v.as_array()) {
+    if let Some(arr) = synthesis
+        .get("minority_positions")
+        .and_then(|v| v.as_array())
+    {
         for (i, item) in arr.iter().enumerate() {
             if let Some(text) = item.get("key_argument").and_then(|v| v.as_str()) {
                 check_text(
-                    &re, text, &format!("minority_positions[{}].key_argument", i),
-                    valid_pseudonyms, responses, max_round, &mut total, &mut invalid,
+                    &re,
+                    text,
+                    &format!("minority_positions[{}].key_argument", i),
+                    valid_pseudonyms,
+                    responses,
+                    max_round,
+                    &mut total,
+                    &mut invalid,
                 );
             }
         }
     }
 
     // Check flagged_capitulations[].flag_reason (may contain citations)
-    if let Some(arr) = synthesis.get("flagged_capitulations").and_then(|v| v.as_array()) {
+    if let Some(arr) = synthesis
+        .get("flagged_capitulations")
+        .and_then(|v| v.as_array())
+    {
         for (i, item) in arr.iter().enumerate() {
             if let Some(text) = item.get("flag_reason").and_then(|v| v.as_str()) {
                 check_text(
-                    &re, text, &format!("flagged_capitulations[{}].flag_reason", i),
-                    valid_pseudonyms, responses, max_round, &mut total, &mut invalid,
+                    &re,
+                    text,
+                    &format!("flagged_capitulations[{}].flag_reason", i),
+                    valid_pseudonyms,
+                    responses,
+                    max_round,
+                    &mut total,
+                    &mut invalid,
                 );
             }
         }
@@ -244,8 +277,16 @@ mod tests {
         assert_eq!(result.citations_total, 2);
         assert_eq!(result.citations_valid, 0);
         assert_eq!(result.citations_invalid.len(), 2);
-        assert!(result.citations_invalid[0].reason.contains("not a participant"));
-        assert!(result.citations_invalid[1].reason.contains("does not exist"));
+        assert!(
+            result.citations_invalid[0]
+                .reason
+                .contains("not a participant")
+        );
+        assert!(
+            result.citations_invalid[1]
+                .reason
+                .contains("does not exist")
+        );
     }
 
     #[test]

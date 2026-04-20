@@ -3,7 +3,6 @@
 /// Bots sometimes return prose with embedded JSON rather than clean structured
 /// output. This module extracts structured fields from messy responses so the
 /// council can store and forward clean data.
-
 use crate::bot_client::{ChallengeField, DebateRoundResponse, PositionChangeField};
 
 /// Try to extract a valid JSON object starting with `{"response"` from text
@@ -20,12 +19,27 @@ fn try_extract_json(text: &str) -> Option<DebateRoundResponse> {
         let bytes = text.as_bytes();
         for i in abs_start..bytes.len() {
             let ch = bytes[i];
-            if escape { escape = false; continue; }
-            if ch == b'\\' && in_string { escape = true; continue; }
-            if ch == b'"' { in_string = !in_string; continue; }
-            if in_string { continue; }
-            if ch == b'{' { depth += 1; }
-            if ch == b'}' { depth -= 1; }
+            if escape {
+                escape = false;
+                continue;
+            }
+            if ch == b'\\' && in_string {
+                escape = true;
+                continue;
+            }
+            if ch == b'"' {
+                in_string = !in_string;
+                continue;
+            }
+            if in_string {
+                continue;
+            }
+            if ch == b'{' {
+                depth += 1;
+            }
+            if ch == b'}' {
+                depth -= 1;
+            }
             if depth == 0 {
                 let candidate = &text[abs_start..=i];
                 if let Ok(value) = serde_json::from_str::<serde_json::Value>(candidate) {
@@ -44,16 +58,19 @@ fn try_extract_json(text: &str) -> Option<DebateRoundResponse> {
 /// Convert a loose JSON object to DebateRoundResponse if it has a response field.
 fn parse_candidate_response(value: &serde_json::Value) -> Option<DebateRoundResponse> {
     let obj = value.as_object()?;
-    let response = obj.get("response")
+    let response = obj
+        .get("response")
         .and_then(|v| v.as_str())
         .or_else(|| obj.get("content").and_then(|v| v.as_str()))
         .map(str::trim)
         .filter(|s| !s.is_empty())?
         .to_string();
     let confidence = obj.get("confidence").and_then(|v| v.as_i64());
-    let challenge = obj.get("challenge")
+    let challenge = obj
+        .get("challenge")
         .and_then(|v| serde_json::from_value::<ChallengeField>(v.clone()).ok());
-    let position_change = obj.get("position_change")
+    let position_change = obj
+        .get("position_change")
         .and_then(|v| serde_json::from_value::<PositionChangeField>(v.clone()).ok());
     Some(DebateRoundResponse {
         response,
@@ -73,7 +90,9 @@ fn extract_confidence(text: &str) -> Option<i64> {
     let after = after.trim_start();
     // Parse the integer
     let end = after.find(|c: char| !c.is_ascii_digit() && c != '-')?;
-    if end == 0 { return None; }
+    if end == 0 {
+        return None;
+    }
     after[..end].parse().ok()
 }
 
@@ -84,19 +103,36 @@ fn extract_challenge(text: &str) -> Option<ChallengeField> {
     let after_key = &text[pos + needle.len()..];
     let after_colon = after_key.trim_start().strip_prefix(':')?;
     let after_colon = after_colon.trim_start();
-    if !after_colon.starts_with('{') { return None; }
+    if !after_colon.starts_with('{') {
+        return None;
+    }
 
     // Find matching brace
     let mut depth = 0i32;
     let mut in_string = false;
     let mut escape = false;
     for (i, ch) in after_colon.bytes().enumerate() {
-        if escape { escape = false; continue; }
-        if ch == b'\\' && in_string { escape = true; continue; }
-        if ch == b'"' { in_string = !in_string; continue; }
-        if in_string { continue; }
-        if ch == b'{' { depth += 1; }
-        if ch == b'}' { depth -= 1; }
+        if escape {
+            escape = false;
+            continue;
+        }
+        if ch == b'\\' && in_string {
+            escape = true;
+            continue;
+        }
+        if ch == b'"' {
+            in_string = !in_string;
+            continue;
+        }
+        if in_string {
+            continue;
+        }
+        if ch == b'{' {
+            depth += 1;
+        }
+        if ch == b'}' {
+            depth -= 1;
+        }
         if depth == 0 {
             return serde_json::from_str(&after_colon[..=i]).ok();
         }
@@ -111,18 +147,35 @@ fn extract_position_change(text: &str) -> Option<PositionChangeField> {
     let after_key = &text[pos + needle.len()..];
     let after_colon = after_key.trim_start().strip_prefix(':')?;
     let after_colon = after_colon.trim_start();
-    if !after_colon.starts_with('{') { return None; }
+    if !after_colon.starts_with('{') {
+        return None;
+    }
 
     let mut depth = 0i32;
     let mut in_string = false;
     let mut escape = false;
     for (i, ch) in after_colon.bytes().enumerate() {
-        if escape { escape = false; continue; }
-        if ch == b'\\' && in_string { escape = true; continue; }
-        if ch == b'"' { in_string = !in_string; continue; }
-        if in_string { continue; }
-        if ch == b'{' { depth += 1; }
-        if ch == b'}' { depth -= 1; }
+        if escape {
+            escape = false;
+            continue;
+        }
+        if ch == b'\\' && in_string {
+            escape = true;
+            continue;
+        }
+        if ch == b'"' {
+            in_string = !in_string;
+            continue;
+        }
+        if in_string {
+            continue;
+        }
+        if ch == b'{' {
+            depth += 1;
+        }
+        if ch == b'}' {
+            depth -= 1;
+        }
         if depth == 0 {
             return serde_json::from_str(&after_colon[..=i]).ok();
         }
@@ -147,7 +200,10 @@ pub fn normalise_response(raw: &mut DebateRoundResponse) {
     // Extract individual fields if not already present
     if raw.confidence.is_none() {
         if let Some(c) = extract_confidence(&raw.response) {
-            tracing::info!(confidence = c, "response_parser: extracted confidence from text");
+            tracing::info!(
+                confidence = c,
+                "response_parser: extracted confidence from text"
+            );
             raw.confidence = Some(c);
         }
     }

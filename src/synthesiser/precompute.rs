@@ -1,7 +1,7 @@
-use std::collections::HashMap;
-use crate::db::models::ResponseRow;
 use crate::bot_client::{ChallengeField, PositionChangeField};
+use crate::db::models::ResponseRow;
 use serde::Serialize;
+use std::collections::HashMap;
 
 /// Pre-computed structural data fed to the synthesis prompt.
 #[derive(Debug, Serialize)]
@@ -51,7 +51,11 @@ pub fn precompute(
     let position_changes = build_position_changes(responses, pseudonym_map);
     let challenge_graph = build_challenge_graph(responses, pseudonym_map);
 
-    PrecomputedData { confidence_trajectories: trajectories, position_changes, challenge_graph }
+    PrecomputedData {
+        confidence_trajectories: trajectories,
+        position_changes,
+        challenge_graph,
+    }
 }
 
 /// Build per-pseudonym confidence trajectories across rounds 0–4.
@@ -62,7 +66,9 @@ fn build_trajectories(
     let mut trajectories: HashMap<String, Vec<Option<i64>>> = HashMap::new();
     for resp in responses {
         let pseudonym = pseudonym_map.get(&resp.bot_id).cloned().unwrap_or_default();
-        let entry = trajectories.entry(pseudonym).or_insert_with(|| vec![None; 5]);
+        let entry = trajectories
+            .entry(pseudonym)
+            .or_insert_with(|| vec![None; 5]);
         if (resp.round_number as usize) < 5 {
             entry[resp.round_number as usize] = resp.confidence;
         }

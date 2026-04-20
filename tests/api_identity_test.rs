@@ -184,7 +184,9 @@ async fn test_bot_submission_and_approval_flow() {
         .await
         .unwrap();
     assert_eq!(create.status(), StatusCode::CREATED);
-    let body = axum::body::to_bytes(create.into_body(), usize::MAX).await.unwrap();
+    let body = axum::body::to_bytes(create.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let created: Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(created["status"], "pending");
     assert_eq!(created["submitted_by"], "user_alice");
@@ -204,7 +206,9 @@ async fn test_bot_submission_and_approval_flow() {
         .await
         .unwrap();
     assert_eq!(mine.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(mine.into_body(), usize::MAX).await.unwrap();
+    let body = axum::body::to_bytes(mine.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let mine_json: Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(mine_json.as_array().unwrap().len(), 1);
     assert_eq!(mine_json[0]["status"], "pending");

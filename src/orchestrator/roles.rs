@@ -38,11 +38,7 @@ pub async fn assign_roles(
             .zip(roles.iter())
             .any(|((_, last), assigned)| last.as_ref() == Some(assigned));
         if !conflict {
-            return Ok(bot_ids
-                .iter()
-                .cloned()
-                .zip(roles.into_iter())
-                .collect());
+            return Ok(bot_ids.iter().cloned().zip(roles.into_iter()).collect());
         }
     }
 

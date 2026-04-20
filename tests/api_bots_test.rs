@@ -2,8 +2,8 @@ mod common;
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
+use serde_json::{Value, json};
 use tower::ServiceExt;
-use serde_json::{json, Value};
 use wiremock::matchers::{body_string_contains, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -21,11 +21,13 @@ async fn test_create_bot_returns_201() {
             .uri("/bots")
             .header("content-type", "application/json"),
     )
-        .body(Body::from(serde_json::to_string(&body).unwrap()))
-        .unwrap();
+    .body(Body::from(serde_json::to_string(&body).unwrap()))
+    .unwrap();
     let response = app.oneshot(req).await.unwrap();
     assert_eq!(response.status(), StatusCode::CREATED);
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let json: Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["name"], "TestBot");
     assert!(json["id"].is_string());
@@ -34,15 +36,14 @@ async fn test_create_bot_returns_201() {
 #[tokio::test]
 async fn test_list_bots_returns_empty() {
     let (app, _pool) = common::test_app().await;
-    let req = common::admin_auth(
-        Request::builder()
-            .uri("/bots"),
-    )
+    let req = common::admin_auth(Request::builder().uri("/bots"))
         .body(Body::empty())
         .unwrap();
     let response = app.oneshot(req).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let json: Value = serde_json::from_slice(&body).unwrap();
     assert!(json.as_array().unwrap().is_empty());
 }
@@ -52,13 +53,20 @@ async fn reject_with_short_reason_returns_400() {
     let (app, pool) = common::test_app().await;
     sqlx::query(
         "INSERT INTO bots (id, name, endpoint_url, token_ciphertext, status) \
-         VALUES ('b1', 'B1', 'https://example.com/d', X'00', 'pending')"
-    ).execute(&pool).await.unwrap();
+         VALUES ('b1', 'B1', 'https://example.com/d', X'00', 'pending')",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
 
     let req = common::admin_auth(
-        Request::builder().method("PATCH").uri("/bots/b1/reject")
+        Request::builder()
+            .method("PATCH")
+            .uri("/bots/b1/reject")
             .header("content-type", "application/json"),
-    ).body(Body::from(r#"{"reason":"short"}"#)).unwrap();
+    )
+    .body(Body::from(r#"{"reason":"short"}"#))
+    .unwrap();
     let res = app.oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::BAD_REQUEST);
 }
@@ -68,19 +76,35 @@ async fn reject_with_valid_reason_sets_status_and_reason() {
     let (app, pool) = common::test_app().await;
     sqlx::query(
         "INSERT INTO bots (id, name, endpoint_url, token_ciphertext, status) \
-         VALUES ('b2', 'B2', 'https://example.com/d', X'00', 'pending')"
-    ).execute(&pool).await.unwrap();
+         VALUES ('b2', 'B2', 'https://example.com/d', X'00', 'pending')",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
 
     let req = common::admin_auth(
-        Request::builder().method("PATCH").uri("/bots/b2/reject")
+        Request::builder()
+            .method("PATCH")
+            .uri("/bots/b2/reject")
             .header("content-type", "application/json"),
-    ).body(Body::from(r#"{"reason":"endpoint returned garbage on all test rounds"}"#)).unwrap();
+    )
+    .body(Body::from(
+        r#"{"reason":"endpoint returned garbage on all test rounds"}"#,
+    ))
+    .unwrap();
     let res = app.oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    let body = axum::body::to_bytes(res.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let json: Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["status"], "rejected");
-    assert!(json["rejection_reason"].as_str().unwrap().contains("endpoint returned garbage"));
+    assert!(
+        json["rejection_reason"]
+            .as_str()
+            .unwrap()
+            .contains("endpoint returned garbage")
+    );
 }
 
 #[tokio::test]
@@ -88,12 +112,19 @@ async fn deactivate_pending_bot_returns_409() {
     let (app, pool) = common::test_app().await;
     sqlx::query(
         "INSERT INTO bots (id, name, endpoint_url, token_ciphertext, status) \
-         VALUES ('b3', 'B3', 'https://example.com/d', X'00', 'pending')"
-    ).execute(&pool).await.unwrap();
+         VALUES ('b3', 'B3', 'https://example.com/d', X'00', 'pending')",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
 
     let req = common::admin_auth(
-        Request::builder().method("PATCH").uri("/bots/b3/deactivate"),
-    ).body(Body::empty()).unwrap();
+        Request::builder()
+            .method("PATCH")
+            .uri("/bots/b3/deactivate"),
+    )
+    .body(Body::empty())
+    .unwrap();
     let res = app.oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::CONFLICT);
 }
@@ -107,20 +138,31 @@ async fn submitted_token_is_encrypted_in_db() {
         "token": "s3cr3t-bearer-xyz"
     });
     let req = common::admin_auth(
-        Request::builder().method("POST").uri("/bots")
+        Request::builder()
+            .method("POST")
+            .uri("/bots")
             .header("content-type", "application/json"),
-    ).body(Body::from(serde_json::to_string(&body).unwrap())).unwrap();
+    )
+    .body(Body::from(serde_json::to_string(&body).unwrap()))
+    .unwrap();
     let res = app.oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::CREATED);
 
-    let (ciphertext,): (Option<Vec<u8>>,) = sqlx::query_as(
-        "SELECT token_ciphertext FROM bots WHERE name = 'TokenTest'"
-    ).fetch_one(&pool).await.unwrap();
+    let (ciphertext,): (Option<Vec<u8>>,) =
+        sqlx::query_as("SELECT token_ciphertext FROM bots WHERE name = 'TokenTest'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
     assert!(ciphertext.is_some(), "ciphertext should be populated");
     let ct = ciphertext.unwrap();
-    assert!(ct.len() > 12, "ciphertext must be longer than 12-byte nonce");
-    assert!(!ct.windows(5).any(|w| w == b"s3cr3"),
-            "plaintext token leaked into ciphertext");
+    assert!(
+        ct.len() > 12,
+        "ciphertext must be longer than 12-byte nonce"
+    );
+    assert!(
+        !ct.windows(5).any(|w| w == b"s3cr3"),
+        "plaintext token leaked into ciphertext"
+    );
 }
 
 #[tokio::test]
@@ -132,9 +174,13 @@ async fn submit_with_http_url_returns_400() {
         "token": "any"
     });
     let req = common::admin_auth(
-        Request::builder().method("POST").uri("/bots")
+        Request::builder()
+            .method("POST")
+            .uri("/bots")
             .header("content-type", "application/json"),
-    ).body(Body::from(serde_json::to_string(&body).unwrap())).unwrap();
+    )
+    .body(Body::from(serde_json::to_string(&body).unwrap()))
+    .unwrap();
     let res = app.oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::BAD_REQUEST);
 }
@@ -157,7 +203,9 @@ async fn simple_mode_auto_approves_signed_in_submitter() {
 
     let res = app.oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::CREATED);
-    let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    let body = axum::body::to_bytes(res.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let json: Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["status"], "active");
 }
@@ -170,7 +218,9 @@ async fn simple_mode_accepts_http_url_and_missing_token() {
         "endpoint_url": "http://example.test/debate"
     });
     let req = common::admin_auth(
-        Request::builder().method("POST").uri("/bots")
+        Request::builder()
+            .method("POST")
+            .uri("/bots")
             .header("content-type", "application/json"),
     )
     .body(Body::from(serde_json::to_string(&body).unwrap()))
@@ -178,18 +228,22 @@ async fn simple_mode_accepts_http_url_and_missing_token() {
 
     let res = app.oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::CREATED);
-    let payload = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    let payload = axum::body::to_bytes(res.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let json: Value = serde_json::from_slice(&payload).unwrap();
     let bot_id = json["id"].as_str().unwrap();
 
-    let (ciphertext,): (Option<Vec<u8>>,) = sqlx::query_as(
-        "SELECT token_ciphertext FROM bots WHERE id = ?"
-    )
-    .bind(bot_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    assert!(ciphertext.is_none(), "token should be optional in simple mode");
+    let (ciphertext,): (Option<Vec<u8>>,) =
+        sqlx::query_as("SELECT token_ciphertext FROM bots WHERE id = ?")
+            .bind(bot_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(
+        ciphertext.is_none(),
+        "token should be optional in simple mode"
+    );
 }
 
 #[tokio::test]
@@ -210,7 +264,9 @@ async fn simple_mode_new_submission_archives_previous_from_same_owner_and_name()
         .unwrap();
     let first_res = app.clone().oneshot(first_req).await.unwrap();
     assert_eq!(first_res.status(), StatusCode::CREATED);
-    let first_body = axum::body::to_bytes(first_res.into_body(), usize::MAX).await.unwrap();
+    let first_body = axum::body::to_bytes(first_res.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let first_json: Value = serde_json::from_slice(&first_body).unwrap();
     let first_id = first_json["id"].as_str().unwrap().to_string();
 
@@ -228,7 +284,9 @@ async fn simple_mode_new_submission_archives_previous_from_same_owner_and_name()
         .unwrap();
     let second_res = app.oneshot(second_req).await.unwrap();
     assert_eq!(second_res.status(), StatusCode::CREATED);
-    let second_body = axum::body::to_bytes(second_res.into_body(), usize::MAX).await.unwrap();
+    let second_body = axum::body::to_bytes(second_res.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let second_json: Value = serde_json::from_slice(&second_body).unwrap();
     let second_id = second_json["id"].as_str().unwrap().to_string();
 
@@ -265,7 +323,9 @@ async fn simple_mode_same_name_different_owner_keeps_both_active() {
         .unwrap();
     let first_res = app.clone().oneshot(first_req).await.unwrap();
     assert_eq!(first_res.status(), StatusCode::CREATED);
-    let first_body = axum::body::to_bytes(first_res.into_body(), usize::MAX).await.unwrap();
+    let first_body = axum::body::to_bytes(first_res.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let first_json: Value = serde_json::from_slice(&first_body).unwrap();
     let first_id = first_json["id"].as_str().unwrap().to_string();
 
@@ -283,7 +343,9 @@ async fn simple_mode_same_name_different_owner_keeps_both_active() {
         .unwrap();
     let second_res = app.oneshot(second_req).await.unwrap();
     assert_eq!(second_res.status(), StatusCode::CREATED);
-    let second_body = axum::body::to_bytes(second_res.into_body(), usize::MAX).await.unwrap();
+    let second_body = axum::body::to_bytes(second_res.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let second_json: Value = serde_json::from_slice(&second_body).unwrap();
     let second_id = second_json["id"].as_str().unwrap().to_string();
 
@@ -315,25 +377,27 @@ async fn test_bot_endpoint_returns_ok_true_for_healthy_bot() {
         .await;
     let endpoint = format!("{}/debate", bot_server.uri());
 
-    sqlx::query(
-        "INSERT INTO bots (id, name, endpoint_url, status) VALUES (?, ?, ?, ?)"
-    )
-    .bind("bot-health-ok")
-    .bind("HealthBot")
-    .bind(endpoint)
-    .bind("active")
-    .execute(&pool)
-    .await
-    .unwrap();
+    sqlx::query("INSERT INTO bots (id, name, endpoint_url, status) VALUES (?, ?, ?, ?)")
+        .bind("bot-health-ok")
+        .bind("HealthBot")
+        .bind(endpoint)
+        .bind("active")
+        .execute(&pool)
+        .await
+        .unwrap();
 
     let req = common::admin_auth(
-        Request::builder().method("PATCH").uri("/bots/bot-health-ok/test"),
+        Request::builder()
+            .method("PATCH")
+            .uri("/bots/bot-health-ok/test"),
     )
     .body(Body::empty())
     .unwrap();
     let res = app.oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    let body = axum::body::to_bytes(res.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let json: Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["ok"], true);
 }
@@ -342,29 +406,34 @@ async fn test_bot_endpoint_returns_ok_true_for_healthy_bot() {
 async fn test_bot_endpoint_returns_ok_false_for_unreachable_bot() {
     let (app, pool) = common::test_app().await;
 
-    sqlx::query(
-        "INSERT INTO bots (id, name, endpoint_url, status) VALUES (?, ?, ?, ?)"
-    )
-    .bind("bot-health-bad")
-    .bind("UnreachableBot")
-    .bind("http://127.0.0.1:9/debate")
-    .bind("active")
-    .execute(&pool)
-    .await
-    .unwrap();
+    sqlx::query("INSERT INTO bots (id, name, endpoint_url, status) VALUES (?, ?, ?, ?)")
+        .bind("bot-health-bad")
+        .bind("UnreachableBot")
+        .bind("http://127.0.0.1:9/debate")
+        .bind("active")
+        .execute(&pool)
+        .await
+        .unwrap();
 
     let req = common::admin_auth(
-        Request::builder().method("PATCH").uri("/bots/bot-health-bad/test"),
+        Request::builder()
+            .method("PATCH")
+            .uri("/bots/bot-health-bad/test"),
     )
     .body(Body::empty())
     .unwrap();
     let res = app.oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    let body = axum::body::to_bytes(res.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let json: Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["ok"], false);
     let msg = json["message"].as_str().unwrap();
-    assert!(msg.contains("Smoke test failed"), "unexpected message: {msg}");
+    assert!(
+        msg.contains("Smoke test failed"),
+        "unexpected message: {msg}"
+    );
 }
 
 #[tokio::test]
@@ -389,25 +458,27 @@ async fn test_bot_endpoint_fails_when_round1_payload_not_supported() {
         .await;
 
     let endpoint = format!("{}/debate", bot_server.uri());
-    sqlx::query(
-        "INSERT INTO bots (id, name, endpoint_url, status) VALUES (?, ?, ?, ?)"
-    )
-    .bind("bot-health-round1-bad")
-    .bind("Round1BrokenBot")
-    .bind(endpoint)
-    .bind("active")
-    .execute(&pool)
-    .await
-    .unwrap();
+    sqlx::query("INSERT INTO bots (id, name, endpoint_url, status) VALUES (?, ?, ?, ?)")
+        .bind("bot-health-round1-bad")
+        .bind("Round1BrokenBot")
+        .bind(endpoint)
+        .bind("active")
+        .execute(&pool)
+        .await
+        .unwrap();
 
     let req = common::admin_auth(
-        Request::builder().method("PATCH").uri("/bots/bot-health-round1-bad/test"),
+        Request::builder()
+            .method("PATCH")
+            .uri("/bots/bot-health-round1-bad/test"),
     )
     .body(Body::empty())
     .unwrap();
     let res = app.oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    let body = axum::body::to_bytes(res.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let json: Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["ok"], false);
     let msg = json["message"].as_str().unwrap();
@@ -417,25 +488,21 @@ async fn test_bot_endpoint_fails_when_round1_payload_not_supported() {
 #[tokio::test]
 async fn list_bots_includes_performance_score_and_suggestions() {
     let (app, pool) = common::test_app().await;
-    sqlx::query(
-        "INSERT INTO bots (id, name, endpoint_url, status) VALUES (?, ?, ?, ?)"
-    )
-    .bind("bot-perf-1")
-    .bind("PerfBot")
-    .bind("https://example.com/debate")
-    .bind("active")
-    .execute(&pool)
-    .await
-    .unwrap();
-    sqlx::query(
-        "INSERT INTO debates (id, topic, status) VALUES (?, ?, ?)"
-    )
-    .bind("debate-perf-1")
-    .bind("topic")
-    .bind("complete")
-    .execute(&pool)
-    .await
-    .unwrap();
+    sqlx::query("INSERT INTO bots (id, name, endpoint_url, status) VALUES (?, ?, ?, ?)")
+        .bind("bot-perf-1")
+        .bind("PerfBot")
+        .bind("https://example.com/debate")
+        .bind("active")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO debates (id, topic, status) VALUES (?, ?, ?)")
+        .bind("debate-perf-1")
+        .bind("topic")
+        .bind("complete")
+        .execute(&pool)
+        .await
+        .unwrap();
     sqlx::query(
         "INSERT INTO responses (id, debate_id, round_number, bot_id, response_json, abstained, valid) \
          VALUES (?, ?, ?, ?, ?, ?, ?)"
@@ -451,15 +518,13 @@ async fn list_bots_includes_performance_score_and_suggestions() {
     .await
     .unwrap();
     // Should be excluded from performance aggregates.
-    sqlx::query(
-        "INSERT INTO debates (id, topic, status) VALUES (?, ?, ?)"
-    )
-    .bind("debate-perf-excluded")
-    .bind("Quickfire readiness check for PerfBot")
-    .bind("complete")
-    .execute(&pool)
-    .await
-    .unwrap();
+    sqlx::query("INSERT INTO debates (id, topic, status) VALUES (?, ?, ?)")
+        .bind("debate-perf-excluded")
+        .bind("Quickfire readiness check for PerfBot")
+        .bind("complete")
+        .execute(&pool)
+        .await
+        .unwrap();
     sqlx::query(
         "INSERT INTO responses (id, debate_id, round_number, bot_id, response_json, abstained, valid) \
          VALUES (?, ?, ?, ?, ?, ?, ?)"
@@ -508,9 +573,12 @@ async fn list_bots_includes_performance_score_and_suggestions() {
         .unwrap();
     let response = app.oneshot(req).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let json: Value = serde_json::from_slice(&body).unwrap();
-    let bot = json.as_array()
+    let bot = json
+        .as_array()
         .unwrap()
         .iter()
         .find(|b| b["id"] == "bot-perf-1")
@@ -521,31 +589,46 @@ async fn list_bots_includes_performance_score_and_suggestions() {
     assert_eq!(bot["performance"]["degraded_rounds"], 1);
     assert!(bot["performance"]["score_out_of_10"].as_f64().unwrap() <= 8.5);
     assert!(
-        bot["performance"]["critical_thinking_score_out_of_10"].as_f64().is_some(),
+        bot["performance"]["critical_thinking_score_out_of_10"]
+            .as_f64()
+            .is_some(),
         "expected critical thinking score"
     );
     assert!(
-        bot["performance"]["resource_use_score_out_of_10"].as_f64().is_some(),
+        bot["performance"]["resource_use_score_out_of_10"]
+            .as_f64()
+            .is_some(),
         "expected resource-use score"
     );
     assert!(
-        bot["performance"]["functionality_score_out_of_10"].as_f64().is_some(),
+        bot["performance"]["functionality_score_out_of_10"]
+            .as_f64()
+            .is_some(),
         "expected functionality score"
     );
     assert!(
-        bot["performance"]["usefulness_score_out_of_10"].as_f64().is_some(),
+        bot["performance"]["usefulness_score_out_of_10"]
+            .as_f64()
+            .is_some(),
         "expected usefulness score"
     );
     assert!(
-        bot["performance"]["instruction_following_score_out_of_10"].as_f64().is_some(),
+        bot["performance"]["instruction_following_score_out_of_10"]
+            .as_f64()
+            .is_some(),
         "expected instruction-following score"
     );
     assert!(
-        bot["performance"]["debate_engagement_score_out_of_10"].as_f64().is_some(),
+        bot["performance"]["debate_engagement_score_out_of_10"]
+            .as_f64()
+            .is_some(),
         "expected debate engagement score"
     );
     assert!(
-        bot["performance"]["usefulness_score_out_of_10"].as_f64().unwrap() < 6.5,
+        bot["performance"]["usefulness_score_out_of_10"]
+            .as_f64()
+            .unwrap()
+            < 6.5,
         "expected abstentions/degraded rounds to reduce usefulness"
     );
     assert!(
@@ -558,7 +641,7 @@ async fn list_bots_includes_performance_score_and_suggestions() {
 async fn bot_analytics_allows_owner_and_admin_but_forbids_other_participants() {
     let (app, pool) = common::test_app().await;
     sqlx::query(
-        "INSERT INTO bots (id, name, endpoint_url, status, submitted_by) VALUES (?, ?, ?, ?, ?)"
+        "INSERT INTO bots (id, name, endpoint_url, status, submitted_by) VALUES (?, ?, ?, ?, ?)",
     )
     .bind("bot-analytics-auth")
     .bind("OwnerBot")
@@ -588,7 +671,9 @@ async fn bot_analytics_allows_owner_and_admin_but_forbids_other_participants() {
     assert_eq!(other_res.status(), StatusCode::FORBIDDEN);
 
     let admin_req = common::admin_auth(
-        Request::builder().method("GET").uri("/bots/bot-analytics-auth/analytics")
+        Request::builder()
+            .method("GET")
+            .uri("/bots/bot-analytics-auth/analytics"),
     )
     .body(Body::empty())
     .unwrap();
@@ -600,7 +685,7 @@ async fn bot_analytics_allows_owner_and_admin_but_forbids_other_participants() {
 async fn bot_analytics_returns_recent_debate_rows() {
     let (app, pool) = common::test_app().await;
     sqlx::query(
-        "INSERT INTO bots (id, name, endpoint_url, status, submitted_by) VALUES (?, ?, ?, ?, ?)"
+        "INSERT INTO bots (id, name, endpoint_url, status, submitted_by) VALUES (?, ?, ?, ?, ?)",
     )
     .bind("bot-analytics-data")
     .bind("DataBot")
@@ -647,10 +732,15 @@ async fn bot_analytics_returns_recent_debate_rows() {
         .unwrap();
     let res = app.oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    let body = axum::body::to_bytes(res.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let json: Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["bot"]["id"], "bot-analytics-data");
-    assert_eq!(json["recent_debates"][0]["debate_id"], "debate-analytics-data");
+    assert_eq!(
+        json["recent_debates"][0]["debate_id"],
+        "debate-analytics-data"
+    );
     assert_eq!(json["recent_debates"][0]["role"], "skeptic");
 }
 
@@ -662,7 +752,9 @@ async fn legacy_bot_schema_endpoint_returns_compat_payload() {
         .unwrap();
     let res = app.oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    let body = axum::body::to_bytes(res.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let json: Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["deprecated"], true);
     assert_eq!(json["request"]["required"][0], "session_id");
@@ -673,7 +765,7 @@ async fn legacy_bot_schema_endpoint_returns_compat_payload() {
 async fn legacy_bot_history_endpoint_returns_recent_rows() {
     let (app, pool) = common::test_app().await;
     sqlx::query(
-        "INSERT INTO bots (id, name, endpoint_url, status, submitted_by) VALUES (?, ?, ?, ?, ?)"
+        "INSERT INTO bots (id, name, endpoint_url, status, submitted_by) VALUES (?, ?, ?, ?, ?)",
     )
     .bind("bot-legacy-history")
     .bind("LegacyHistoryBot")
@@ -720,7 +812,9 @@ async fn legacy_bot_history_endpoint_returns_recent_rows() {
         .unwrap();
     let res = app.oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    let body = axum::body::to_bytes(res.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let json: Value = serde_json::from_slice(&body).unwrap();
     let history = json.as_array().expect("history should be array");
     assert_eq!(history[0]["debate_id"], "debate-legacy-history");

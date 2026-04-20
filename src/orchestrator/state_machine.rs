@@ -1,5 +1,5 @@
-use sqlx::SqlitePool;
 use crate::db::queries_phase1;
+use sqlx::SqlitePool;
 
 /// Initialise round records for a new multi-round debate.
 pub async fn init_rounds(
@@ -50,10 +50,7 @@ pub async fn fail_round(
 
 /// Find the next round to run for resumption. Returns the first round
 /// that is not yet complete. Returns None if all rounds are complete.
-pub async fn find_resume_point(
-    pool: &SqlitePool,
-    debate_id: &str,
-) -> Result<Option<i64>, String> {
+pub async fn find_resume_point(pool: &SqlitePool, debate_id: &str) -> Result<Option<i64>, String> {
     let rounds = queries_phase1::get_rounds(pool, debate_id)
         .await
         .map_err(|e| format!("failed to get rounds: {e}"))?;

@@ -17,9 +17,15 @@ async fn init_scoreboard_pool(url: &str) -> anyhow::Result<SqlitePool> {
         .max_connections(2)
         .connect(url)
         .await?;
-    sqlx::query("PRAGMA journal_mode=WAL").execute(&pool).await?;
-    sqlx::query("PRAGMA synchronous=NORMAL").execute(&pool).await?;
-    sqlx::query("PRAGMA busy_timeout=5000").execute(&pool).await?;
+    sqlx::query("PRAGMA journal_mode=WAL")
+        .execute(&pool)
+        .await?;
+    sqlx::query("PRAGMA synchronous=NORMAL")
+        .execute(&pool)
+        .await?;
+    sqlx::query("PRAGMA busy_timeout=5000")
+        .execute(&pool)
+        .await?;
     sqlx::query("PRAGMA foreign_keys=ON").execute(&pool).await?;
     Ok(pool)
 }
@@ -139,7 +145,10 @@ fn extract_json_object(text: &str) -> Option<String> {
 }
 
 async fn assert_gemma_ready(settings: &Settings) -> anyhow::Result<()> {
-    let base = settings.models.local_synthesis_base_url.trim_end_matches('/');
+    let base = settings
+        .models
+        .local_synthesis_base_url
+        .trim_end_matches('/');
     let url = if base.ends_with("/v1") {
         format!("{base}/chat/completions")
     } else {
@@ -186,8 +195,8 @@ async fn assert_gemma_ready(settings: &Settings) -> anyhow::Result<()> {
     let candidate = extract_json_object(&cleaned)
         .or_else(|| extract_json_object(raw))
         .unwrap_or(cleaned);
-    let payload: GemmaHealthPayload = serde_json::from_str(&candidate)
-        .context("parse Gemma readiness JSON payload")?;
+    let payload: GemmaHealthPayload =
+        serde_json::from_str(&candidate).context("parse Gemma readiness JSON payload")?;
     if !payload.ok {
         anyhow::bail!("Gemma readiness payload returned ok=false");
     }

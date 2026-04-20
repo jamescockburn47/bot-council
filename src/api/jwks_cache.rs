@@ -54,11 +54,7 @@ impl JwksCache {
 
 /// Spawn a background task that refreshes the cache every `interval_secs`.
 /// Logs errors at WARN but never panics or exits.
-pub fn spawn_refresh_loop(
-    cache: JwksCache,
-    client: reqwest::Client,
-    interval_secs: u64,
-) {
+pub fn spawn_refresh_loop(cache: JwksCache, client: reqwest::Client, interval_secs: u64) {
     tokio::spawn(async move {
         let mut ticker = tokio::time::interval(Duration::from_secs(interval_secs));
         ticker.tick().await; // skip the immediate first tick — startup already fetched

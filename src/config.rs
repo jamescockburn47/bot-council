@@ -262,9 +262,7 @@ impl Settings {
                 );
             }
             crate::api::bot_token_crypto::parse_key_hex(&auth.bot_token_key).map_err(|_| {
-                anyhow::anyhow!(
-                    "auth.bot_token_key must be exactly 64 hex characters (32 bytes)"
-                )
+                anyhow::anyhow!("auth.bot_token_key must be exactly 64 hex characters (32 bytes)")
             })?;
         }
 
@@ -272,9 +270,7 @@ impl Settings {
         //    Refusing to boot makes it impossible to accidentally expose the
         //    backdoor in production.
         if auth.test_mode && !auth.clerk_issuer.is_empty() {
-            anyhow::bail!(
-                "auth.test_mode must not be enabled when auth.clerk_issuer is set"
-            );
+            anyhow::bail!("auth.test_mode must not be enabled when auth.clerk_issuer is set");
         }
 
         Ok(())

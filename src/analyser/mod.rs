@@ -2,9 +2,9 @@ pub mod challenge;
 pub mod divergence;
 pub mod pairing;
 
+use crate::config::ModelsConfig;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
-use crate::config::ModelsConfig;
 
 /// A generic local chat completion request.
 #[derive(Debug, Serialize)]
@@ -59,10 +59,7 @@ const MINIMAX_MAX_RETRIES: u32 = 3;
 /// Retries on transient failures up to `MINIMAX_MAX_RETRIES` times with
 /// exponential backoff. Returns the cleaned JSON content string from the
 /// first choice, or an error describing what went wrong.
-pub async fn call_minimax(
-    config: &ModelsConfig,
-    system_prompt: &str,
-) -> Result<String, String> {
+pub async fn call_minimax(config: &ModelsConfig, system_prompt: &str) -> Result<String, String> {
     let client = reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(config.analysis_connect_timeout_secs))
         .timeout(Duration::from_secs(config.analysis_request_timeout_secs))
@@ -72,15 +69,18 @@ pub async fn call_minimax(
 
     let request = MiniMaxRequest {
         model: config.effective_analysis_model().to_string(),
-        messages: vec![
-            MiniMaxMessage { role: "user".into(), content: system_prompt.into() },
-        ],
+        messages: vec![MiniMaxMessage {
+            role: "user".into(),
+            content: system_prompt.into(),
+        }],
         temperature: 0.0,
         top_k: 1,
         seed: 42,
         cache_prompt: false,
         reasoning_format: "none".into(),
-        response_format: Some(ResponseFormat { format_type: "json_object".into() }),
+        response_format: Some(ResponseFormat {
+            format_type: "json_object".into(),
+        }),
     };
 
     let mut last_err = String::new();
@@ -92,7 +92,10 @@ pub async fn call_minimax(
 
         let resp = match client.post(&url).json(&request).send().await {
             Ok(r) => r,
-            Err(e) => { last_err = format!("local analyser request failed: {e}"); continue; }
+            Err(e) => {
+                last_err = format!("local analyser request failed: {e}");
+                continue;
+            }
         };
 
         let status = resp.status();
@@ -108,11 +111,14 @@ pub async fn call_minimax(
             return Err(format!("local analyser returned HTTP {status}: {body}"));
         }
 
-        let parsed: MiniMaxResponse = resp.json()
+        let parsed: MiniMaxResponse = resp
+            .json()
             .await
             .map_err(|e| format!("local analyser response parse failed: {e}"))?;
 
-        let cleaned = parsed.choices.first()
+        let cleaned = parsed
+            .choices
+            .first()
             .map(|c| clean_model_output(&c.message.content))
             .ok_or_else(|| "local analyser returned empty choices".to_string())?;
         let candidate = extract_json_object(&cleaned)
@@ -269,7 +275,10 @@ mod tests {
         };
 
         let output = call_minimax(&cfg, "Return JSON").await;
-        assert_eq!(output.unwrap_or_default(), "{\"valid\":true,\"reason\":\"ok\"}");
+        assert_eq!(
+            output.unwrap_or_default(),
+            "{\"valid\":true,\"reason\":\"ok\"}"
+        );
     }
 
     #[test]

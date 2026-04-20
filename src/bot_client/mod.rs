@@ -1,10 +1,10 @@
+use crate::config::HttpClientConfig;
+use crate::sanitise::MAX_RESPONSE_BYTES;
 use reqwest::Client;
 use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
 use reqwest_retry::{RetryTransientMiddleware, policies::ExponentialBackoff};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
-use crate::config::HttpClientConfig;
-use crate::sanitise::MAX_RESPONSE_BYTES;
 
 /// Build the HTTP client with retry middleware.
 pub fn build_http_client(config: &HttpClientConfig) -> ClientWithMiddleware {
@@ -186,12 +186,15 @@ pub async fn send_debate_request(
     if !resp.status().is_success() {
         return Err(format!("bot returned HTTP {}", resp.status()));
     }
-    let body = resp.bytes().await
+    let body = resp
+        .bytes()
+        .await
         .map_err(|e| format!("failed to read response body: {e}"))?;
     if body.len() > MAX_RESPONSE_BYTES {
         return Err(format!(
             "response body too large: {} bytes (limit {})",
-            body.len(), MAX_RESPONSE_BYTES
+            body.len(),
+            MAX_RESPONSE_BYTES
         ));
     }
     serde_json::from_slice::<DebateRoundResponse>(&body)

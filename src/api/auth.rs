@@ -7,19 +7,22 @@
 //! Admin identities come from either a static bearer token (CLI) or a Clerk
 //! JWT whose `sub` claim is in the config allowlist.
 
-use axum::extract::FromRequestParts;
-use axum::http::request::Parts;
-use jsonwebtoken::{decode, decode_header, Algorithm, DecodingKey, Validation};
-use serde::Deserialize;
 use crate::db::queries;
 use crate::error::AppError;
 use crate::state::AppState;
+use axum::extract::FromRequestParts;
+use axum::http::request::Parts;
+use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode, decode_header};
+use serde::Deserialize;
 
 /// Identity established by the auth layer.
 #[derive(Debug, Clone)]
 pub enum AuthIdentity {
     /// Admin via static bearer token (CLI/emergency) or Clerk allowlist.
-    Admin { user_id: Option<String>, source: AuthSource },
+    Admin {
+        user_id: Option<String>,
+        source: AuthSource,
+    },
     /// Signed-in participant (Clerk user not in the admin allowlist).
     Participant { user_id: String },
 }
@@ -114,9 +117,7 @@ async fn authenticate(parts: &Parts, state: &AppState) -> Result<AuthIdentity, A
     // but callers should prefer the header where possible.
     let query_token = parts.uri.query().and_then(parse_token_param);
 
-    let token = header_token
-        .or(query_token)
-        .ok_or(AppError::Unauthorized)?;
+    let token = header_token.or(query_token).ok_or(AppError::Unauthorized)?;
     let token = token.as_str();
 
     // 1. Static admin bearer
@@ -181,7 +182,9 @@ async fn verify_clerk_jwt(token: &str, state: &AppState) -> Result<AuthIdentity,
         tracing::warn!(error = %e, user_id = %claims.sub, "seen_users upsert failed");
     }
 
-    let is_admin = queries::is_admin(state.db(), &claims.sub).await.unwrap_or(false);
+    let is_admin = queries::is_admin(state.db(), &claims.sub)
+        .await
+        .unwrap_or(false);
 
     if is_admin {
         Ok(AuthIdentity::Admin {
@@ -189,7 +192,9 @@ async fn verify_clerk_jwt(token: &str, state: &AppState) -> Result<AuthIdentity,
             source: AuthSource::ClerkJwt,
         })
     } else {
-        Ok(AuthIdentity::Participant { user_id: claims.sub })
+        Ok(AuthIdentity::Participant {
+            user_id: claims.sub,
+        })
     }
 }
 
@@ -199,7 +204,9 @@ fn parse_token_param(query: &str) -> Option<String> {
     for pair in query.split('&') {
         let mut it = pair.splitn(2, '=');
         let k = it.next()?;
-        if k != "token" { continue; }
+        if k != "token" {
+            continue;
+        }
         let v = it.next().unwrap_or("");
         return Some(percent_decode(v));
     }
@@ -213,7 +220,10 @@ fn percent_decode(s: &str) -> String {
     let mut i = 0;
     while i < bytes.len() {
         match bytes[i] {
-            b'+' => { out.push(' '); i += 1; }
+            b'+' => {
+                out.push(' ');
+                i += 1;
+            }
             b'%' if i + 2 < bytes.len() => {
                 let hi = (bytes[i + 1] as char).to_digit(16);
                 let lo = (bytes[i + 2] as char).to_digit(16);
@@ -222,10 +232,16 @@ fn percent_decode(s: &str) -> String {
                         out.push(((h * 16 + l) as u8) as char);
                         i += 3;
                     }
-                    _ => { out.push('%'); i += 1; }
+                    _ => {
+                        out.push('%');
+                        i += 1;
+                    }
                 }
             }
-            b => { out.push(b as char); i += 1; }
+            b => {
+                out.push(b as char);
+                i += 1;
+            }
         }
     }
     out
@@ -265,4 +281,3 @@ mod query_tests {
         assert_eq!(percent_decode("plain"), "plain");
     }
 }
-

@@ -4,8 +4,8 @@
 //! `PUBLIC_CLERK_PUBLISHABLE_KEY`, `PUBLIC_SENTRY_ENVIRONMENT`). Public by
 //! design — everything returned is safe to ship to an unauthenticated browser.
 
-use axum::extract::State;
 use axum::Json;
+use axum::extract::State;
 use serde::Serialize;
 
 use crate::state::AppState;

@@ -47,22 +47,20 @@ pub async fn stream_debate(
         .ok_or_else(|| AppError::NotFound("no active stream for this debate".into()))?;
 
     // Convert broadcast receiver into an SSE stream
-    let event_stream = tokio_stream::wrappers::BroadcastStream::new(rx).filter_map(
-        |result| match result {
+    let event_stream =
+        tokio_stream::wrappers::BroadcastStream::new(rx).filter_map(|result| match result {
             Ok(event) => {
                 let json = serde_json::to_string(&event).unwrap_or_default();
                 let sse = format!("event: {}\ndata: {}\n\n", event.event_type(), json);
                 Some(Ok::<_, Infallible>(sse))
             }
             Err(_) => None, // intentional: skip lagged messages
-        },
-    );
+        });
 
     // Keepalive every 30s to prevent proxy timeouts
-    let keepalive = tokio_stream::wrappers::IntervalStream::new(
-        tokio::time::interval(Duration::from_secs(30)),
-    )
-    .map(|_| Ok::<_, Infallible>(":keepalive\n\n".to_string()));
+    let keepalive =
+        tokio_stream::wrappers::IntervalStream::new(tokio::time::interval(Duration::from_secs(30)))
+            .map(|_| Ok::<_, Infallible>(":keepalive\n\n".to_string()));
 
     // Merge event stream with keepalive
     let merged = tokio_stream::StreamExt::merge(event_stream, keepalive);

@@ -5,7 +5,11 @@ use bot_council::config::{
 
 fn base() -> Settings {
     Settings {
-        server: ServerConfig { host: "".into(), port: 0, cors_origins: vec![] },
+        server: ServerConfig {
+            host: "".into(),
+            port: 0,
+            cors_origins: vec![],
+        },
         database: DatabaseConfig { url: "".into() },
         auth: AuthConfig {
             admin_token: "".into(),

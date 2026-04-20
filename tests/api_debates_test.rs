@@ -2,8 +2,8 @@ mod common;
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
+use serde_json::{Value, json};
 use tower::ServiceExt;
-use serde_json::{json, Value};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -25,11 +25,17 @@ async fn seed_bots(app: &mut axum::Router) -> (Vec<String>, Vec<MockServer>) {
             "token": format!("token{}", i)
         });
         let req = common::admin_auth(
-            Request::builder().method("POST").uri("/bots").header("content-type", "application/json"),
+            Request::builder()
+                .method("POST")
+                .uri("/bots")
+                .header("content-type", "application/json"),
         )
-            .body(Body::from(serde_json::to_string(&body).unwrap())).unwrap();
+        .body(Body::from(serde_json::to_string(&body).unwrap()))
+        .unwrap();
         let resp = app.clone().oneshot(req).await.unwrap();
-        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let json: Value = serde_json::from_slice(&body).unwrap();
         ids.push(json["id"].as_str().unwrap().to_string());
         servers.push(server);
@@ -43,15 +49,23 @@ async fn test_create_debate_returns_201() {
     let (bot_ids, _servers) = seed_bots(&mut app).await;
     let body = json!({"topic": "Should AI-generated evidence be admissible in court?", "bot_ids": bot_ids});
     let req = common::admin_auth(
-        Request::builder().method("POST").uri("/debates").header("content-type", "application/json"),
+        Request::builder()
+            .method("POST")
+            .uri("/debates")
+            .header("content-type", "application/json"),
     )
-        .body(Body::from(serde_json::to_string(&body).unwrap()))
-        .unwrap();
+    .body(Body::from(serde_json::to_string(&body).unwrap()))
+    .unwrap();
     let response = app.oneshot(req).await.unwrap();
     assert_eq!(response.status(), StatusCode::CREATED);
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let json: Value = serde_json::from_slice(&body).unwrap();
-    assert_eq!(json["topic"], "Should AI-generated evidence be admissible in court?");
+    assert_eq!(
+        json["topic"],
+        "Should AI-generated evidence be admissible in court?"
+    );
     assert_eq!(json["bots"].as_array().unwrap().len(), 3);
 }
 
@@ -60,10 +74,13 @@ async fn test_create_debate_rejects_insufficient_bots() {
     let (app, _pool) = common::test_app().await;
     let body = json!({"topic": "Test topic", "bot_ids": []});
     let req = common::admin_auth(
-        Request::builder().method("POST").uri("/debates").header("content-type", "application/json"),
+        Request::builder()
+            .method("POST")
+            .uri("/debates")
+            .header("content-type", "application/json"),
     )
-        .body(Body::from(serde_json::to_string(&body).unwrap()))
-        .unwrap();
+    .body(Body::from(serde_json::to_string(&body).unwrap()))
+    .unwrap();
     let response = app.oneshot(req).await.unwrap();
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
@@ -71,9 +88,7 @@ async fn test_create_debate_rejects_insufficient_bots() {
 #[tokio::test]
 async fn test_get_debate_not_found() {
     let (app, _pool) = common::test_app().await;
-    let req = common::admin_auth(
-        Request::builder().uri("/debates/nonexistent"),
-    )
+    let req = common::admin_auth(Request::builder().uri("/debates/nonexistent"))
         .body(Body::empty())
         .unwrap();
     let response = app.oneshot(req).await.unwrap();
@@ -138,24 +153,28 @@ async fn simple_mode_initializes_three_rounds_only() {
         "bot_ids": bot_ids
     });
     let req = common::admin_auth(
-        Request::builder().method("POST").uri("/debates").header("content-type", "application/json"),
+        Request::builder()
+            .method("POST")
+            .uri("/debates")
+            .header("content-type", "application/json"),
     )
     .body(Body::from(serde_json::to_string(&body).unwrap()))
     .unwrap();
 
     let response = app.oneshot(req).await.unwrap();
     assert_eq!(response.status(), StatusCode::CREATED);
-    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let json: Value = serde_json::from_slice(&bytes).unwrap();
     let debate_id = json["id"].as_str().unwrap();
 
-    let (round_count,): (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) AS count FROM rounds WHERE debate_id = ?"
-    )
-    .bind(debate_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
+    let (round_count,): (i64,) =
+        sqlx::query_as("SELECT COUNT(*) AS count FROM rounds WHERE debate_id = ?")
+            .bind(debate_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
     assert_eq!(round_count, 3);
 }
 
@@ -171,13 +190,18 @@ async fn create_debate_skips_unreachable_bots_when_quorum_still_met() {
         "token": "offline-token"
     });
     let bad_req = common::admin_auth(
-        Request::builder().method("POST").uri("/bots").header("content-type", "application/json"),
+        Request::builder()
+            .method("POST")
+            .uri("/bots")
+            .header("content-type", "application/json"),
     )
     .body(Body::from(serde_json::to_string(&bad).unwrap()))
     .unwrap();
     let bad_res = app.clone().oneshot(bad_req).await.unwrap();
     assert_eq!(bad_res.status(), StatusCode::CREATED);
-    let bad_body = axum::body::to_bytes(bad_res.into_body(), usize::MAX).await.unwrap();
+    let bad_body = axum::body::to_bytes(bad_res.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let bad_json: Value = serde_json::from_slice(&bad_body).unwrap();
     bot_ids.push(bad_json["id"].as_str().unwrap().to_string());
 
@@ -186,13 +210,18 @@ async fn create_debate_skips_unreachable_bots_when_quorum_still_met() {
         "bot_ids": bot_ids
     });
     let req = common::admin_auth(
-        Request::builder().method("POST").uri("/debates").header("content-type", "application/json"),
+        Request::builder()
+            .method("POST")
+            .uri("/debates")
+            .header("content-type", "application/json"),
     )
     .body(Body::from(serde_json::to_string(&body).unwrap()))
     .unwrap();
     let response = app.oneshot(req).await.unwrap();
     assert_eq!(response.status(), StatusCode::CREATED);
-    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let payload: Value = serde_json::from_slice(&bytes).unwrap();
     let assigned = payload["bots"].as_array().expect("bots array");
     assert_eq!(assigned.len(), 3, "expected offline bot to be excluded");
@@ -214,13 +243,18 @@ async fn create_debate_rejects_when_preflight_leaves_fewer_than_three_bots() {
             "token": format!("offline-token-{i}")
         });
         let req = common::admin_auth(
-            Request::builder().method("POST").uri("/bots").header("content-type", "application/json"),
+            Request::builder()
+                .method("POST")
+                .uri("/bots")
+                .header("content-type", "application/json"),
         )
         .body(Body::from(serde_json::to_string(&body).unwrap()))
         .unwrap();
         let res = app.clone().oneshot(req).await.unwrap();
         assert_eq!(res.status(), StatusCode::CREATED);
-        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let payload: Value = serde_json::from_slice(&bytes).unwrap();
         selected_bot_ids.push(payload["id"].as_str().unwrap().to_string());
     }
@@ -230,60 +264,66 @@ async fn create_debate_rejects_when_preflight_leaves_fewer_than_three_bots() {
         "bot_ids": selected_bot_ids
     });
     let req = common::admin_auth(
-        Request::builder().method("POST").uri("/debates").header("content-type", "application/json"),
+        Request::builder()
+            .method("POST")
+            .uri("/debates")
+            .header("content-type", "application/json"),
     )
     .body(Body::from(serde_json::to_string(&body).unwrap()))
     .unwrap();
     let response = app.oneshot(req).await.unwrap();
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let payload: Value = serde_json::from_slice(&bytes).unwrap();
     let msg = payload["error"].as_str().unwrap_or_default();
-    assert!(msg.contains("bot preflight failed"), "unexpected message: {msg}");
+    assert!(
+        msg.contains("bot preflight failed"),
+        "unexpected message: {msg}"
+    );
     assert!(msg.contains("need at least 3"), "unexpected message: {msg}");
 }
 
 #[tokio::test]
 async fn get_debate_resolves_bot_name_for_inactive_bot() {
     let (app, pool) = common::test_app().await;
-    sqlx::query(
-        "INSERT INTO bots (id, name, endpoint_url, status) VALUES (?, ?, ?, ?)"
-    )
-    .bind("bot-inactive-name")
-    .bind("ArchivedBot")
-    .bind("https://example.com/debate")
-    .bind("inactive")
-    .execute(&pool)
-    .await
-    .unwrap();
-    sqlx::query(
-        "INSERT INTO debates (id, topic, status) VALUES (?, ?, ?)"
-    )
-    .bind("debate-name-resolution")
-    .bind("name resolution")
-    .bind("created")
-    .execute(&pool)
-    .await
-    .unwrap();
-    sqlx::query(
-        "INSERT INTO debate_bots (debate_id, bot_id, pseudonym, role) VALUES (?, ?, ?, ?)"
-    )
-    .bind("debate-name-resolution")
-    .bind("bot-inactive-name")
-    .bind("Agent A")
-    .bind("skeptic")
-    .execute(&pool)
-    .await
-    .unwrap();
+    sqlx::query("INSERT INTO bots (id, name, endpoint_url, status) VALUES (?, ?, ?, ?)")
+        .bind("bot-inactive-name")
+        .bind("ArchivedBot")
+        .bind("https://example.com/debate")
+        .bind("inactive")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO debates (id, topic, status) VALUES (?, ?, ?)")
+        .bind("debate-name-resolution")
+        .bind("name resolution")
+        .bind("created")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO debate_bots (debate_id, bot_id, pseudonym, role) VALUES (?, ?, ?, ?)")
+        .bind("debate-name-resolution")
+        .bind("bot-inactive-name")
+        .bind("Agent A")
+        .bind("skeptic")
+        .execute(&pool)
+        .await
+        .unwrap();
 
     let req = common::admin_auth(
-        Request::builder().method("GET").uri("/debates/debate-name-resolution")
+        Request::builder()
+            .method("GET")
+            .uri("/debates/debate-name-resolution"),
     )
     .body(Body::empty())
     .unwrap();
     let response = app.oneshot(req).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let json: Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["bots"][0]["bot_name"], "ArchivedBot");
 }
@@ -306,14 +346,14 @@ async fn list_debates_excludes_operator_test_topics() {
         .await
         .unwrap();
 
-    let req = common::admin_auth(
-        Request::builder().method("GET").uri("/debates?limit=20")
-    )
-    .body(Body::empty())
-    .unwrap();
+    let req = common::admin_auth(Request::builder().method("GET").uri("/debates?limit=20"))
+        .body(Body::empty())
+        .unwrap();
     let response = app.oneshot(req).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let json: Value = serde_json::from_slice(&body).unwrap();
     let topics: Vec<String> = json
         .as_array()
@@ -321,8 +361,16 @@ async fn list_debates_excludes_operator_test_topics() {
         .iter()
         .filter_map(|d| d["topic"].as_str().map(str::to_string))
         .collect();
-    assert!(topics.iter().any(|t| t == "Should AI-generated evidence be admissible in court?"));
-    assert!(!topics.iter().any(|t| t.contains("Quickfire readiness check")));
+    assert!(
+        topics
+            .iter()
+            .any(|t| t == "Should AI-generated evidence be admissible in court?")
+    );
+    assert!(
+        !topics
+            .iter()
+            .any(|t| t.contains("Quickfire readiness check"))
+    );
 }
 
 #[tokio::test]
@@ -344,13 +392,17 @@ async fn list_debates_test_view_includes_only_operator_test_topics() {
         .unwrap();
 
     let req = common::admin_auth(
-        Request::builder().method("GET").uri("/debates?test=true&limit=20")
+        Request::builder()
+            .method("GET")
+            .uri("/debates?test=true&limit=20"),
     )
     .body(Body::empty())
     .unwrap();
     let response = app.oneshot(req).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let json: Value = serde_json::from_slice(&body).unwrap();
     let topics: Vec<String> = json
         .as_array()
@@ -358,6 +410,14 @@ async fn list_debates_test_view_includes_only_operator_test_topics() {
         .iter()
         .filter_map(|d| d["topic"].as_str().map(str::to_string))
         .collect();
-    assert!(topics.iter().any(|t| t.contains("Quickfire readiness check")));
-    assert!(!topics.iter().any(|t| t == "Should AI-generated evidence be admissible in court?"));
+    assert!(
+        topics
+            .iter()
+            .any(|t| t.contains("Quickfire readiness check"))
+    );
+    assert!(
+        !topics
+            .iter()
+            .any(|t| t == "Should AI-generated evidence be admissible in court?")
+    );
 }

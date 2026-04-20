@@ -1,10 +1,10 @@
-use axum::extract::{Path, State};
-use axum::Json;
 use crate::api::auth::RequireAuth;
 use crate::api::dto::*;
 use crate::db::{queries, queries_phase1};
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
+use axum::Json;
+use axum::extract::{Path, State};
 
 /// Attempt to repair JSON with unescaped quotes inside string values.
 ///
@@ -44,11 +44,22 @@ fn repair_json_quotes(s: &str) -> String {
                 // Is this the closing quote or an unescaped inner quote?
                 // Peek ahead: if next non-whitespace is : , ] } or EOF, it's structural
                 let mut j = i + 1;
-                while j < bytes.len() && (bytes[j] == b' ' || bytes[j] == b'\n' || bytes[j] == b'\r' || bytes[j] == b'\t') {
+                while j < bytes.len()
+                    && (bytes[j] == b' '
+                        || bytes[j] == b'\n'
+                        || bytes[j] == b'\r'
+                        || bytes[j] == b'\t')
+                {
                     j += 1;
                 }
                 let next = if j < bytes.len() { bytes[j] } else { 0 };
-                if next == b':' || next == b',' || next == b']' || next == b'}' || next == 0 || next == b'"' {
+                if next == b':'
+                    || next == b','
+                    || next == b']'
+                    || next == b'}'
+                    || next == 0
+                    || next == b'"'
+                {
                     // Structural closing quote
                     out.push(b'"');
                     i += 1;
@@ -90,18 +101,23 @@ pub async fn get_synthesis(
     _auth: RequireAuth,
     Path(id): Path<String>,
 ) -> AppResult<Json<SynthesisResponse>> {
-    let _debate = queries::get_debate(state.db(), &id).await?
+    let _debate = queries::get_debate(state.db(), &id)
+        .await?
         .ok_or_else(|| AppError::NotFound(format!("debate {id} not found")))?;
 
-    let synthesis = queries_phase1::get_synthesis(state.db(), &id).await?
-        .ok_or_else(|| AppError::NotFound(format!("synthesis not yet available for debate {id}")))?;
+    let synthesis = queries_phase1::get_synthesis(state.db(), &id)
+        .await?
+        .ok_or_else(|| {
+            AppError::NotFound(format!("synthesis not yet available for debate {id}"))
+        })?;
 
     let cleaned = strip_code_fences(&synthesis.output_json);
     let output: serde_json::Value = serde_json::from_str(&cleaned)
         .or_else(|_| serde_json::from_str(&repair_json_quotes(&cleaned)))
         .unwrap_or_else(|_| serde_json::Value::String(synthesis.output_json.clone()));
 
-    let citation_check: Option<serde_json::Value> = synthesis.citation_check_json
+    let citation_check: Option<serde_json::Value> = synthesis
+        .citation_check_json
         .as_deref()
         .and_then(|s| serde_json::from_str(s).ok());
 

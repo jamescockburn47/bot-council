@@ -47,6 +47,17 @@ The crate **does not build on Windows**; all `cargo` runs over SSH to EVO.
 
 ## Deploy workflow — BINDING
 
+### Build-host prerequisites
+
+`frontend/.env.production` (gitignored) must exist on the dev box before `ship.sh`. Vite reads it during `npm run build` to bake `PUBLIC_SENTRY_DSN` and `PUBLIC_SENTRY_ENVIRONMENT` into the bundle. Without it, frontend Sentry silently no-ops — that's how PR #62 (Vercel retire) accidentally killed our browser telemetry until 2026-04-20. To set up a fresh checkout:
+
+```bash
+cat > frontend/.env.production <<'EOF'
+PUBLIC_SENTRY_DSN=<dsn from /etc/bot-council.env on EVO: APP__SENTRY__DSN>
+PUBLIC_SENTRY_ENVIRONMENT=prod
+EOF
+```
+
 ### One command to ship
 
 ```bash

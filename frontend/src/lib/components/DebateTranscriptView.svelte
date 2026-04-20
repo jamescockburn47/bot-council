@@ -93,14 +93,14 @@
   </div>
 
   <!-- Confidence trajectories -->
-  {#if synthesis.synthesis.confidence_trajectories && Object.keys(synthesis.synthesis.confidence_trajectories).length > 0}
+  {#if synthesis.synthesis?.confidence_trajectories && Object.keys(synthesis.synthesis.confidence_trajectories).length > 0}
     <div class="mb-6">
       <ConfidenceChart trajectories={synthesis.synthesis.confidence_trajectories} />
     </div>
   {/if}
 
   <!-- Meta observations -->
-  {#if synthesis.synthesis.meta_observations}
+  {#if synthesis.synthesis?.meta_observations}
     <div class="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-4 mb-6">
       <h3 class="text-xs mono text-[var(--text-muted)] mb-2 uppercase tracking-wider">
         Meta Observations

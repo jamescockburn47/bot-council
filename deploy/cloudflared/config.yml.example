@@ -1,0 +1,25 @@
+# Cloudflare Tunnel ingress config — reference copy.
+#
+# The live copy lives at ~/.cloudflared/config.yml on EVO. The tunnel
+# ("sovren-evo") is authenticated via the credentials JSON alongside it;
+# the tunnel UUID is load-bearing and must match the credentials file.
+#
+# Installed as a systemd unit (see `sovren-cloudflared.service.example` in
+# the same directory), which runs cloudflared against this config.
+#
+# Traffic flow:
+#   browser -> https://lqcouncil.com -> Cloudflare edge (CF DNS apex CNAME
+#           flattened to CF anycast IPs; zone nameservers gloria.ns.cloudflare.com
+#           and mitch.ns.cloudflare.com)
+#           -> Cloudflare Tunnel (quic) -> cloudflared on EVO
+#           -> http://localhost:3100 (Axum — serves both the static SvelteKit
+#              bundle at / and the JSON API under /api/*)
+
+tunnel: eef5ba90-6c24-4685-9c4d-e4d90e9f0db6
+credentials-file: /home/james/.cloudflared/eef5ba90-6c24-4685-9c4d-e4d90e9f0db6.json
+ingress:
+  - hostname: lqcouncil.com
+    service: http://localhost:3100
+  - hostname: api.sovren.xyz
+    service: http://localhost:8000
+  - service: http_status:404

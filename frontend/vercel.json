@@ -1,7 +1,0 @@
-{
-  "_comment": "Transitional config for the Vercel-hosted frontend. After Phase E (Cloudflare cut-over) and Phase F (Vercel retirement), this file and the whole Vercel frontend project go away. Until then: /api/* is proxied through to the backend via the existing api.lqcouncil.com → Tailscale Funnel → EVO chain, and all other paths fall through to the SPA shell.",
-  "rewrites": [
-    { "source": "/api/(.*)", "destination": "https://api.lqcouncil.com/$1" },
-    { "source": "/(.*)", "destination": "/index.html" }
-  ]
-}

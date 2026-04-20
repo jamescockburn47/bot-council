@@ -1,8 +1,9 @@
 <script lang="ts">
   import { api, debateStreamUrl } from '$lib/api/client';
   import { getSessionToken } from '$lib/auth/clerk';
-  import { page } from '$app/state';
+  import { page } from '$app/stores';
   import { goto } from '$app/navigation';
+  import { get } from 'svelte/store';
   import StatusBadge from '$lib/components/StatusBadge.svelte';
   import TabBar from '$lib/components/TabBar.svelte';
   import DebateTranscriptView from '$lib/components/DebateTranscriptView.svelte';
@@ -55,13 +56,11 @@
     return TERMINAL.includes(status);
   }
 
-  let activeTab = $derived<Tab>(
-    (() => {
-      const p = page.url.searchParams.get('tab');
-      if (p === 'outcome' || p === 'transcript' || p === 'raw') return p;
-      return isTerminal ? 'outcome' : 'transcript';
-    })(),
-  );
+  let activeTab = $derived.by<Tab>(() => {
+    const p = $page.url?.searchParams.get('tab') ?? null;
+    if (p === 'outcome' || p === 'transcript' || p === 'raw') return p;
+    return isTerminal ? 'outcome' : 'transcript';
+  });
 
   let tabs = $derived([
     {
@@ -74,7 +73,7 @@
   ]);
 
   function setTab(id: string) {
-    const url = new URL(page.url);
+    const url = new URL(get(page).url);
     url.searchParams.set('tab', id);
     goto(url, { replaceState: true, noScroll: true, keepFocus: true });
   }

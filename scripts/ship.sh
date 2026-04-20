@@ -27,13 +27,11 @@ set -euo pipefail
 KEY="${SSH_KEY:-C:/Users/James/.ssh/id_ed25519}"
 HOST="${EVO_HOST:-james@100.90.66.54}"
 REMOTE="~/bot-council"
-# Default to the *api* subdomain during the Vercel-to-Cloudflare transition:
-# lqcouncil.com is served by Vercel and may be stale or intentionally broken
-# as the frontend migrates. api.lqcouncil.com is the Vercel proxy that routes
-# straight through to EVO and is the authoritative public-path check until
-# Phase E (Cloudflare) completes. After Phase F this can become
-# https://lqcouncil.com.
-PUBLIC_URL="${PUBLIC_URL:-https://api.lqcouncil.com}"
+# The bot-council Vercel frontend project was retired; lqcouncil.com now
+# points at the single lqcouncil-api-proxy Vercel project whose only job
+# is `rewrites: [{source:"/(.*)", destination: tailscale-funnel-url/$1}]`.
+# Axum on EVO serves both the static frontend and the /api/* routes.
+PUBLIC_URL="${PUBLIC_URL:-https://lqcouncil.com}"
 SKIP_FRONTEND=0
 
 for arg in "$@"; do

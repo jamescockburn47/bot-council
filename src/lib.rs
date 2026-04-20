@@ -10,6 +10,7 @@ pub mod bot_client;
 pub mod orchestrator;
 pub mod analyser;
 pub mod synthesiser;
+pub mod scoreboard;
 
 use axum::Router;
 

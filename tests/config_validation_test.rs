@@ -26,12 +26,27 @@ fn base() -> Settings {
             minimax_base_url: "".into(),
             opus_api_key: "".into(),
             opus_model: "".into(),
+            analysis_base_url: "http://localhost:8086".into(),
+            analysis_model: "gemma-4-31B-it-Q4_K_M.gguf".into(),
+            analysis_connect_timeout_secs: 5,
+            analysis_request_timeout_secs: 60,
+            analysis_max_concurrency: 2,
+            final_synthesis_base_url: "http://localhost:8087".into(),
+            final_synthesis_model: "Qwen3.5-122B-A10B-UD-Q5_K_XL".into(),
+            final_synthesis_connect_timeout_secs: 10,
+            final_synthesis_request_timeout_secs: 300,
+            final_synthesis_warmup_enabled: false,
+            final_synthesis_warmup_max_attempts: 0,
+            final_synthesis_warmup_delay_secs: 1,
+            local_synthesis_base_url: "http://localhost:8086".into(),
+            local_synthesis_model: "gemma-4-31B-it-Q4_K_M.gguf".into(),
         },
         debate: DebateConfig {
             default_timeout_secs: 1,
             max_retries: 0,
             quorum: 3,
             synthesis_temperature: 0.0,
+            test_mode_simple: false,
         },
         sentry: SentryConfig {
             dsn: "".into(),
@@ -82,4 +97,37 @@ fn rejects_test_mode_with_clerk() {
     s.auth.test_mode = true;
     let err = s.validate().unwrap_err().to_string();
     assert!(err.contains("test_mode"), "error was: {err}");
+}
+
+#[test]
+fn model_endpoint_effective_fallbacks_prefer_new_fields() {
+    let mut s = base();
+    assert_eq!(
+        s.models.effective_analysis_base_url(),
+        "http://localhost:8086"
+    );
+    assert_eq!(
+        s.models.effective_final_synthesis_base_url(),
+        "http://localhost:8087"
+    );
+    assert_eq!(
+        s.models.effective_final_synthesis_model(),
+        "Qwen3.5-122B-A10B-UD-Q5_K_XL"
+    );
+
+    s.models.analysis_base_url = "".into();
+    s.models.final_synthesis_base_url = "".into();
+    s.models.final_synthesis_model = "".into();
+    assert_eq!(
+        s.models.effective_analysis_base_url(),
+        s.models.local_synthesis_base_url
+    );
+    assert_eq!(
+        s.models.effective_final_synthesis_base_url(),
+        s.models.local_synthesis_base_url
+    );
+    assert_eq!(
+        s.models.effective_final_synthesis_model(),
+        s.models.local_synthesis_model
+    );
 }

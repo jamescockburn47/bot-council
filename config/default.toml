@@ -17,6 +17,7 @@ test_mode = false
 
 [http_client]
 connect_timeout_secs = 5
+# Allow up to 300s for slower bot endpoints to produce a response.
 request_timeout_secs = 300
 max_retries = 1
 retry_delay_secs = 10
@@ -27,12 +28,43 @@ minimax_model = "M2.7"
 minimax_base_url = "https://api.minimax.chat"
 opus_api_key = ""
 opus_model = "claude-opus-4-6"
+# Inter-round analysis model (kept hot for low-latency round operations).
+analysis_base_url = "http://127.0.0.1:8086"
+analysis_model = "gemma-4-31B-it-Q4_K_M.gguf"
+analysis_connect_timeout_secs = 5
+analysis_request_timeout_secs = 120
+# Limits post-round analyser fanout to avoid starving local bot endpoints.
+analysis_max_concurrency = 2
+# Final-pass synthesis: defaults match the primary local server so production
+# does not wedge on a missing second listener (e.g. :8087). Override via
+# APP__MODELS__FINAL_SYNTHESIS_BASE_URL / APP__MODELS__FINAL_SYNTHESIS_MODEL
+# when a dedicated 122B llama.cpp instance is available.
+final_synthesis_base_url = "http://127.0.0.1:8086"
+final_synthesis_model = "gemma-4-31B-it-Q4_K_M.gguf"
+final_synthesis_connect_timeout_secs = 10
+final_synthesis_request_timeout_secs = 900
+# Warmup gate before final synthesis.
+final_synthesis_warmup_enabled = true
+# Bounded retries; after exhaustion the debate still completes (synthesis may
+# use fallback). Use 0 only when you intentionally want infinite block-until-ready.
+final_synthesis_warmup_max_attempts = 24
+final_synthesis_warmup_delay_secs = 5
+# Local synthesis runs on EVO's Gemma server to avoid cloud dependencies.
+# Legacy compatibility fields (kept for safe rollback).
+local_synthesis_base_url = "http://127.0.0.1:8086"
+local_synthesis_model = "gemma-4-31B-it-Q4_K_M.gguf"
 
 [debate]
+# Per-round request budget for bot responses.
 default_timeout_secs = 300
 max_retries = 2
 quorum = 3
 synthesis_temperature = 0.0
+# test_mode_simple: enables simplified test-phase behavior:
+# - 3 debate rounds (0..2)
+# - response-only bot contract (optional structured fields)
+# - relaxed bot onboarding constraints
+test_mode_simple = false
 
 [sentry]
 # Leave dsn empty to disable. Set via APP__SENTRY__DSN.

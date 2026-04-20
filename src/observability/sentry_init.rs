@@ -20,18 +20,10 @@ pub fn init_sentry(config: &SentryConfig) -> Option<sentry::ClientInitGuard> {
         return None;
     }
 
-    // Prefer explicit SENTRY_RELEASE (git SHA from deploy pipeline); fall back
-    // to Cargo package name@version via sentry::release_name!().
-    let release = std::env::var("SENTRY_RELEASE")
-        .ok()
-        .filter(|s| !s.trim().is_empty())
-        .map(std::borrow::Cow::Owned)
-        .or_else(|| sentry::release_name!());
-
     let guard = sentry::init((
         config.dsn.clone(),
         sentry::ClientOptions {
-            release: release.clone(),
+            release: sentry::release_name!(),
             environment: Some(config.environment.clone().into()),
             traces_sample_rate: config.traces_sample_rate,
             sample_rate: 1.0,
@@ -49,7 +41,6 @@ pub fn init_sentry(config: &SentryConfig) -> Option<sentry::ClientInitGuard> {
     tracing::info!(
         environment = %config.environment,
         traces_sample_rate = config.traces_sample_rate,
-        release = %release.as_deref().unwrap_or("<unset>"),
         "sentry initialised"
     );
     Some(guard)

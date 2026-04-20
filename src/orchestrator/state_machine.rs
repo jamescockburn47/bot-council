@@ -1,12 +1,13 @@
 use sqlx::SqlitePool;
 use crate::db::queries_phase1;
 
-/// Initialise round records for a new multi-round debate (Rounds 0-4).
+/// Initialise round records for a new multi-round debate.
 pub async fn init_rounds(
     pool: &SqlitePool,
     debate_id: &str,
+    total_rounds: i64,
 ) -> Result<(), String> {
-    for round in 0..=4 {
+    for round in 0..total_rounds {
         queries_phase1::insert_round(pool, debate_id, round, "pending")
             .await
             .map_err(|e| format!("failed to init round {round}: {e}"))?;

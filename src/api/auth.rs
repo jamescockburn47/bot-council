@@ -121,7 +121,6 @@ async fn authenticate(parts: &Parts, state: &AppState) -> Result<AuthIdentity, A
 
     // 1. Static admin bearer
     if !cfg.admin_token.is_empty() && token == cfg.admin_token {
-        set_sentry_user("admin-token");
         return Ok(AuthIdentity::Admin {
             user_id: None,
             source: AuthSource::BearerToken,
@@ -142,14 +141,12 @@ async fn authenticate(parts: &Parts, state: &AppState) -> Result<AuthIdentity, A
     if cfg.test_mode {
         if let Some(uid) = token.strip_prefix("admin:") {
             let _ = queries::upsert_seen_user(state.db(), uid).await;
-            set_sentry_user(uid);
             return Ok(AuthIdentity::Admin {
                 user_id: Some(uid.to_string()),
                 source: AuthSource::ClerkJwt,
             });
         }
         let _ = queries::upsert_seen_user(state.db(), token).await;
-        set_sentry_user(token);
         return Ok(AuthIdentity::Participant {
             user_id: token.to_string(),
         });
@@ -185,7 +182,6 @@ async fn verify_clerk_jwt(token: &str, state: &AppState) -> Result<AuthIdentity,
     }
 
     let is_admin = queries::is_admin(state.db(), &claims.sub).await.unwrap_or(false);
-    set_sentry_user(&claims.sub);
 
     if is_admin {
         Ok(AuthIdentity::Admin {
@@ -195,18 +191,6 @@ async fn verify_clerk_jwt(token: &str, state: &AppState) -> Result<AuthIdentity,
     } else {
         Ok(AuthIdentity::Participant { user_id: claims.sub })
     }
-}
-
-/// Attach a user identifier to the current Sentry scope so subsequent
-/// events on this request are searchable by `user.id`. Safe no-op when
-/// Sentry is disabled (no DSN).
-fn set_sentry_user(id: &str) {
-    sentry::configure_scope(|scope| {
-        scope.set_user(Some(sentry::User {
-            id: Some(id.to_string()),
-            ..Default::default()
-        }));
-    });
 }
 
 /// Extract `token=<value>` from a URL query string. Handles percent-decoding

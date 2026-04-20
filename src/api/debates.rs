@@ -3,13 +3,36 @@ use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::Json;
 use crate::api::auth::{RequireAuth, RequireAdmin};
-use crate::api::dto::*;
+use crate::api::{bots as bot_checks, dto::*};
+use crate::db::models::{BotRow, DebateBotWithRoleRow};
 use crate::db::{queries, queries_phase1};
 use crate::error::{AppError, AppResult};
 use crate::orchestrator;
 use crate::orchestrator::anonymiser;
 use crate::state::AppState;
 use crate::types::DebateId;
+use futures::future::join_all;
+
+fn build_debate_bot_infos(
+    debate_bots: &[DebateBotWithRoleRow],
+    bots: &[BotRow],
+) -> Vec<DebateBotInfo> {
+    debate_bots
+        .iter()
+        .map(|db| {
+            let bot = bots.iter().find(|b| b.id == db.bot_id);
+            DebateBotInfo {
+                bot_id: db.bot_id.clone(),
+                bot_name: bot
+                    .map(|b| b.name.trim().to_string())
+                    .filter(|name| !name.is_empty())
+                    .unwrap_or_else(|| "Unknown bot".into()),
+                pseudonym: db.pseudonym.clone(),
+                role: db.role.clone(),
+            }
+        })
+        .collect()
+}
 
 /// POST /debates — create and run a debate.
 pub async fn create_debate(
@@ -17,35 +40,102 @@ pub async fn create_debate(
     _auth: RequireAdmin,
     Json(req): Json<CreateDebateRequest>,
 ) -> AppResult<(StatusCode, Json<DebateResponse>)> {
+    let preflight_started = std::time::Instant::now();
+    let simple_mode = state.settings().debate.test_mode_simple;
     if req.topic.is_empty() {
         return Err(AppError::BadRequest("topic is required".into()));
     }
 
-    let bots = match &req.bot_ids {
+    let mut selected_bots = match &req.bot_ids {
         Some(ids) if !ids.is_empty() => queries::get_bots_by_ids(state.db(), ids).await?,
         _ => queries::list_active_bots(state.db()).await?,
     };
 
-    if bots.len() < 3 {
-        return Err(AppError::BadRequest(format!("need at least 3 bots, found {}", bots.len())));
+    if selected_bots.len() < 3 {
+        return Err(AppError::BadRequest(format!("need at least 3 bots, found {}", selected_bots.len())));
     }
-    if bots.len() > 5 {
+    if selected_bots.len() > 5 {
         return Err(AppError::BadRequest(
             "Maximum 5 bots per debate (one per constitutional role)".into(),
         ));
+    }
+
+    // Automatic preflight before debate creation so unreachable bots are caught
+    // upfront rather than failing later via quorum loss. We allow debates to
+    // proceed with whichever selected bots pass preflight as long as quorum
+    // (>=3) is still met.
+    let preflight_checks = selected_bots.iter().map(|bot| async {
+        let started = std::time::Instant::now();
+        if !simple_mode && bot.token_ciphertext.is_none() {
+            return (
+                bot.id.clone(),
+                Some(format!(
+                "{} ({}): bot has no encrypted token — please re-submit",
+                bot.name, bot.id
+                )),
+                started.elapsed().as_millis(),
+            );
+        }
+        let failure = match bot_checks::smoke_test_bot(state.http_client(), bot, state.bot_token_key()).await {
+            Ok(()) => None,
+            Err(reason) => Some(format!(
+                "{} ({}): {}",
+                bot.name,
+                bot.id,
+                bot_checks::classify_smoke_test_error(&reason)
+            )),
+        };
+        (bot.id.clone(), failure, started.elapsed().as_millis())
+    });
+    let preflight_results = join_all(preflight_checks).await;
+    let failing_bot_ids: std::collections::HashSet<String> = preflight_results
+        .iter()
+        .filter_map(|(bot_id, failure, _)| failure.as_ref().map(|_| bot_id.clone()))
+        .collect();
+    let preflight_failures: Vec<String> = preflight_results
+        .into_iter()
+        .filter_map(|(_, failure, elapsed_ms)| failure.map(|f| format!("{f} [preflight={}ms]", elapsed_ms)))
+        .collect();
+
+    selected_bots.retain(|bot| !failing_bot_ids.contains(&bot.id));
+
+    if selected_bots.len() < 3 {
+        return Err(AppError::BadRequest(format!(
+            "bot preflight failed for {} bot(s): {} (only {} passed preflight; need at least 3)",
+            preflight_failures.len(),
+            preflight_failures.join(" | "),
+            selected_bots.len()
+        )));
+    }
+
+    if !preflight_failures.is_empty() {
+        tracing::warn!(
+            topic = %req.topic,
+            failing_bots = preflight_failures.len(),
+            surviving_bots = selected_bots.len(),
+            elapsed_ms = preflight_started.elapsed().as_millis(),
+            "debate preflight excluded failing bots"
+        );
+    } else {
+        tracing::info!(
+            topic = %req.topic,
+            surviving_bots = selected_bots.len(),
+            elapsed_ms = preflight_started.elapsed().as_millis(),
+            "debate preflight completed"
+        );
     }
 
     let debate_id = DebateId::new();
     queries::insert_debate(state.db(), debate_id.as_str(), &req.topic).await?;
 
     // Assign roles with rotation
-    let bot_ids: Vec<String> = bots.iter().map(|b| b.id.clone()).collect();
+    let bot_ids: Vec<String> = selected_bots.iter().map(|b| b.id.clone()).collect();
     let role_assignments = orchestrator::roles::assign_roles(state.db(), &bot_ids)
         .await
         .map_err(|e| AppError::Internal(anyhow::anyhow!(e)))?;
 
     let mut bot_tokens = std::collections::HashMap::new();
-    for (i, bot) in bots.iter().enumerate() {
+    for (i, bot) in selected_bots.iter().enumerate() {
         let pseudonym = anonymiser::assign_pseudonym(i);
         queries::insert_debate_bot(state.db(), debate_id.as_str(), &bot.id, &pseudonym).await?;
 
@@ -54,11 +144,7 @@ pub async fn create_debate(
                 .map_err(|_| AppError::Internal(anyhow::anyhow!(
                     "failed to decrypt token for bot {}", bot.id
                 )))?,
-            None => {
-                return Err(AppError::BadRequest(format!(
-                    "bot {} has no encrypted token — please re-submit", bot.id
-                )));
-            }
+            None => String::new(),
         };
         bot_tokens.insert(bot.id.clone(), token);
     }
@@ -69,7 +155,8 @@ pub async fn create_debate(
         .map_err(|e| AppError::Internal(anyhow::anyhow!(e)))?;
 
     // Init round state machine
-    orchestrator::state_machine::init_rounds(state.db(), debate_id.as_str())
+    let total_rounds = if simple_mode { 3 } else { 5 };
+    orchestrator::state_machine::init_rounds(state.db(), debate_id.as_str(), total_rounds)
         .await
         .map_err(|e| AppError::Internal(anyhow::anyhow!(e)))?;
 
@@ -79,16 +166,12 @@ pub async fn create_debate(
     let client = state.http_client().clone();
     let topic = req.topic.clone();
     let debate_id_clone = debate_id.clone();
-    let bots_clone = bots.clone();
+    let bots_clone = selected_bots.clone();
     let models_config = state.settings().models.clone();
     let debate_config = state.settings().debate.clone();
     let state_for_cleanup = state.clone();
     let cleanup_id = debate_id.as_str().to_string();
-    // Bind a fresh Sentry hub so scope mutations inside the task (the
-    // debate_id tag set in run_multi_round_debate) don't leak into other
-    // concurrent tasks that happen to share the same runtime thread.
-    let task_hub = std::sync::Arc::new(sentry::Hub::new_from_top(sentry::Hub::current()));
-    let task_future = async move {
+    tokio::spawn(async move {
         if let Err(e) = orchestrator::multi_round::run_multi_round_debate(
             &pool, &client, &debate_id_clone, &topic, &bots_clone, &bot_tokens,
             &models_config, &debate_config, Some(event_tx),
@@ -101,20 +184,11 @@ pub async fn create_debate(
             tokio::time::sleep(std::time::Duration::from_secs(60)).await;
             state_for_cleanup.remove_debate_stream(&cleanup_id);
         });
-    };
-    tokio::spawn(sentry::SentryFutureExt::bind_hub(task_future, task_hub));
+    });
 
     // Build response with role info
     let debate_bots_rows = queries_phase1::get_debate_bots_with_roles(state.db(), debate_id.as_str()).await?;
-    let bot_infos: Vec<DebateBotInfo> = debate_bots_rows.iter().map(|db| {
-        let bot = bots.iter().find(|b| b.id == db.bot_id);
-        DebateBotInfo {
-            bot_id: db.bot_id.clone(),
-            bot_name: bot.map(|b| b.name.clone()).unwrap_or_default(),
-            pseudonym: db.pseudonym.clone(),
-            role: db.role.clone(),
-        }
-    }).collect();
+    let bot_infos = build_debate_bot_infos(&debate_bots_rows, &selected_bots);
 
     Ok((StatusCode::CREATED, Json(DebateResponse {
         id: debate_id.to_string(),
@@ -134,21 +208,19 @@ pub async fn list_debates(
     Query(params): Query<ListDebatesQuery>,
 ) -> AppResult<Json<Vec<DebateResponse>>> {
     let limit = params.limit.unwrap_or(20);
-    let rows = queries::list_debates(state.db(), params.status.as_deref(), limit).await?;
-    let all_bots = queries::list_active_bots(state.db()).await?;
+    let rows = queries::list_debates(
+        state.db(),
+        params.status.as_deref(),
+        limit,
+        params.test.unwrap_or(false),
+    ).await?;
 
     let mut debates = Vec::new();
     for row in rows {
         let debate_bots = queries_phase1::get_debate_bots_with_roles(state.db(), &row.id).await?;
-        let bot_infos: Vec<DebateBotInfo> = debate_bots.iter().map(|db| {
-            let bot = all_bots.iter().find(|b| b.id == db.bot_id);
-            DebateBotInfo {
-                bot_id: db.bot_id.clone(),
-                bot_name: bot.map(|b| b.name.clone()).unwrap_or_default(),
-                pseudonym: db.pseudonym.clone(),
-                role: db.role.clone(),
-            }
-        }).collect();
+        let bot_ids: Vec<String> = debate_bots.iter().map(|db| db.bot_id.clone()).collect();
+        let bots_for_debate = queries::get_any_bots_by_ids(state.db(), &bot_ids).await?;
+        let bot_infos = build_debate_bot_infos(&debate_bots, &bots_for_debate);
         debates.push(DebateResponse {
             id: row.id, topic: row.topic, status: row.status,
             created_at: row.created_at, completed_at: row.completed_at,
@@ -168,16 +240,9 @@ pub async fn get_debate(
         .ok_or_else(|| AppError::NotFound(format!("debate {id} not found")))?;
 
     let debate_bots = queries_phase1::get_debate_bots_with_roles(state.db(), &id).await?;
-    let all_bots = queries::list_active_bots(state.db()).await?;
-    let bot_infos: Vec<DebateBotInfo> = debate_bots.iter().map(|db| {
-        let bot = all_bots.iter().find(|b| b.id == db.bot_id);
-        DebateBotInfo {
-            bot_id: db.bot_id.clone(),
-            bot_name: bot.map(|b| b.name.clone()).unwrap_or_default(),
-            pseudonym: db.pseudonym.clone(),
-            role: db.role.clone(),
-        }
-    }).collect();
+    let bot_ids: Vec<String> = debate_bots.iter().map(|db| db.bot_id.clone()).collect();
+    let bots_for_debate = queries::get_any_bots_by_ids(state.db(), &bot_ids).await?;
+    let bot_infos = build_debate_bot_infos(&debate_bots, &bots_for_debate);
 
     let results = if debate.status == "complete" {
         let responses = queries::get_responses(state.db(), &id, 0).await?;

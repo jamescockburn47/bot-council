@@ -26,6 +26,26 @@ class ApiError extends Error {
   }
 }
 
+// Default read timeout — covers nearly all GETs in the sub-second range plus
+// network jitter. Short enough to surface a truly hung request.
+const DEFAULT_TIMEOUT_MS = 15_000;
+
+// Some mutations (notably POST /debates) run a synchronous preflight that
+// smoke-tests every selected bot's HTTP endpoint before returning. Observed
+// in prod at ~136s for a five-bot debate creation; even though the smoke
+// tests are parallel via join_all, each call waits on a full LLM round-trip
+// on the bot's configured endpoint. Six minutes gives plenty of margin
+// without being an absurd hang detector.
+const MUTATION_TIMEOUT_MS = 360_000;
+
+function timeoutForMethod(method: string | undefined): number {
+  const m = (method ?? 'GET').toUpperCase();
+  if (m === 'POST' || m === 'PATCH' || m === 'DELETE' || m === 'PUT') {
+    return MUTATION_TIMEOUT_MS;
+  }
+  return DEFAULT_TIMEOUT_MS;
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -38,7 +58,8 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     // Clerk not yet loaded / not configured — fall through without auth.
   }
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 10_000);
+  const timeoutMs = timeoutForMethod(options.method);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   const res = await fetch(`${BASE_URL}${path}`, { ...options, headers, signal: controller.signal })
     .finally(() => clearTimeout(timeout));
   if (res.status === 401) {

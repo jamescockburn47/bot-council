@@ -36,12 +36,8 @@
 
     void (async () => {
       const path = $page.url.pathname;
-      console.info('[layout] onMount start, path=', path);
-      if (PUBLIC_PATHS.has(path)) {
-        console.info('[layout] stage=ready (public route)');
-        stage = 'ready';
-        return;
-      }
+      const isPublic = PUBLIC_PATHS.has(path);
+      console.info('[layout] onMount start, path=', path, 'public=', isPublic);
 
       try {
         console.info('[layout] stage=loading-clerk');
@@ -51,7 +47,13 @@
         console.info('[layout] stage=checking-session');
         stage = 'checking-session';
         const signedIn = await isSignedIn();
+
         if (!signedIn) {
+          if (isPublic) {
+            console.info('[layout] stage=ready (public, signed-out)');
+            stage = 'ready';
+            return;
+          }
           console.info('[layout] stage=redirecting-sign-in');
           stage = 'redirecting-sign-in';
           await goto('/sign-in');
@@ -64,6 +66,11 @@
         console.info('[layout] stage=ready');
         stage = 'ready';
       } catch (e) {
+        if (isPublic) {
+          console.warn('[layout] public-path auth init failed, rendering public content anyway', e);
+          stage = 'ready';
+          return;
+        }
         console.error('[layout] auth init failed at stage', stage, e);
         fatalError = `Failed at stage "${stageLabel[stage]}": ${
           e instanceof Error ? e.message : String(e)

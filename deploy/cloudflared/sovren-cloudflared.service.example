@@ -1,0 +1,35 @@
+# Systemd unit for the Cloudflare Tunnel that fronts lqcouncil.com on EVO.
+#
+# Installed at /etc/systemd/system/sovren-cloudflared.service on EVO.
+# Name is legacy ("sovren-" prefix) from when this tunnel only served
+# sovren.xyz; kept as-is to avoid breaking muscle memory and journald
+# filters. Functionally it also terminates lqcouncil.com traffic now.
+#
+# Install:
+#   sudo cp deploy/cloudflared/sovren-cloudflared.service.example \
+#     /etc/systemd/system/sovren-cloudflared.service
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now sovren-cloudflared
+#
+# Inspect:
+#   systemctl status sovren-cloudflared
+#   journalctl -u sovren-cloudflared -f
+
+[Unit]
+Description=SOVREN Cloudflare Tunnel
+After=network-online.target sovren-backend.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=james
+Group=james
+ExecStart=/usr/local/bin/cloudflared tunnel --config /home/james/.cloudflared/config.yml run sovren-evo
+Restart=always
+RestartSec=5
+TimeoutStartSec=30
+TimeoutStopSec=20
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

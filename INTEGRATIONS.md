@@ -97,10 +97,8 @@ Rotation: change both env vars together. Run `./scripts/check-auth-provider.sh` 
 
 ## 6. Sentry
 
-Two projects under the same org:
-
-- `bot-council-backend` — Rust, DSN in `APP__SENTRY__DSN`. Enriched in PR #49 with `release`, `debate_id`, `bot_id`, `user.id`, matched-path transactions.
-- `bot-council-frontend` — SvelteKit, DSN in `PUBLIC_SENTRY_DSN` (Vercel env var). Replay integration is currently **disabled** pending Cursor's DNS diagnosis (see `frontend/src/hooks.client.ts` comment). Re-enable with `Sentry.replayIntegration()` once the DNS issue is resolved.
+- **Backend** — Rust, DSN in `APP__SENTRY__DSN` on EVO at `/etc/bot-council.env`. Enriched in PR #49 with `release`, `debate_id`, `bot_id`, `user.id`, matched-path transactions.
+- **Frontend** — SvelteKit, DSN in `PUBLIC_SENTRY_DSN`. Read at **build time** by Vite from `frontend/.env.production` (gitignored, lives on the build host alongside source). Originally a Vercel env var; migrated to a local file on 2026-04-20 after Vercel was retired in PR #62. Currently shares the backend's Sentry project DSN — split into a separate `bot-council-frontend` project later if the mixed stream gets noisy. Replay integration is **disabled** pending Cursor's DNS diagnosis (see `frontend/src/hooks.client.ts` comment).
 
 Clint's Sentry integration (all optional — graceful no-op when unset):
 

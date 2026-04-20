@@ -1,4 +1,5 @@
 <script lang="ts">
+  import * as Sentry from '@sentry/browser';
   import { api, debateStreamUrl } from '$lib/api/client';
   import { getSessionToken } from '$lib/auth/clerk';
   import { page } from '$app/stores';
@@ -404,6 +405,15 @@
   }
 </script>
 
+<svelte:boundary
+  onerror={(err, _reset) => {
+    console.error('[debate-detail] render boundary caught', err);
+    Sentry.captureException(err, {
+      tags: { component: 'debates/[id]/+page' },
+      extra: { debateId: data.debateId, loading, hasDebate: !!debate, hasTranscript: !!transcript, hasSynthesis: !!synthesis },
+    });
+  }}
+>
 {#if loading}
   <div class="max-w-5xl space-y-4">
     <div class="animate-pulse">
@@ -491,3 +501,19 @@
     {/if}
   </div>
 {/if}
+
+{#snippet failed(err: unknown, reset: () => void)}
+  <div class="max-w-3xl mx-auto mt-12">
+    <div class="bg-red-500/10 border border-red-500/30 rounded-lg p-6">
+      <h2 class="text-sm font-semibold text-red-400 mb-2 mono">Render error</h2>
+      <p class="text-xs text-[var(--text-secondary)] mb-3 mono whitespace-pre-wrap">{err instanceof Error ? err.message : String(err)}</p>
+      <p class="text-xs text-[var(--text-muted)] mb-4">Reported to Sentry. Try reset, reload, or go back to the debate list.</p>
+      <div class="flex gap-3">
+        <button onclick={reset} class="text-xs mono px-3 py-1.5 bg-[#8b5cf6] text-white rounded">Reset</button>
+        <button onclick={() => location.reload()} class="text-xs mono px-3 py-1.5 border border-[var(--border)] rounded text-[var(--text-secondary)]">Reload</button>
+        <a href="/debates" class="text-xs mono px-3 py-1.5 border border-[var(--border)] rounded text-[var(--text-secondary)] no-underline">Back</a>
+      </div>
+    </div>
+  </div>
+{/snippet}
+</svelte:boundary>

@@ -17,3 +17,8 @@ frontend/build/
 frontend/.svelte-kit/
 frontend/.env
 .claude/
+.evo-snapshot/
+
+# Vercel extraction snapshot (contains real keys)
+frontend/.env.production.vercel-snapshot
+.proxy-vercel-link/

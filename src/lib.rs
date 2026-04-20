@@ -13,8 +13,13 @@ pub mod synthesiser;
 pub mod scoreboard;
 
 use axum::Router;
+use tower_http::services::{ServeDir, ServeFile};
 
 /// Build the full application router with state.
+///
+/// The API routes are mounted under `/api/*`; everything else falls through
+/// to the static SvelteKit build (served from `FRONTEND_DIST_DIR`, default
+/// `./frontend/build`) with `index.html` as the SPA fallback.
 pub async fn build_app() -> anyhow::Result<Router> {
     let settings = config::Settings::load()?;
     settings.validate()?;
@@ -43,5 +48,26 @@ pub async fn build_app() -> anyhow::Result<Router> {
     }
 
     let state = state::AppState::new(pool, http_client, settings.clone(), jwks, bot_token_key);
-    Ok(api::router(state))
+
+    // Two instances of the same router so we can mount routes at both `/*` and
+    // `/api/*` without Router internal-state sharing complaints. The root mount
+    // is a TRANSITIONAL backward-compat path for the currently-deployed Vercel
+    // proxy (which rewrites `api.lqcouncil.com/*` to EVO `/*`). Once the
+    // Vercel proxy is retired in Phase F, remove `.merge(api_root)` so the
+    // backend exposes `/api/*` only.
+    let api_nested = api::router(state.clone());
+    let api_root = api::router(state);
+
+    // Static frontend: SvelteKit adapter-static output. Falls back to
+    // `index.html` for any path that isn't a real file (SPA client-side routing).
+    let static_dir = std::env::var("FRONTEND_DIST_DIR")
+        .unwrap_or_else(|_| "./frontend/build".to_string());
+    let index_path = format!("{static_dir}/index.html");
+    let static_service = ServeDir::new(&static_dir)
+        .not_found_service(ServeFile::new(&index_path));
+
+    Ok(Router::new()
+        .nest("/api", api_nested)
+        .merge(api_root)
+        .fallback_service(static_service))
 }

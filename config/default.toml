@@ -14,6 +14,10 @@ bot_token_key = ""
 # test_mode: integration-test auth backdoor. Must be false in any real
 # deployment. Refused at boot when clerk_issuer is also set.
 test_mode = false
+# Clerk publishable key surfaced to the frontend at runtime via
+# GET /api/config.json. Public by design (pk_live_* / pk_test_*).
+# Set via APP__AUTH__CLERK_PUBLISHABLE_KEY in /etc/bot-council.env on EVO.
+clerk_publishable_key = ""
 
 [http_client]
 connect_timeout_secs = 5

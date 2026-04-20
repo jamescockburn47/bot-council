@@ -52,6 +52,11 @@ pub struct AuthConfig {
     /// are set, making it impossible to enable in any real Clerk deployment.
     #[serde(default)]
     pub test_mode: bool,
+    /// Clerk publishable key surfaced to the frontend at runtime via
+    /// `GET /api/config.json`. Public by design (pk_live_* / pk_test_*).
+    /// Replaces the old Vercel build-time PUBLIC_CLERK_PUBLISHABLE_KEY env var.
+    #[serde(default)]
+    pub clerk_publishable_key: String,
 }
 
 /// Outbound HTTP client tuning.

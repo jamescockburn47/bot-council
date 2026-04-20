@@ -1,4 +1,3 @@
-import { env } from '$env/dynamic/public';
 import { goto } from '$app/navigation';
 import { getSessionToken } from '$lib/auth/clerk';
 import type {
@@ -13,7 +12,10 @@ import type {
   UserInfoResponse,
 } from '$lib/types';
 
-const BASE_URL = env.PUBLIC_API_URL;
+// Single-origin architecture: Axum on EVO serves both the API (under /api/*)
+// and the static frontend (under /*). Frontend always talks to `/api` relative
+// to the current origin — no cross-origin calls, no build-time env var needed.
+const BASE_URL = '/api';
 
 class ApiError extends Error {
   constructor(

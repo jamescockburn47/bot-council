@@ -17,6 +17,7 @@ pub async fn test_app() -> (Router, SqlitePool) {
             // 32 bytes = 64 hex chars; deterministic for reproducible tests.
             bot_token_key: "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff".into(),
             test_mode: true,
+            clerk_publishable_key: "pk_test_Y29uZmlnLmpzb24tdGVzdA".into(),
         },
         http_client: HttpClientConfig {
             connect_timeout_secs: 5,
@@ -79,6 +80,7 @@ pub async fn test_app_simple_mode() -> (Router, SqlitePool) {
             clerk_jwks_url: "".into(),
             bot_token_key: "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff".into(),
             test_mode: true,
+            clerk_publishable_key: "pk_test_Y29uZmlnLmpzb24tdGVzdA".into(),
         },
         http_client: HttpClientConfig {
             connect_timeout_secs: 5,

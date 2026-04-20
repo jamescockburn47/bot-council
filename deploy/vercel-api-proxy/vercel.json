@@ -4,6 +4,6 @@
   "installCommand": null,
   "outputDirectory": null,
   "rewrites": [
-    { "source": "/(.*)", "destination": "https://james-nucbox-evo-x2.taila41c86.ts.net/$1" }
+    { "source": "/(.*)", "destination": "https://james-nucbox-evo-x2.taila41c86.ts.net/api/$1" }
   ]
 }

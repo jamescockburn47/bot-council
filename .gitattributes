@@ -1,0 +1,25 @@
+# Enforce LF line endings for all text files.
+# Critical for SQL migrations: sqlx checksums migration file bytes at compile
+# time; if a Windows `core.autocrlf=true` converts LF→CRLF on checkout and the
+# resulting CRLF bytes get scp'd to a Linux host, the binary's embedded
+# migrations diverge from any previously-applied DB checksums. Keep everything
+# LF in the repo and on disk regardless of platform.
+
+* text=auto eol=lf
+*.sql text eol=lf
+*.rs text eol=lf
+*.toml text eol=lf
+*.sh text eol=lf
+*.ts text eol=lf
+*.svelte text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+
+# Binary files — don't touch.
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff2 binary
+*.gguf binary

@@ -20,7 +20,6 @@
         const clerk = await getClerk();
         await clerk.redirectToSignIn({
           redirectUrl: '/',
-          fallbackRedirectUrl: '/',
           signInFallbackRedirectUrl: '/',
           signUpFallbackRedirectUrl: '/'
         });

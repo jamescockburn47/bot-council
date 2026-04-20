@@ -54,17 +54,14 @@ pub async fn build_app() -> anyhow::Result<Router> {
 
     let state = state::AppState::new(pool, http_client, settings.clone(), jwks, bot_token_key);
 
-    // Two instances of the same router so we can mount routes at both `/*` and
-    // `/api/*` without Router internal-state sharing complaints. The root mount
-    // is a TRANSITIONAL backward-compat path for the currently-deployed Vercel
-    // proxy (which rewrites `api.lqcouncil.com/*` to EVO `/*`). Once the
-    // Vercel proxy is retired in Phase F, remove `.merge(api_root)` so the
-    // backend exposes `/api/*` only.
-    let api_nested = api::router(state.clone());
-    let api_root = api::router(state);
+    // API is mounted at `/api/*` ONLY. Any other path falls through to the
+    // SvelteKit static build, with `index.html` as the SPA fallback for deep
+    // links like `/debates/<uuid>`. The Vercel proxy that previously also hit
+    // un-prefixed routes was retired in PR #62; keeping `.merge(api_root)`
+    // caused hard-reloads on SPA routes to match the RequireAuth API handler
+    // instead of the static fallback, returning 401 JSON as a document.
+    let api_nested = api::router(state);
 
-    // Static frontend: SvelteKit adapter-static output. Falls back to
-    // `index.html` for any path that isn't a real file (SPA client-side routing).
     let static_dir =
         std::env::var("FRONTEND_DIST_DIR").unwrap_or_else(|_| "./frontend/build".to_string());
     let index_path = format!("{static_dir}/index.html");
@@ -72,7 +69,6 @@ pub async fn build_app() -> anyhow::Result<Router> {
 
     Ok(Router::new()
         .nest("/api", api_nested)
-        .merge(api_root)
         .fallback_service(static_service))
 }
 

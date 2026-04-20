@@ -24,8 +24,7 @@ pub fn round1_prompt(topic: &str, own_pseudonym: &str, role: Role) -> String {
          Review all positions. You must:\n\
          1. Identify the single strongest argument that opposes your position and explain why it is strong.\n\
          2. State specifically what evidence or reasoning would cause you to change your position.\n\n\
-         Do not agree with other positions unless you can articulate exactly why the argument compels agreement."
-        ,
+         Do not agree with other positions unless you can articulate exactly why the argument compels agreement.",
         role.as_str(),
         role.description()
     )
@@ -34,7 +33,7 @@ pub fn round1_prompt(topic: &str, own_pseudonym: &str, role: Role) -> String {
 /// Round 2: Structured rebuttal prompt. Mandatory challenge field.
 pub fn round2_prompt(topic: &str) -> String {
     format!(
-    "Topic: {topic}\n\
+        "Topic: {topic}\n\
      Here are the Round 1 responses from all participants.\n\n\
      You must raise at least one specific challenge. Your challenge must:\n\
      - Target a specific claim made by another participant (cite the pseudonym and claim)\n\
@@ -76,7 +75,11 @@ pub fn round2_prompt_simple(topic: &str, role: Role) -> String {
 }
 
 /// Round 3: Cross-examination question prompt (Pass A).
-pub fn round3_question_prompt(topic: &str, partner_pseudonym: &str, partner_round2_response: &str) -> String {
+pub fn round3_question_prompt(
+    topic: &str,
+    partner_pseudonym: &str,
+    partner_round2_response: &str,
+) -> String {
     let framed = frame_response(partner_pseudonym, partner_round2_response);
     format!(
         "Topic: {topic}\n\

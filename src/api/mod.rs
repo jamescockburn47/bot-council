@@ -4,20 +4,24 @@ pub mod bot_token_crypto;
 pub mod bots;
 pub mod compat;
 pub mod config_json;
-pub mod jwks_cache;
 pub mod debates;
 pub mod diag;
 pub mod dto;
 pub mod events;
 pub mod health;
+pub mod jwks_cache;
 pub mod stream;
 pub mod synthesis;
 pub mod transcript;
 
-use axum::{Router, http::HeaderValue, routing::{delete, get, patch}};
-use tower_http::cors::{Any, CorsLayer};
-use axum::http::Method;
 use crate::state::AppState;
+use axum::http::Method;
+use axum::{
+    Router,
+    http::HeaderValue,
+    routing::{delete, get, patch},
+};
+use tower_http::cors::{Any, CorsLayer};
 
 /// Build the CORS layer from the configured origins.
 ///
@@ -27,10 +31,7 @@ fn cors_layer(origins: &[String]) -> CorsLayer {
     if origins.is_empty() {
         CorsLayer::permissive()
     } else {
-        let parsed: Vec<HeaderValue> = origins
-            .iter()
-            .filter_map(|o| o.parse().ok())
-            .collect();
+        let parsed: Vec<HeaderValue> = origins.iter().filter_map(|o| o.parse().ok()).collect();
         CorsLayer::new()
             .allow_origin(parsed)
             .allow_methods([Method::GET, Method::POST, Method::PATCH, Method::DELETE])
@@ -57,7 +58,10 @@ pub fn router(state: AppState) -> Router {
         .route("/bots/{id}/reject", patch(bots::reject_bot))
         .route("/bots/{id}/deactivate", patch(bots::deactivate_bot))
         .route("/bots/{id}/reactivate", patch(bots::reactivate_bot))
-        .route("/debates", get(debates::list_debates).post(debates::create_debate))
+        .route(
+            "/debates",
+            get(debates::list_debates).post(debates::create_debate),
+        )
         .route("/debates/{id}", get(debates::get_debate))
         .route("/debates/{id}/transcript", get(transcript::get_transcript))
         .route("/debates/{id}/synthesis", get(synthesis::get_synthesis))

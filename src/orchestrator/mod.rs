@@ -6,14 +6,12 @@ pub mod roles;
 pub mod rounds;
 pub mod state_machine;
 
-use std::collections::HashMap;
-use sqlx::SqlitePool;
-use reqwest_middleware::ClientWithMiddleware;
-use crate::bot_client::{
-    self, PositionRequest, ScoringRequest, ScoringContext,
-};
+use crate::bot_client::{self, PositionRequest, ScoringContext, ScoringRequest};
 use crate::db::{models::BotRow, queries};
 use crate::types::DebateId;
+use reqwest_middleware::ClientWithMiddleware;
+use sqlx::SqlitePool;
+use std::collections::HashMap;
 
 /// Result of a completed debate.
 pub struct DebateResult {
@@ -42,7 +40,8 @@ pub async fn run_debate(
     let id = debate_id.as_str();
 
     queries::update_debate_status(pool, id, "dispatching")
-        .await.map_err(|e| format!("db error: {e}"))?;
+        .await
+        .map_err(|e| format!("db error: {e}"))?;
 
     // Step 1: Dispatch topic to all bots concurrently
     let position_futures: Vec<_> = bots.iter().map(|bot| {
@@ -82,11 +81,13 @@ pub async fn run_debate(
 
     // Store responses and build anonymised context
     let debate_bots = queries::get_debate_bots(pool, id)
-        .await.map_err(|e| format!("db error: {e}"))?;
+        .await
+        .map_err(|e| format!("db error: {e}"))?;
 
     let mut anonymised: Vec<ScoringContext> = Vec::new();
     for (bot_id, response_opt) in &position_results {
-        let pseudonym = debate_bots.iter()
+        let pseudonym = debate_bots
+            .iter()
             .find(|db| db.bot_id == *bot_id)
             .map(|db| db.pseudonym.clone())
             .unwrap_or_else(|| "Unknown".to_string());
@@ -96,22 +97,31 @@ pub async fn run_debate(
         };
         let resp_id = uuid::Uuid::new_v4().to_string();
         queries::insert_response(pool, &resp_id, id, 0, bot_id, &response_json, abstained)
-            .await.map_err(|e| format!("db error: {e}"))?;
+            .await
+            .map_err(|e| format!("db error: {e}"))?;
         if !abstained {
-            anonymised.push(ScoringContext { pseudonym, response: response_json });
+            anonymised.push(ScoringContext {
+                pseudonym,
+                response: response_json,
+            });
         }
     }
 
     // Check quorum
     if anonymised.len() < 3 {
         queries::update_debate_status(pool, id, "failed")
-            .await.map_err(|e| format!("db error: {e}"))?;
-        return Err(format!("quorum not met: only {} bots responded", anonymised.len()));
+            .await
+            .map_err(|e| format!("db error: {e}"))?;
+        return Err(format!(
+            "quorum not met: only {} bots responded",
+            anonymised.len()
+        ));
     }
 
     // Step 2: Send scoring requests concurrently
     queries::update_debate_status(pool, id, "scoring")
-        .await.map_err(|e| format!("db error: {e}"))?;
+        .await
+        .map_err(|e| format!("db error: {e}"))?;
 
     let scoring_futures: Vec<_> = bots.iter().map(|bot| {
         let client = client.clone();
@@ -159,10 +169,18 @@ pub async fn run_debate(
             for score in scores {
                 let score_id = uuid::Uuid::new_v4().to_string();
                 if let Err(e) = queries::insert_peer_score(
-                    pool, &score_id, id, scorer_bot_id, &score.pseudonym,
-                    score.reasoning_quality, score.factual_grounding,
-                    score.overall, &score.reasoning,
-                ).await {
+                    pool,
+                    &score_id,
+                    id,
+                    scorer_bot_id,
+                    &score.pseudonym,
+                    score.reasoning_quality,
+                    score.factual_grounding,
+                    score.overall,
+                    &score.reasoning,
+                )
+                .await
+                {
                     // intentional: log and continue — one bad score shouldn't fail the debate
                     tracing::warn!(scorer = %scorer_bot_id, target = %score.pseudonym, error = %e, "failed to store peer score");
                 }
@@ -172,32 +190,57 @@ pub async fn run_debate(
 
     // Step 3: Aggregate scores into rankings
     let all_scores = queries::get_peer_scores(pool, id)
-        .await.map_err(|e| format!("db error: {e}"))?;
+        .await
+        .map_err(|e| format!("db error: {e}"))?;
 
     let pseudonyms: Vec<String> = anonymised.iter().map(|c| c.pseudonym.clone()).collect();
-    let mut rankings: Vec<RankedEntry> = pseudonyms.iter().map(|p| {
-        let scores: Vec<_> = all_scores.iter().filter(|s| s.target_pseudonym == *p).collect();
-        let count = scores.len();
-        if count == 0 {
-            return RankedEntry {
+    let mut rankings: Vec<RankedEntry> = pseudonyms
+        .iter()
+        .map(|p| {
+            let scores: Vec<_> = all_scores
+                .iter()
+                .filter(|s| s.target_pseudonym == *p)
+                .collect();
+            let count = scores.len();
+            if count == 0 {
+                return RankedEntry {
+                    pseudonym: p.clone(),
+                    avg_reasoning_quality: 0.0,
+                    avg_factual_grounding: 0.0,
+                    avg_overall: 0.0,
+                    total_scores: 0,
+                };
+            }
+            RankedEntry {
                 pseudonym: p.clone(),
-                avg_reasoning_quality: 0.0, avg_factual_grounding: 0.0,
-                avg_overall: 0.0, total_scores: 0,
-            };
-        }
-        RankedEntry {
-            pseudonym: p.clone(),
-            avg_reasoning_quality: scores.iter().map(|s| s.reasoning_quality as f64).sum::<f64>() / count as f64,
-            avg_factual_grounding: scores.iter().map(|s| s.factual_grounding as f64).sum::<f64>() / count as f64,
-            avg_overall: scores.iter().map(|s| s.overall as f64).sum::<f64>() / count as f64,
-            total_scores: count,
-        }
-    }).collect();
+                avg_reasoning_quality: scores
+                    .iter()
+                    .map(|s| s.reasoning_quality as f64)
+                    .sum::<f64>()
+                    / count as f64,
+                avg_factual_grounding: scores
+                    .iter()
+                    .map(|s| s.factual_grounding as f64)
+                    .sum::<f64>()
+                    / count as f64,
+                avg_overall: scores.iter().map(|s| s.overall as f64).sum::<f64>() / count as f64,
+                total_scores: count,
+            }
+        })
+        .collect();
 
-    rankings.sort_by(|a, b| b.avg_overall.partial_cmp(&a.avg_overall).unwrap_or(std::cmp::Ordering::Equal));
+    rankings.sort_by(|a, b| {
+        b.avg_overall
+            .partial_cmp(&a.avg_overall)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     queries::update_debate_status(pool, id, "complete")
-        .await.map_err(|e| format!("db error: {e}"))?;
+        .await
+        .map_err(|e| format!("db error: {e}"))?;
 
-    Ok(DebateResult { debate_id: id.to_string(), rankings })
+    Ok(DebateResult {
+        debate_id: id.to_string(),
+        rankings,
+    })
 }

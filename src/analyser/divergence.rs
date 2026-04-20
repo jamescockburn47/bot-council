@@ -1,7 +1,7 @@
-use serde::{Deserialize, Serialize};
 use crate::analyser::call_minimax;
 use crate::config::ModelsConfig;
-use crate::sanitise::{frame_untrusted, ANTI_INJECTION_PREAMBLE};
+use crate::sanitise::{ANTI_INJECTION_PREAMBLE, frame_untrusted};
+use serde::{Deserialize, Serialize};
 
 /// Per-bot divergence analysis result.
 #[derive(Debug, Clone, Serialize, Deserialize)]

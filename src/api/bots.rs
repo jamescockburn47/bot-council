@@ -1,16 +1,17 @@
-use axum::extract::{Path, State};
-use axum::http::StatusCode;
-use axum::Json;
-use sqlx::SqlitePool;
-use std::collections::HashMap;
 use crate::api::auth::{AuthIdentity, RequireAdmin};
 use crate::api::dto::{
-    BotAnalyticsResponse, BotDebateAnalytics, BotHealthCheckResponse, BotPerformanceSummary, BotResponse, CreateBotRequest, RejectBotRequest, UserInfoResponse,
+    BotAnalyticsResponse, BotDebateAnalytics, BotHealthCheckResponse, BotPerformanceSummary,
+    BotResponse, CreateBotRequest, RejectBotRequest, UserInfoResponse,
 };
 use crate::db::{models::BotRow, queries};
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
 use crate::types::BotId;
+use axum::Json;
+use axum::extract::{Path, State};
+use axum::http::StatusCode;
+use sqlx::SqlitePool;
+use std::collections::HashMap;
 
 /// Convert a database row to an API response.
 fn bot_to_response(row: &BotRow, performance: Option<BotPerformanceSummary>) -> BotResponse {
@@ -67,22 +68,49 @@ fn text_score_dimensions(samples: &[queries::BotResponseSampleRow]) -> TextDimen
     let mut count: f64 = 0.0;
     let mut short_count: f64 = 0.0;
 
-    const CAUSAL_KEYWORDS: &[&str] = &[
-        "because", "therefore", "thus", "hence", "as a result",
-    ];
+    const CAUSAL_KEYWORDS: &[&str] = &["because", "therefore", "thus", "hence", "as a result"];
     const TRADEOFF_KEYWORDS: &[&str] = &[
-        "however", "but", "trade-off", "tradeoff", "on the other hand", "risk", "downside",
+        "however",
+        "but",
+        "trade-off",
+        "tradeoff",
+        "on the other hand",
+        "risk",
+        "downside",
     ];
     const EVIDENCE_KEYWORDS: &[&str] = &[
-        "data", "evidence", "benchmark", "metric", "source", "study", "measured", "baseline",
+        "data",
+        "evidence",
+        "benchmark",
+        "metric",
+        "source",
+        "study",
+        "measured",
+        "baseline",
     ];
     const ACTION_KEYWORDS: &[&str] = &[
-        "recommend", "should", "must", "next", "first", "second", "priorit", "roadmap",
-        "implement", "ship",
+        "recommend",
+        "should",
+        "must",
+        "next",
+        "first",
+        "second",
+        "priorit",
+        "roadmap",
+        "implement",
+        "ship",
     ];
     const ENGAGEMENT_KEYWORDS: &[&str] = &[
-        "agent", "challenge", "counter", "rebut", "respond", "agree", "disagree",
-        "your argument", "you claim", "round ",
+        "agent",
+        "challenge",
+        "counter",
+        "rebut",
+        "respond",
+        "agree",
+        "disagree",
+        "your argument",
+        "you claim",
+        "round ",
     ];
 
     for sample in samples {
@@ -104,38 +132,81 @@ fn text_score_dimensions(samples: &[queries::BotResponseSampleRow]) -> TextDimen
         let engagement_hits = count_keyword_hits(&lower, ENGAGEMENT_KEYWORDS);
 
         let mut critical: f64 = 1.8;
-        if word_count >= 50 { critical += 1.2; }
-        if word_count >= 90 { critical += 1.0; }
-        if word_count >= 140 { critical += 0.7; }
-        if causal_hits > 0 { critical += 1.5; }
-        if tradeoff_hits > 0 { critical += 2.1; }
-        if lower.contains("if ") || lower.contains("unless") { critical += 0.8; }
-        if lower.contains("however") && lower.contains("therefore") { critical += 1.0; }
+        if word_count >= 50 {
+            critical += 1.2;
+        }
+        if word_count >= 90 {
+            critical += 1.0;
+        }
+        if word_count >= 140 {
+            critical += 0.7;
+        }
+        if causal_hits > 0 {
+            critical += 1.5;
+        }
+        if tradeoff_hits > 0 {
+            critical += 2.1;
+        }
+        if lower.contains("if ") || lower.contains("unless") {
+            critical += 0.8;
+        }
+        if lower.contains("however") && lower.contains("therefore") {
+            critical += 1.0;
+        }
 
         let mut resource_use: f64 = 1.5;
-        if numeric_tokens >= 2 { resource_use += 2.2; }
-        else if numeric_tokens >= 1 { resource_use += 1.0; }
-        if evidence_hits > 0 { resource_use += 2.3; }
-        if has_citation { resource_use += 1.8; }
-        if has_url { resource_use += 1.3; }
-        if lower.contains('%') || lower.contains('$') { resource_use += 1.0; }
-        if word_count >= 90 { resource_use += 0.8; }
+        if numeric_tokens >= 2 {
+            resource_use += 2.2;
+        } else if numeric_tokens >= 1 {
+            resource_use += 1.0;
+        }
+        if evidence_hits > 0 {
+            resource_use += 2.3;
+        }
+        if has_citation {
+            resource_use += 1.8;
+        }
+        if has_url {
+            resource_use += 1.3;
+        }
+        if lower.contains('%') || lower.contains('$') {
+            resource_use += 1.0;
+        }
+        if word_count >= 90 {
+            resource_use += 0.8;
+        }
 
         let mut usefulness: f64 = 1.8;
-        if action_hits >= 2 { usefulness += 2.4; }
-        else if action_hits >= 1 { usefulness += 1.2; }
-        if lower.contains("recommend") || lower.contains("should") { usefulness += 1.5; }
-        if lower.contains("next") || lower.contains("first") || lower.contains("phase") { usefulness += 1.2; }
-        if tradeoff_hits > 0 { usefulness += 1.0; }
-        if word_count >= 80 { usefulness += 1.2; }
+        if action_hits >= 2 {
+            usefulness += 2.4;
+        } else if action_hits >= 1 {
+            usefulness += 1.2;
+        }
+        if lower.contains("recommend") || lower.contains("should") {
+            usefulness += 1.5;
+        }
+        if lower.contains("next") || lower.contains("first") || lower.contains("phase") {
+            usefulness += 1.2;
+        }
+        if tradeoff_hits > 0 {
+            usefulness += 1.0;
+        }
+        if word_count >= 80 {
+            usefulness += 1.2;
+        }
         if lower.contains("enterprise") || lower.contains("institution") || lower.contains("gc") {
             usefulness += 0.8;
         }
 
         let mut engagement: f64 = 1.6;
-        if engagement_hits >= 2 { engagement += 2.4; }
-        else if engagement_hits >= 1 { engagement += 1.2; }
-        if lower.contains("agent ") || lower.contains("round ") { engagement += 1.1; }
+        if engagement_hits >= 2 {
+            engagement += 2.4;
+        } else if engagement_hits >= 1 {
+            engagement += 1.2;
+        }
+        if lower.contains("agent ") || lower.contains("round ") {
+            engagement += 1.1;
+        }
         if lower.contains("challenge") || lower.contains("rebut") || lower.contains("counter") {
             engagement += 1.6;
         }
@@ -145,7 +216,9 @@ fn text_score_dimensions(samples: &[queries::BotResponseSampleRow]) -> TextDimen
         if lower.contains("your argument") || lower.contains("you claim") {
             engagement += 1.1;
         }
-        if word_count >= 70 { engagement += 0.8; }
+        if word_count >= 70 {
+            engagement += 0.8;
+        }
 
         if word_count < 35 {
             short_count += 1.0;
@@ -228,9 +301,7 @@ fn usefulness_score(
     let abstain_rate = abstained_rounds as f64 / total;
     let degraded_rate = degraded_rounds as f64 / total;
     let participation_rate = (total - abstained_rounds as f64).max(0.0) / total;
-    let mut score = base_usefulness
-        - abstain_rate * 3.0
-        - degraded_rate * 1.4;
+    let mut score = base_usefulness - abstain_rate * 3.0 - degraded_rate * 1.4;
     if participation_rate < 0.70 {
         score -= (0.70 - participation_rate) * 2.0;
     }
@@ -253,10 +324,7 @@ fn functionality_score(
     let abstain_rate = abstained_rounds as f64 / total;
     let invalid_rate = invalid_rounds as f64 / total;
     let degraded_rate = degraded_rounds as f64 / total;
-    let mut score = 10.0
-        - abstain_rate * 6.5
-        - invalid_rate * 5.0
-        - degraded_rate * 4.0;
+    let mut score = 10.0 - abstain_rate * 6.5 - invalid_rate * 5.0 - degraded_rate * 4.0;
     if total_rounds < 6 {
         score -= 1.0;
     }
@@ -348,7 +416,9 @@ fn build_suggestions(
         suggestions.push("Engage opponent arguments directly (quote/challenge/respond) rather than giving isolated monologues.".into());
     }
     if abstain_rate > 0.20 {
-        suggestions.push("Reduce latency/timeouts and harden round >=1 handling to avoid abstentions.".into());
+        suggestions.push(
+            "Reduce latency/timeouts and harden round >=1 handling to avoid abstentions.".into(),
+        );
     }
     if invalid_rate > 0.10 {
         suggestions.push("Return schema-valid JSON on every round (response required, optional fields typed correctly).".into());
@@ -448,7 +518,10 @@ fn performance_for_bot(
     aggregates
         .get(bot_id)
         .map(|agg| {
-            let samples = response_samples.get(bot_id).map(Vec::as_slice).unwrap_or(&[]);
+            let samples = response_samples
+                .get(bot_id)
+                .map(Vec::as_slice)
+                .unwrap_or(&[]);
             build_performance(agg, samples)
         })
         .unwrap_or_else(default_performance)
@@ -459,11 +532,8 @@ pub(crate) async fn build_performance_map(
     bot_ids: &[String],
 ) -> Result<HashMap<String, BotPerformanceSummary>, sqlx::Error> {
     let aggregates = queries::get_bot_performance_aggregates(pool, bot_ids).await?;
-    let response_samples = queries::get_bot_response_samples(
-        pool,
-        bot_ids,
-        RESPONSE_SAMPLE_LIMIT,
-    ).await?;
+    let response_samples =
+        queries::get_bot_response_samples(pool, bot_ids, RESPONSE_SAMPLE_LIMIT).await?;
     let mut map = HashMap::new();
     for bot_id in bot_ids {
         map.insert(
@@ -507,12 +577,13 @@ pub async fn create_bot(
     // Outside test mode, allow http://localhost and 127.0.0.1 only in debug builds.
     if !req.endpoint_url.starts_with("https://") {
         if !simple_mode {
-            let localhost_ok = cfg!(debug_assertions) && (
-                req.endpoint_url.starts_with("http://localhost")
-                || req.endpoint_url.starts_with("http://127.0.0.1")
-            );
+            let localhost_ok = cfg!(debug_assertions)
+                && (req.endpoint_url.starts_with("http://localhost")
+                    || req.endpoint_url.starts_with("http://127.0.0.1"));
             if !localhost_ok {
-                return Err(AppError::BadRequest("endpoint_url must use https://".into()));
+                return Err(AppError::BadRequest(
+                    "endpoint_url must use https://".into(),
+                ));
             }
         }
     }
@@ -521,11 +592,7 @@ pub async fn create_bot(
     }
     let submitted_by = auth.user_id().map(String::from);
     if let Some(user_id) = submitted_by.as_deref() {
-        queries::archive_prior_submissions_for_submitter(
-            state.db(),
-            user_id,
-            &req.name,
-        ).await?;
+        queries::archive_prior_submissions_for_submitter(state.db(), user_id, &req.name).await?;
     }
     let id = BotId::new();
     let ciphertext = if req.token.is_empty() {
@@ -542,10 +609,17 @@ pub async fn create_bot(
         "pending"
     };
     let row = queries::insert_bot(
-        state.db(), id.as_str(), &req.name, &req.endpoint_url, ciphertext.as_deref(),
-        req.model_family.as_deref(), submitted_by.as_deref(),
-        req.description.as_deref(), status,
-    ).await?;
+        state.db(),
+        id.as_str(),
+        &req.name,
+        &req.endpoint_url,
+        ciphertext.as_deref(),
+        req.model_family.as_deref(),
+        submitted_by.as_deref(),
+        req.description.as_deref(),
+        status,
+    )
+    .await?;
     Ok((StatusCode::CREATED, Json(bot_to_response(&row, None))))
 }
 
@@ -563,13 +637,16 @@ pub async fn list_bots(
     };
     let bot_ids: Vec<String> = rows.iter().map(|b| b.id.clone()).collect();
     let performance = build_performance_map(state.db(), &bot_ids).await?;
-    let bots = rows.iter().map(|row| {
-        let perf = performance
-            .get(&row.id)
-            .cloned()
-            .unwrap_or_else(default_performance);
-        bot_to_response(row, Some(perf))
-    }).collect();
+    let bots = rows
+        .iter()
+        .map(|row| {
+            let perf = performance
+                .get(&row.id)
+                .cloned()
+                .unwrap_or_else(default_performance);
+            bot_to_response(row, Some(perf))
+        })
+        .collect();
     Ok(Json(bots))
 }
 
@@ -583,28 +660,30 @@ pub async fn get_bot_analytics(
     auth: AuthIdentity,
     Path(id): Path<String>,
 ) -> AppResult<Json<BotAnalyticsResponse>> {
-    let bot = queries::get_bot(state.db(), &id).await?
+    let bot = queries::get_bot(state.db(), &id)
+        .await?
         .ok_or_else(|| AppError::NotFound("bot not found".into()))?;
     ensure_can_view_bot(&auth, &bot)?;
 
     let mut perf_map = build_performance_map(state.db(), &[id.clone()]).await?;
-    let performance = perf_map
-        .remove(&id)
-        .unwrap_or_else(default_performance);
+    let performance = perf_map.remove(&id).unwrap_or_else(default_performance);
 
     let recent = queries::get_bot_debate_summaries(state.db(), &id, 25).await?;
-    let recent_debates = recent.into_iter().map(|row| BotDebateAnalytics {
-        debate_id: row.debate_id,
-        topic: row.topic,
-        status: row.status,
-        created_at: row.created_at,
-        completed_at: row.completed_at,
-        role: row.role,
-        rounds_total: row.rounds_total,
-        abstained_rounds: row.abstained_rounds,
-        invalid_rounds: row.invalid_rounds,
-        degraded_rounds: row.degraded_rounds,
-    }).collect();
+    let recent_debates = recent
+        .into_iter()
+        .map(|row| BotDebateAnalytics {
+            debate_id: row.debate_id,
+            topic: row.topic,
+            status: row.status,
+            created_at: row.created_at,
+            completed_at: row.completed_at,
+            role: row.role,
+            rounds_total: row.rounds_total,
+            abstained_rounds: row.abstained_rounds,
+            invalid_rounds: row.invalid_rounds,
+            degraded_rounds: row.degraded_rounds,
+        })
+        .collect();
 
     Ok(Json(BotAnalyticsResponse {
         bot: bot_to_response(&bot, Some(performance)),
@@ -616,21 +695,31 @@ pub async fn get_bot_analytics(
 /// Pure function; separately tested.
 pub(crate) fn classify_smoke_test_error(raw: &str) -> String {
     let lower = raw.to_lowercase();
-    if lower.contains("dns") || lower.contains("name resolution") || lower.contains("failed to lookup") {
+    if lower.contains("dns")
+        || lower.contains("name resolution")
+        || lower.contains("failed to lookup")
+    {
         "Endpoint hostname could not be resolved. Check the URL.".into()
-    } else if lower.contains("connection refused") || lower.contains("timed out") || lower.contains("timeout") {
+    } else if lower.contains("connection refused")
+        || lower.contains("timed out")
+        || lower.contains("timeout")
+    {
         "Harness could not reach the endpoint. If self-hosting, check your firewall \
          and make sure the bot is publicly reachable via HTTPS. See /bots/guide for \
-         deployment options (VPS + Caddy, Cloudflare Tunnel, ngrok, etc.).".into()
+         deployment options (VPS + Caddy, Cloudflare Tunnel, ngrok, etc.)."
+            .into()
     } else if lower.contains("tls") || lower.contains("ssl") || lower.contains("certificate") {
         "TLS handshake failed. The endpoint must be HTTPS with a valid certificate.".into()
     } else if lower.contains("http 401") || lower.contains("http 403") {
         "Endpoint rejected the harness's bearer token. Verify your bot is using \
-         the token you registered.".into()
+         the token you registered."
+            .into()
     } else if lower.starts_with("bot returned http ") {
         format!("Smoke test failed: {raw}. Check bot logs.")
     } else if lower.contains("is not valid json") || lower.contains("missing 'response'") {
-        format!("Smoke test failed: {raw}. Your /debate endpoint must return a JSON body with a 'response' string field.")
+        format!(
+            "Smoke test failed: {raw}. Your /debate endpoint must return a JSON body with a 'response' string field."
+        )
     } else {
         format!("Smoke test failed: {raw}")
     }
@@ -640,7 +729,9 @@ fn validate_smoke_json(json: serde_json::Value) -> Result<(), String> {
     match json.get("response") {
         Some(serde_json::Value::String(text)) if !text.trim().is_empty() => Ok(()),
         Some(serde_json::Value::String(_)) => Err("'response' field is empty".into()),
-        Some(other) => Err(format!("'response' field has wrong type: expected string, got {other}")),
+        Some(other) => Err(format!(
+            "'response' field has wrong type: expected string, got {other}"
+        )),
         None => Err("response JSON missing 'response' field".into()),
     }
 }
@@ -679,9 +770,8 @@ async fn send_smoke_probe(
     let response = match response {
         Some(res) => res,
         None => {
-            return Err(last_transport_error.unwrap_or_else(|| {
-                format!("{label} request failed: unknown transport error")
-            }));
+            return Err(last_transport_error
+                .unwrap_or_else(|| format!("{label} request failed: unknown transport error")));
         }
     };
     let status = response.status();
@@ -715,8 +805,9 @@ pub(crate) async fn smoke_test_bot(
 
     let token = if let Some(ciphertext) = bot.token_ciphertext.as_ref() {
         Some(
-            crate::api::bot_token_crypto::decrypt(key, ciphertext)
-                .map_err(|_| "could not decrypt stored token (wrong key or corruption)".to_string())?,
+            crate::api::bot_token_crypto::decrypt(key, ciphertext).map_err(|_| {
+                "could not decrypt stored token (wrong key or corruption)".to_string()
+            })?,
         )
     } else {
         None
@@ -743,8 +834,22 @@ pub(crate) async fn smoke_test_bot(
     });
     // Probe sequentially to avoid overloading single-threaded bot servers that
     // cannot safely process two smoke requests at once.
-    send_smoke_probe(&direct_client, &bot.endpoint_url, token.as_deref(), round0, "round0").await?;
-    send_smoke_probe(&direct_client, &bot.endpoint_url, token.as_deref(), round1, "round1").await?;
+    send_smoke_probe(
+        &direct_client,
+        &bot.endpoint_url,
+        token.as_deref(),
+        round0,
+        "round0",
+    )
+    .await?;
+    send_smoke_probe(
+        &direct_client,
+        &bot.endpoint_url,
+        token.as_deref(),
+        round1,
+        "round1",
+    )
+    .await?;
     Ok(())
 }
 
@@ -760,8 +865,14 @@ async fn do_transition(
 ) -> AppResult<BotRow> {
     let reviewer = admin.0.user_id();
     let updated = queries::transition_bot_status(
-        state.db(), id, expected_from, new_status, reviewer, rejection_reason,
-    ).await?;
+        state.db(),
+        id,
+        expected_from,
+        new_status,
+        reviewer,
+        rejection_reason,
+    )
+    .await?;
     match updated {
         Some(row) => Ok(row),
         None => match queries::get_bot(state.db(), id).await? {
@@ -781,7 +892,8 @@ pub async fn approve_bot(
     admin: RequireAdmin,
     Path(id): Path<String>,
 ) -> AppResult<Json<BotResponse>> {
-    let bot = queries::get_bot(state.db(), &id).await?
+    let bot = queries::get_bot(state.db(), &id)
+        .await?
         .ok_or_else(|| AppError::NotFound("bot not found".into()))?;
     if !matches!(bot.status.as_str(), "pending" | "smoke_test_failed") {
         return Err(AppError::Conflict(format!(
@@ -792,18 +904,27 @@ pub async fn approve_bot(
     match smoke_test_bot(state.http_client(), &bot, state.bot_token_key()).await {
         Ok(()) => {
             let row = do_transition(
-                &state, &admin, &id,
-                &["pending", "smoke_test_failed"], "active", None,
-            ).await?;
+                &state,
+                &admin,
+                &id,
+                &["pending", "smoke_test_failed"],
+                "active",
+                None,
+            )
+            .await?;
             Ok(Json(bot_to_response(&row, None)))
         }
         Err(reason) => {
             let classified = classify_smoke_test_error(&reason);
             let row = do_transition(
-                &state, &admin, &id,
-                &["pending", "smoke_test_failed"], "smoke_test_failed",
+                &state,
+                &admin,
+                &id,
+                &["pending", "smoke_test_failed"],
+                "smoke_test_failed",
                 Some(&classified),
-            ).await?;
+            )
+            .await?;
             Ok(Json(bot_to_response(&row, None)))
         }
     }
@@ -815,7 +936,8 @@ pub async fn test_bot(
     _admin: RequireAdmin,
     Path(id): Path<String>,
 ) -> AppResult<Json<BotHealthCheckResponse>> {
-    let bot = queries::get_bot(state.db(), &id).await?
+    let bot = queries::get_bot(state.db(), &id)
+        .await?
         .ok_or_else(|| AppError::NotFound("bot not found".into()))?;
     let started = std::time::Instant::now();
     let response = match smoke_test_bot(state.http_client(), &bot, state.bot_token_key()).await {
@@ -844,15 +966,24 @@ pub async fn reject_bot(
 ) -> AppResult<Json<BotResponse>> {
     let reason = req.reason.trim();
     if reason.len() < 10 {
-        return Err(AppError::BadRequest("reason must be at least 10 characters".into()));
+        return Err(AppError::BadRequest(
+            "reason must be at least 10 characters".into(),
+        ));
     }
     if reason.len() > 500 {
-        return Err(AppError::BadRequest("reason must be at most 500 characters".into()));
+        return Err(AppError::BadRequest(
+            "reason must be at most 500 characters".into(),
+        ));
     }
     let row = do_transition(
-        &state, &admin, &id,
-        &["pending", "smoke_test_failed"], "rejected", Some(reason),
-    ).await?;
+        &state,
+        &admin,
+        &id,
+        &["pending", "smoke_test_failed"],
+        "rejected",
+        Some(reason),
+    )
+    .await?;
     Ok(Json(bot_to_response(&row, None)))
 }
 
@@ -881,10 +1012,13 @@ pub async fn my_submissions(
     State(state): State<AppState>,
     auth: AuthIdentity,
 ) -> AppResult<Json<Vec<BotResponse>>> {
-    let user_id = auth.user_id()
+    let user_id = auth
+        .user_id()
         .ok_or_else(|| AppError::BadRequest("not a Clerk user".into()))?;
     let rows = queries::list_bots_by_submitter(state.db(), user_id).await?;
-    Ok(Json(rows.iter().map(|row| bot_to_response(row, None)).collect()))
+    Ok(Json(
+        rows.iter().map(|row| bot_to_response(row, None)).collect(),
+    ))
 }
 
 /// GET /me — return current user info from auth identity.
@@ -907,7 +1041,9 @@ mod classifier_tests {
 
     #[test]
     fn dns_failure() {
-        let out = classify_smoke_test_error("request failed: error trying to connect: dns error: failed to lookup address information");
+        let out = classify_smoke_test_error(
+            "request failed: error trying to connect: dns error: failed to lookup address information",
+        );
         assert!(out.contains("hostname could not be resolved"));
     }
 
@@ -920,7 +1056,8 @@ mod classifier_tests {
 
     #[test]
     fn tls_failure() {
-        let out = classify_smoke_test_error("request failed: error trying to connect: tls handshake eof");
+        let out =
+            classify_smoke_test_error("request failed: error trying to connect: tls handshake eof");
         assert!(out.contains("TLS handshake failed"));
     }
 

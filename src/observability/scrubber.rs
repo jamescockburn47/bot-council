@@ -104,7 +104,8 @@ mod tests {
             "token_ciphertext",
             "password",
         ] {
-            ev.extra.insert(k.to_string(), Value::String("secret".to_string()));
+            ev.extra
+                .insert(k.to_string(), Value::String("secret".to_string()));
         }
         let out = before_send(ev).unwrap();
         for k in [
@@ -114,7 +115,12 @@ mod tests {
             "token_ciphertext",
             "password",
         ] {
-            assert_eq!(out.extra.get(k).unwrap(), "[redacted]", "key {} not redacted", k);
+            assert_eq!(
+                out.extra.get(k).unwrap(),
+                "[redacted]",
+                "key {} not redacted",
+                k
+            );
         }
     }
 

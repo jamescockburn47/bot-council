@@ -1,7 +1,7 @@
-use serde::{Deserialize, Serialize};
 use crate::analyser::call_minimax;
 use crate::config::ModelsConfig;
-use crate::sanitise::{frame_response, ANTI_INJECTION_PREAMBLE};
+use crate::sanitise::{ANTI_INJECTION_PREAMBLE, frame_response};
+use serde::{Deserialize, Serialize};
 
 /// MiniMax pairing result — which bots to pair for cross-examination.
 #[derive(Debug, Serialize, Deserialize)]
@@ -25,7 +25,8 @@ pub async fn compute_pairings(
     config: &ModelsConfig,
     positions: &[(String, String)], // (pseudonym, round2_response)
 ) -> Result<PairingResult, String> {
-    let positions_text: String = positions.iter()
+    let positions_text: String = positions
+        .iter()
         .map(|(pseudo, resp)| frame_response(pseudo, resp))
         .collect::<Vec<_>>()
         .join("\n\n");

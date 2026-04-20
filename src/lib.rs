@@ -1,16 +1,16 @@
+pub mod analyser;
 pub mod api;
+pub mod bot_client;
 pub mod config;
 pub mod db;
 pub mod error;
 pub mod observability;
-pub mod sanitise;
-pub mod state;
-pub mod types;
-pub mod bot_client;
 pub mod orchestrator;
-pub mod analyser;
-pub mod synthesiser;
+pub mod sanitise;
 pub mod scoreboard;
+pub mod state;
+pub mod synthesiser;
+pub mod types;
 
 use axum::Router;
 use tower_http::services::{ServeDir, ServeFile};
@@ -60,11 +60,10 @@ pub async fn build_app() -> anyhow::Result<Router> {
 
     // Static frontend: SvelteKit adapter-static output. Falls back to
     // `index.html` for any path that isn't a real file (SPA client-side routing).
-    let static_dir = std::env::var("FRONTEND_DIST_DIR")
-        .unwrap_or_else(|_| "./frontend/build".to_string());
+    let static_dir =
+        std::env::var("FRONTEND_DIST_DIR").unwrap_or_else(|_| "./frontend/build".to_string());
     let index_path = format!("{static_dir}/index.html");
-    let static_service = ServeDir::new(&static_dir)
-        .not_found_service(ServeFile::new(&index_path));
+    let static_service = ServeDir::new(&static_dir).not_found_service(ServeFile::new(&index_path));
 
     Ok(Router::new()
         .nest("/api", api_nested)

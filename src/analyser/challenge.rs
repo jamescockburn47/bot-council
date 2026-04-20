@@ -1,7 +1,7 @@
-use serde::Deserialize;
 use crate::analyser::call_minimax;
 use crate::config::ModelsConfig;
-use crate::sanitise::{frame_untrusted, ANTI_INJECTION_PREAMBLE};
+use crate::sanitise::{ANTI_INJECTION_PREAMBLE, frame_untrusted};
+use serde::Deserialize;
 
 /// Result of MiniMax challenge validation.
 #[derive(Debug, Deserialize)]

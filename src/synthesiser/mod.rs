@@ -5,12 +5,12 @@ pub mod precompute;
 /// Output schema for the synthesis result.
 pub mod schema;
 
-use serde::{Deserialize, Serialize};
-use sha2::{Sha256, Digest};
-use regex::Regex;
 use crate::config::ModelsConfig;
 use crate::sanitise::ANTI_INJECTION_PREAMBLE;
 use crate::synthesiser::schema::SynthesisOutput;
+use regex::Regex;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::time::Duration;
 
@@ -189,7 +189,10 @@ pub async fn wait_for_final_synthesis_ready(config: &ModelsConfig) -> FinalSynth
                 succeeded: false,
             };
         }
-        tokio::time::sleep(Duration::from_secs(config.final_synthesis_warmup_delay_secs)).await;
+        tokio::time::sleep(Duration::from_secs(
+            config.final_synthesis_warmup_delay_secs,
+        ))
+        .await;
     }
 }
 
@@ -326,7 +329,9 @@ async fn call_model_json(
         (
             config.effective_final_synthesis_base_url(),
             config.final_synthesis_connect_timeout_secs,
-            config.analysis_request_timeout_secs.min(config.final_synthesis_request_timeout_secs),
+            config
+                .analysis_request_timeout_secs
+                .min(config.final_synthesis_request_timeout_secs),
             "final synthesis warmup",
         )
     } else {
@@ -512,26 +517,43 @@ fn salvage_loose_output(
             output.topic = loose_topic.to_string();
         }
     }
-    let meta = loose.get("meta_observations")
+    let meta = loose
+        .get("meta_observations")
         .and_then(|v| v.as_str())
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(str::to_string)
         .or_else(|| {
-            let consensus = loose.get("consensus_points")
+            let consensus = loose
+                .get("consensus_points")
                 .and_then(|v| v.as_array())
-                .map(|arr| arr.iter().filter_map(|x| x.as_str()).collect::<Vec<_>>().join("; "))
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|x| x.as_str())
+                        .collect::<Vec<_>>()
+                        .join("; ")
+                })
                 .unwrap_or_default();
-            let disagreements = loose.get("live_disagreements")
+            let disagreements = loose
+                .get("live_disagreements")
                 .and_then(|v| v.as_array())
-                .map(|arr| arr.iter().filter_map(|x| x.as_str()).collect::<Vec<_>>().join("; "))
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|x| x.as_str())
+                        .collect::<Vec<_>>()
+                        .join("; ")
+                })
                 .unwrap_or_default();
             let combined = [consensus, disagreements]
                 .into_iter()
                 .filter(|s| !s.is_empty())
                 .collect::<Vec<_>>()
                 .join(" | ");
-            if combined.is_empty() { None } else { Some(combined) }
+            if combined.is_empty() {
+                None
+            } else {
+                Some(combined)
+            }
         });
     if let Some(meta) = meta {
         output.meta_observations = meta;
@@ -583,7 +605,11 @@ fn ensure_substantive_meta(
         transcript_text,
         grounding_evidence_json,
     );
-    if !output.meta_observations.trim_start().starts_with("Conclusion:") {
+    if !output
+        .meta_observations
+        .trim_start()
+        .starts_with("Conclusion:")
+    {
         output.meta_observations = format!("Conclusion: {}", output.meta_observations.trim());
     }
 }
@@ -609,7 +635,8 @@ fn compose_structured_meta(
                 .collect::<Vec<_>>()
                 .join("\n");
             if top.is_empty() {
-                "- No robust argument map could be extracted from the available evidence.".to_string()
+                "- No robust argument map could be extracted from the available evidence."
+                    .to_string()
             } else {
                 top
             }
@@ -682,7 +709,11 @@ fn compose_structured_meta(
     );
     sections.push(format!("Overall outcome:\n{outcome}"));
 
-    let behavior = build_behavior_notes(participant_map_text, transcript_text, grounding_evidence_json);
+    let behavior = build_behavior_notes(
+        participant_map_text,
+        transcript_text,
+        grounding_evidence_json,
+    );
     sections.push(format!("Bot behaviour notes:\n{behavior}"));
 
     sections.join("\n\n")
@@ -693,10 +724,21 @@ fn derive_overall_outcome(output: &SynthesisOutput) -> String {
         output.consensus_points.is_empty(),
         output.live_disagreements.is_empty(),
     ) {
-        (false, false) => "Partial convergence: some points aligned, but core disputes remained unresolved.".to_string(),
-        (false, true) => "Broad alignment: no unresolved core disagreement remained in the final synthesis.".to_string(),
-        (true, false) => "No consensus: arguments remained materially contested at close.".to_string(),
-        (true, true) => "Evidence was too limited to establish stable consensus or a clear disagreement map.".to_string(),
+        (false, false) => {
+            "Partial convergence: some points aligned, but core disputes remained unresolved."
+                .to_string()
+        }
+        (false, true) => {
+            "Broad alignment: no unresolved core disagreement remained in the final synthesis."
+                .to_string()
+        }
+        (true, false) => {
+            "No consensus: arguments remained materially contested at close.".to_string()
+        }
+        (true, true) => {
+            "Evidence was too limited to establish stable consensus or a clear disagreement map."
+                .to_string()
+        }
     }
 }
 
@@ -741,9 +783,8 @@ fn derive_position_narrative(
     sections.push(intro);
 
     for agent in agents {
-        let mut agent_entries: Vec<&GroundingEvidenceEntry> = evidence.iter()
-            .filter(|e| e.agent == agent)
-            .collect();
+        let mut agent_entries: Vec<&GroundingEvidenceEntry> =
+            evidence.iter().filter(|e| e.agent == agent).collect();
         agent_entries.sort_by_key(|e| e.round);
         let non_abstained: Vec<&GroundingEvidenceEntry> = agent_entries
             .iter()
@@ -752,19 +793,18 @@ fn derive_position_narrative(
             .collect();
 
         let round_ledger = (0..=max_round)
-            .map(|r| {
-                match agent_entries.iter().find(|e| e.round == r) {
-                    Some(entry) if entry.effective_abstained => format!("R{r}=effective-abstention"),
-                    Some(entry) if entry.abstained => format!("R{r}=abstained"),
-                    Some(entry) if !entry.valid => format!("R{r}=invalid"),
-                    Some(_) => format!("R{r}=responded"),
-                    None => format!("R{r}=no-record"),
-                }
+            .map(|r| match agent_entries.iter().find(|e| e.round == r) {
+                Some(entry) if entry.effective_abstained => format!("R{r}=effective-abstention"),
+                Some(entry) if entry.abstained => format!("R{r}=abstained"),
+                Some(entry) if !entry.valid => format!("R{r}=invalid"),
+                Some(_) => format!("R{r}=responded"),
+                None => format!("R{r}=no-record"),
             })
             .collect::<Vec<_>>()
             .join(", ");
 
-        let label = alias_map.get(&agent)
+        let label = alias_map
+            .get(&agent)
             .map(|name| format!("{agent} ({name})"))
             .unwrap_or_else(|| agent.clone());
         let Some(opening) = non_abstained.first().copied() else {
@@ -788,14 +828,17 @@ fn derive_position_narrative(
         sections.push(section);
     }
 
-    let mut final_round_entries: Vec<&GroundingEvidenceEntry> = evidence.iter()
+    let mut final_round_entries: Vec<&GroundingEvidenceEntry> = evidence
+        .iter()
         .filter(|e| e.round == max_round && !e.abstained && !e.effective_abstained)
         .collect();
     final_round_entries.sort_by(|a, b| a.agent.cmp(&b.agent));
     if !final_round_entries.is_empty() {
-        let final_map = final_round_entries.iter()
+        let final_map = final_round_entries
+            .iter()
             .map(|e| {
-                let label = alias_map.get(&e.agent)
+                let label = alias_map
+                    .get(&e.agent)
                     .map(|name| format!("{} ({})", e.agent, name))
                     .unwrap_or_else(|| e.agent.clone());
                 format!(
@@ -914,11 +957,15 @@ fn parse_grounding_evidence(grounding_evidence_json: &str) -> Vec<GroundingEvide
 
 /// Parse transcript lines in format `[Agent X, Round N]: response`.
 fn parse_transcript_entries(transcript_text: &str) -> Vec<TranscriptEntry> {
-    let re = Regex::new(r"(?m)^\[(?P<agent>[^\],]+), Round (?P<round>\d+)\]: ").expect("valid regex");
+    let re =
+        Regex::new(r"(?m)^\[(?P<agent>[^\],]+), Round (?P<round>\d+)\]: ").expect("valid regex");
     let mut marks = Vec::new();
     for caps in re.captures_iter(transcript_text) {
         let Some(m) = caps.get(0) else { continue };
-        let agent = caps.name("agent").map(|m| m.as_str().trim().to_string()).unwrap_or_default();
+        let agent = caps
+            .name("agent")
+            .map(|m| m.as_str().trim().to_string())
+            .unwrap_or_default();
         let round = caps
             .name("round")
             .and_then(|m| m.as_str().parse::<i64>().ok())
@@ -929,7 +976,10 @@ fn parse_transcript_entries(transcript_text: &str) -> Vec<TranscriptEntry> {
     let mut out = Vec::new();
     for (idx, mark) in marks.iter().enumerate() {
         let start = mark.1;
-        let end = marks.get(idx + 1).map(|next| next.0).unwrap_or(transcript_text.len());
+        let end = marks
+            .get(idx + 1)
+            .map(|next| next.0)
+            .unwrap_or(transcript_text.len());
         let text = transcript_text[start..end].trim().to_string();
         out.push(TranscriptEntry {
             agent: mark.2.clone(),
@@ -958,10 +1008,14 @@ fn parse_participant_map(text: &str) -> HashMap<String, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{build_synthesis_prompt, compose_structured_meta, extract_json_object, run_synthesis};
-    use crate::synthesiser::schema::{DisagreementSide, LiveDisagreement, MinorityPosition, SynthesisOutput};
-    use std::collections::HashMap;
+    use super::{
+        build_synthesis_prompt, compose_structured_meta, extract_json_object, run_synthesis,
+    };
     use crate::config::ModelsConfig;
+    use crate::synthesiser::schema::{
+        DisagreementSide, LiveDisagreement, MinorityPosition, SynthesisOutput,
+    };
+    use std::collections::HashMap;
     use wiremock::matchers::{body_string_contains, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -1031,7 +1085,8 @@ mod tests {
             "[]",
             "[]",
             0.0,
-        ).await;
+        )
+        .await;
         assert!(result.is_ok(), "expected synthesis success, got {result:?}");
     }
 
@@ -1040,7 +1095,9 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/v1/chat/completions"))
-            .and(body_string_contains("\"model\":\"Qwen3.5-122B-A10B-UD-Q5_K_XL\""))
+            .and(body_string_contains(
+                "\"model\":\"Qwen3.5-122B-A10B-UD-Q5_K_XL\"",
+            ))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "choices": [
                     { "message": { "content": "{\"ready\":true}" } }
@@ -1143,11 +1200,24 @@ mod tests {
         ])
         .to_string();
 
-        let narrative = super::derive_position_narrative("Agent A = Jamie-LQClaw", transcript, &evidence);
-        assert!(narrative.contains("R1=responded"), "expected round ledger in narrative: {narrative}");
-        assert!(!narrative.contains("R1=abstained"), "unexpected abstention claim: {narrative}");
-        assert!(narrative.contains("[Agent A, Round 0]"), "expected opening citation: {narrative}");
-        assert!(narrative.contains("[Agent A, Round 2]"), "expected latest citation: {narrative}");
+        let narrative =
+            super::derive_position_narrative("Agent A = Jamie-LQClaw", transcript, &evidence);
+        assert!(
+            narrative.contains("R1=responded"),
+            "expected round ledger in narrative: {narrative}"
+        );
+        assert!(
+            !narrative.contains("R1=abstained"),
+            "unexpected abstention claim: {narrative}"
+        );
+        assert!(
+            narrative.contains("[Agent A, Round 0]"),
+            "expected opening citation: {narrative}"
+        );
+        assert!(
+            narrative.contains("[Agent A, Round 2]"),
+            "expected latest citation: {narrative}"
+        );
     }
 
     #[test]
@@ -1170,7 +1240,10 @@ mod tests {
         ])
         .to_string();
         let narrative = super::derive_position_narrative("", "", &evidence);
-        assert!(narrative.contains("R1=abstained"), "expected abstention to be grounded in evidence: {narrative}");
+        assert!(
+            narrative.contains("R1=abstained"),
+            "expected abstention to be grounded in evidence: {narrative}"
+        );
     }
 
     #[test]
@@ -1207,14 +1280,8 @@ mod tests {
 
     #[test]
     fn synthesis_prompt_contains_strict_output_contract() {
-        let prompt = build_synthesis_prompt(
-            "topic",
-            "Agent A = Alice",
-            "transcript",
-            "{}",
-            "[]",
-            "[]",
-        );
+        let prompt =
+            build_synthesis_prompt("topic", "Agent A = Alice", "transcript", "{}", "[]", "[]");
         assert!(prompt.contains("STRICT OUTPUT CONTRACT"));
         assert!(prompt.contains("Return exactly one valid JSON object"));
         assert!(prompt.contains("meta_observations must start with \"Conclusion:\""));
@@ -1232,19 +1299,24 @@ mod tests {
                 side_a: DisagreementSide {
                     position: "Certificates materially improve trust".into(),
                     bots: vec!["Agent A".into()],
-                    best_argument: "Trust improves when attestations are verifiable [Agent A, Round 2]".into(),
+                    best_argument:
+                        "Trust improves when attestations are verifiable [Agent A, Round 2]".into(),
                 },
                 side_b: DisagreementSide {
                     position: "Certificates do not address root accountability gaps".into(),
                     bots: vec!["Agent B".into()],
-                    best_argument: "Operational controls matter more than identity badges [Agent B, Round 2]".into(),
+                    best_argument:
+                        "Operational controls matter more than identity badges [Agent B, Round 2]"
+                            .into(),
                 },
             }],
             flagged_capitulations: vec![],
             minority_positions: vec![MinorityPosition {
                 bot: "Agent C".into(),
                 position: "Keep identity optional and audit controls mandatory".into(),
-                key_argument: "Mandatory identity can be theatre without enforcement [Agent C, Round 2]".into(),
+                key_argument:
+                    "Mandatory identity can be theatre without enforcement [Agent C, Round 2]"
+                        .into(),
                 confidence: Some(62),
             }],
             confidence_trajectories: trajectories,
@@ -1257,7 +1329,8 @@ mod tests {
         ])
         .to_string();
 
-        let meta = compose_structured_meta(&synthesis, "Agent A = Alice\nAgent B = Bob", "", &evidence);
+        let meta =
+            compose_structured_meta(&synthesis, "Agent A = Alice\nAgent B = Bob", "", &evidence);
         assert!(meta.starts_with("Conclusion:"));
         assert!(meta.contains("Summary of arguments:"));
         assert!(meta.contains("Key disagreements:"));

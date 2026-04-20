@@ -28,6 +28,8 @@
     ready: 'Ready',
   };
 
+  const PUBLIC_PATHS = new Set(['/', '/sign-in']);
+
   $effect(() => {
     if (didRunAuthBootstrap) return;
     didRunAuthBootstrap = true;
@@ -35,8 +37,8 @@
     void (async () => {
       const path = $page.url.pathname;
       console.info('[layout] onMount start, path=', path);
-      if (path === '/sign-in') {
-        console.info('[layout] stage=ready');
+      if (PUBLIC_PATHS.has(path)) {
+        console.info('[layout] stage=ready (public route)');
         stage = 'ready';
         return;
       }
@@ -71,7 +73,7 @@
   });
 </script>
 
-{#if $page.url.pathname === '/sign-in'}
+{#if PUBLIC_PATHS.has($page.url.pathname)}
   {@render children()}
 {:else if fatalError}
   <div class="flex items-center justify-center min-h-screen flex-col gap-3 p-8">

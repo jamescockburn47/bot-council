@@ -6,89 +6,63 @@ update the other in the same branch.
 
 ## 0. Regression prevention contract
 
-Primary regression cause: frontend and backend validated/deployed from different
-branches/worktrees.
+Primary historical regression cause: frontend and backend validated/deployed from different branches/worktrees, and source-on-EVO silently drifting from git. Those two failure modes are now structurally prevented by three mechanisms:
 
-Required release contract:
+1. **Single-origin architecture** — Axum on EVO serves both the static SvelteKit bundle (`/*`) and the JSON API (`/api/*`). One binary, one deploy, one SHA. The frontend doesn't exist as a separate deploy target; you can't deploy them out of sync because there's only one deploy target.
+2. **`scripts/ship.sh`** — single command that refuses to ship from a dirty tree or non-main branch, runs the frontend build, syncs to EVO, rebuilds, restarts, and health-polls. Non-zero exit at the failing stage. Writes `.last-known-good-sha` on EVO on success so `scripts/rollback.sh` has a target.
+3. **GitHub Actions CI** — `cargo fmt/clippy/test` + `svelte-check + vite build` gate every PR. Enable branch protection (Settings → Branches → `main`) to make the checks blocking for merges.
 
-1. Test backend on EVO with the exact branch contents.
-2. Build frontend from that same commit.
-3. Run `scripts/check-auth-provider.sh`.
-4. Restart backend and verify `https://api.lqcouncil.com/health` returns 200.
-5. Deploy frontend with fresh cache: `vercel --cwd frontend deploy --prod --force --yes`.
-6. Smoke test auth flow (`/`, `/sign-in`, signed-in redirect, `/admins`).
-
-If any step fails, do not ship.
+Required release contract: `ship.sh` is green end-to-end (all 7 stages) and `curl https://lqcouncil.com/api/health` returns JSON `{"status":"ok"}`. No other manual checks required.
 
 ## 1. Deployment topology
 
-This section was verified by live probe on 2026-04-18. The older documentation
-in CLAUDE.md claimed the backend was fronted directly by Cloudflare Tunnel;
-**that is not correct**. Actual production path:
+Current as of 2026-04-20 (Vercel fully retired; Cloudflare Tunnel in front).
 
 ```
  Browser
    │
-   │  https://lqcouncil.com/...  (static SvelteKit SPA)
+   │  https://lqcouncil.com/...
    ▼
- Vercel project: bot-council
-   (SvelteKit bundle on CDN, Clerk SDK in browser)
-
- Browser (after Clerk login, XHR / SSE with Clerk JWT)
-   │
-   │  https://api.lqcouncil.com/...
-   ▼
- Vercel project: lqcouncil-api-proxy
-   (vercel.json rewrite: /(.*) → https://james-nucbox-evo-x2.taila41c86.ts.net/$1)
+ Cloudflare edge (NS: gloria + mitch.ns.cloudflare.com)
+   (CDN, TLS cert for lqcouncil.com, apex CNAME flattened to CF anycast,
+    orange-cloud proxied; optional WAF / Bot Fight Mode / Always Online)
    │
    ▼
- Tailscale Funnel on EVO
-   https://james-nucbox-evo-x2.taila41c86.ts.net → http://127.0.0.1:3100
+ Cloudflare Tunnel (tunnel: "sovren-evo",
+                    UUID eef5ba90-6c24-4685-9c4d-e4d90e9f0db6,
+                    4× QUIC connections to London edges lhr01/14/18/20)
    │
    ▼
- EVO X2 (Ubuntu 24.04, Tailscale 100.90.66.54)
-   bot-council binary under systemd (bot-council.service, active+enabled)
+ cloudflared on EVO (systemd: sovren-cloudflared.service, active+enabled)
+   (ingress rules in ~/.cloudflared/config.yml; single route:
+    lqcouncil.com → http://localhost:3100)
+   │
+   ▼
+ bot-council on EVO (systemd: bot-council.service, active+enabled)
    axum on 0.0.0.0:3100
-   SQLite ~/bot-council/data/council.db (WAL)
-   /etc/bot-council.env (root:root 0600, sourced by systemd unit)
+   ├─ /api/*            API handlers (see §3.2)
+   ├─ /api/config.json  public runtime config (Clerk pk_*, sentry env, release SHA)
+   └─ /*                tower-http ServeDir(~/bot-council/frontend/build/)
+                        with index.html SPA fallback
+   SQLite: ~/bot-council/data/council.db (WAL)
+   env:    /etc/bot-council.env (root:root 0600, sourced by systemd unit)
+   llama-server: http://localhost:8086 (gemma-4-31B-it-Q4_K_M.gguf)
 ```
 
-**Ingress history (for future-me).** Before 2026-04-18, the Vercel proxy
-rewrote to `https://council.sovren.xyz`, which was served by a cloudflared
-tunnel named `sovren-evo` (managed by `sovren-cloudflared.service`). That
-tunnel belonged to the Sovren project but had a `:3100` ingress entry, so
-LQ Council's production path depended on it despite the misleading name.
-On 2026-04-18 the Vercel proxy was re-pointed at the Tailscale Funnel via
-`vercel.json` + `vercel alias set`, and `sovren-cloudflared.service` was
-then disabled. `council.sovren.xyz` now returns 530 and is unused by LQ
-Council. If the cloudflared tunnel is ever re-enabled for another project,
-**do not re-add a `:3100` ingress** — LQ Council has a clean dedicated
-path now.
+Response headers confirm the path: `Server: cloudflare`, `cf-cache-status: DYNAMIC`, `CF-RAY: <id>-LHR`, HTTP/2.
 
-**Probed 2026-04-18:**
-- `GET https://api.lqcouncil.com/health` → 200 `{"status":"ok"}` (via Vercel
-  proxy; `Server: Vercel`, `X-Vercel-Id: lhr1::…`, CORS headers from backend).
-- `GET https://api.lqcouncil.com/me` → 401 (expected; no token).
-- `GET https://lqcouncil.com/` → 200.
-- `GET https://james-nucbox-evo-x2.taila41c86.ts.net/health` → 200 (Tailscale
-  Funnel — now the production ingress).
-- `GET http://localhost:3100/health` on EVO → 200.
-- `GET https://council.sovren.xyz/health` → 530 (Sovren tunnel disabled
-  2026-04-18 after the proxy cutover; route decommissioned).
+**Ingress history (for future-me).**
+- Through 2026-04-17: cloudflared tunnel (sovren-evo) with a `:3100` ingress on `council.sovren.xyz`. Reachable via `api.lqcouncil.com` via a Vercel proxy rewrite to that Sovren hostname.
+- 2026-04-18: Vercel proxy re-pointed to Tailscale Funnel (`james-nucbox-evo-x2.taila41c86.ts.net`); cloudflared tunnel disabled.
+- 2026-04-20: Full Cloudflare cutover. Vercel bot-council frontend project and lqcouncil-api-proxy project both removed. `lqcouncil.com` now served directly by the same `sovren-evo` tunnel (which was re-enabled and reconfigured for the apex of `lqcouncil.com`). Tailscale Funnel no longer in the public path; kept as a Tailscale-internal SSH/dev convenience.
 
-**Runtime state warnings (caught during probe):**
-- `systemctl is-active bot-council` = **inactive** on 2026-04-18. The running
-  process is a manual `./target/release/bot-council` (pid 2382046) started
-  ~4 h before the probe. Not auto-restart-safe. See §3.9 for remediation.
-- `/etc/bot-council.env` has auth fields but **no `APP__MODELS__MINIMAX_API_KEY`
-  or `APP__MODELS__OPUS_API_KEY`.** A debate created today would fail at the
-  first LLM call. See §3.8 and INTEGRATIONS.md.
-- Earlier journal entries show JWKS fetch failures against
-  `https://clerk.lqcouncil.com/.well-known/jwks.json`. Verify that the Clerk
-  Frontend API domain resolves before claiming auth is healthy.
-- Tailscale health output on EVO: "Tailscale can't reach the configured DNS
-  servers." Non-fatal but should be fixed — LAN DNS resolution via Tailscale
-  will degrade.
+**Probed 2026-04-20 18:15 BST (final Cloudflare cutover verification):**
+- `GET https://lqcouncil.com/` → 200 `text/html` (SvelteKit SPA shell served by Axum ServeDir)
+- `GET https://lqcouncil.com/api/health` → 200 `{"status":"ok"}`, Server: cloudflare
+- `GET https://lqcouncil.com/api/config.json` → 200 with pk_live_* Clerk key, `api_base=/api`, current release SHA
+- `GET http://127.0.0.1:3100/api/health` on EVO → 200
+- `systemctl is-active bot-council` → active
+- `systemctl is-active sovren-cloudflared` → active
 
 ## 2. Repository layout
 
@@ -278,39 +252,21 @@ has a default in `config/default.toml`. Prod must set:
 
 ### 3.9 Deploy / ops
 
-- **systemd unit `bot-council.service`** exists on EVO under
-  `/etc/systemd/system/bot-council.service`. Contents verified 2026-04-18:
-  `Type=simple`, `User=james`, `WorkingDirectory=/home/james/bot-council`,
-  `EnvironmentFile=/etc/bot-council.env`,
-  `ExecStart=/home/james/bot-council/target/release/bot-council`,
-  `Restart=on-failure`, `RestartSec=3`. Unit file is NOT in the repo. Move
-  it to `deploy/bot-council.service` + checksum in INTEGRATIONS.md so
-  drift is catchable.
-- **Current runtime state is drift-prone.** At probe time, `systemctl is-active
-  bot-council` returned `inactive` while a manual `./target/release/bot-council`
-  was running as pid 2382046. Remediation: either always restart via
-  `sudo systemctl restart bot-council` (CLAUDE.md's documented path) or
-  kill the manual process and start the service. Do not leave both around
-  — whichever was most recent wins :3100 and the other silently exits.
-- **Env file:** `/etc/bot-council.env`, mode 0600, root:root. Read as root by
-  systemd before dropping to `james`. Fields present at probe:
-  `APP__AUTH__ADMIN_TOKEN`, `APP__AUTH__BOT_TOKEN_KEY`,
-  `APP__AUTH__CLERK_ISSUER`, `APP__AUTH__CLERK_JWKS_URL`, `RUST_LOG`.
-  Fields MISSING: `APP__MODELS__MINIMAX_API_KEY`, `APP__MODELS__OPUS_API_KEY`,
-  `APP__SERVER__CORS_ORIGINS`. Any debate will fail until the model keys are
-  added.
-- **Deploy:** `./scripts/sync-evo.sh [build|check]` scp's `src/ tests/ config/
-  migrations/ Cargo.*` to `~/bot-council/`, runs cargo on EVO, and
-  (documented) `systemctl restart bot-council`.
-- **Ingress (LQ Council):** Tailscale Funnel, not cloudflared. The Tailscale
-  Funnel URL `https://james-nucbox-evo-x2.taila41c86.ts.net` maps `/` to
-  `http://127.0.0.1:3100` (`tailscale funnel status`). A Vercel project
-  `lqcouncil-api-proxy` rewrites `api.lqcouncil.com/*` onto that URL.
-  Neither config is in the repo today.
-- **Cloudflare tunnel `sovren-evo`** runs on the same EVO (`cloudflared run
-  sovren-evo`, config at `~/.cloudflared/config.yml`). It belongs to the
-  Sovren project; `council.sovren.xyz → :3100` is a route in that tunnel.
-  Treat as external to LQ Council.
+- **systemd unit `bot-council.service`** — IN REPO at [`deploy/bot-council.service`](deploy/bot-council.service). Hardened 2026-04-20:
+  - `[Unit] StartLimitIntervalSec=300, StartLimitBurst=5` — bounds restart loops; 5 failed starts in 300s puts the unit in a terminal failed state (must be in `[Unit]` not `[Service]` per systemd docs).
+  - `[Service] ExecStartPre=/usr/bin/test -s /etc/bot-council.env` — refuses to start on empty env file.
+  - `[Service] TimeoutStartSec=120` — caps startup hangs; leaves 30s headroom over the JWKS backoff worst-case.
+  - `Restart=on-failure`, `RestartSec=3`, `User=james`, `Group=james`, `WorkingDirectory=/home/james/bot-council`, `EnvironmentFile=/etc/bot-council.env`, `ExecStart=/home/james/bot-council/target/release/bot-council`.
+- **Installing unit changes** (not covered by `ship.sh`):
+  ```
+  scp deploy/bot-council.service james@...:/tmp/
+  ssh james@... "sudo cp /tmp/bot-council.service /etc/systemd/system/ && sudo systemctl daemon-reload && systemd-analyze verify /etc/systemd/system/bot-council.service && sudo systemctl restart bot-council"
+  ```
+  Ignore any `systemd-analyze` warnings about unrelated units — it scans all units on the box.
+- **Env file:** `/etc/bot-council.env`, mode 0600, root:root. Read as root by systemd before dropping to `james`. Current keys: `APP__AUTH__ADMIN_TOKEN`, `APP__AUTH__BOT_TOKEN_KEY`, `APP__AUTH__CLERK_ISSUER`, `APP__AUTH__CLERK_JWKS_URL`, `APP__AUTH__CLERK_PUBLISHABLE_KEY`, `APP__MODELS__MINIMAX_BASE_URL` (= local `:8086`), `APP__MODELS__MINIMAX_MODEL` (= gemma-4-31B), `APP__SENTRY__DSN`, `APP__SENTRY__ENVIRONMENT`, `SENTRY_RELEASE` (git SHA, auto-written by `ship.sh`). Legacy `APP__MODELS__MINIMAX_API_KEY` + `APP__MODELS__OPUS_API_KEY` are present but empty (zeroed 2026-04-20).
+- **Deploy:** `./scripts/ship.sh` from the laptop — see §0 and `CLAUDE.md`. Rollback via `./scripts/rollback.sh` (binary-swap). For iteration on EVO without a full deploy, `./scripts/sync-evo.sh {test,check,build,run}` still works.
+- **Ingress:** Cloudflare Tunnel (`sovren-evo`, systemd: `sovren-cloudflared.service`). Ingress rule in `~/.cloudflared/config.yml`: `lqcouncil.com → http://localhost:3100`. Tunnel creds at `~/.cloudflared/eef5ba90-6c24-4685-9c4d-e4d90e9f0db6.json`. Reference copies of both in [`deploy/cloudflared/`](deploy/cloudflared/). See §1 for full chain.
+- **Local LLM:** `llama-server` from llama.cpp on EVO `:8086` serving `gemma-4-31B-it-Q4_K_M.gguf`. Managed outside this repo. All bot-council LLM calls (analyser, synthesiser) route here via the OpenAI-compatible `/v1/chat/completions` interface.
 
 ## 4. Frontend
 
@@ -325,24 +281,14 @@ has a default in `config/default.toml`. Prod must set:
 - `.npmrc` sets `legacy-peer-deps=true` to unblock Vercel installs.
 - Node version NOT pinned (no `.nvmrc`); Vercel uses its default.
 
-### 4.2 Vercel deploy
+### 4.2 Frontend serving (Vercel retired 2026-04-20)
 
-- `vercel.json` ([`frontend/vercel.json:2-5`](frontend/vercel.json:2)) has a
-  single rule: rewrite `/(.*)` → `/index.html` for SPA routing.
-- No redirects / headers / function config in-repo.
-- Build settings live **only** in the Vercel dashboard:
-  - Project is rooted at `frontend/`.
-  - Production branch: `main`. Preview deploys on PRs.
-  - Custom domain: `lqcouncil.com`.
-  - Env vars set in Vercel (production scope):
-    `PUBLIC_API_URL=https://api.lqcouncil.com`,
-    `PUBLIC_CLERK_PUBLISHABLE_KEY=pk_live_…`.
-  - Preview URLs follow Vercel's default pattern
-    (`bot-council-git-<branch>-<team>.vercel.app`). Backend CORS must allow
-    these or be permissive during testing.
-- `.env.example` at `frontend/.env.example` is **stale** (points to the old
-  Tailscale hostname). Not load-bearing because Vercel overrides it, but it
-  misleads new contributors. Fix separately.
+- **Build output is part of the deploy**: `ship.sh` runs `npm run build` locally, scp's `frontend/build/` to `~/bot-council/frontend/build/` on EVO alongside the Rust source, and Axum's `tower-http::ServeDir` serves it from `/*`.
+- **SPA fallback** via `ServeDir::new(...).not_found_service(ServeFile::new(<dir>/index.html))` in [src/lib.rs](src/lib.rs) — any path that doesn't match a real file returns `index.html`, letting SvelteKit's client-side router take over.
+- **Build gate** in [frontend/package.json](frontend/package.json): `npm run build` chains `svelte-kit sync` + `svelte-check` + `vite build` — type errors block the build.
+- **Dev flow**: `npm run dev` inside `frontend/` proxies `/api/*` to `http://127.0.0.1:3100` via [frontend/vite.config.ts](frontend/vite.config.ts); override with `VITE_BACKEND_URL`.
+- **No more `PUBLIC_API_URL` / `PUBLIC_CLERK_PUBLISHABLE_KEY` at build time.** Runtime config is fetched by the frontend from `GET /api/config.json` on first load (served by [src/api/config_json.rs](src/api/config_json.rs) from the backend's own config). Replaces Vercel build-time env injection.
+- **`.env.example`** in [frontend/.env.example](frontend/.env.example) documents that no env vars are needed for prod; optional `VITE_BACKEND_URL` for dev only.
 
 ### 4.3 API client & SSE
 
@@ -397,30 +343,20 @@ All under `frontend/src/routes/`.
 
 Walk-through of a typical signed-in user loading `/debates/abc`:
 
-1. Browser hits `https://lqcouncil.com/debates/abc` → Vercel CDN serves the
-   prerendered shell with the SvelteKit bundle.
-2. `+layout.svelte` boots Clerk. Stage `loading-clerk` is visible in the UI.
-3. On Clerk ready, `+layout.svelte` calls `isSignedIn()`. If not signed in,
-   redirects to `/sign-in`.
-4. `refreshMe()` calls `GET https://api.lqcouncil.com/me` with the Clerk JWT.
-   Backend runs `authenticate()` → JWKS verify → admin check. Returns
-   `{ user_id, role: "admin" | "participant" }`.
-5. The page `+page.svelte` opens `new EventSource(debateStreamUrl(id, jwt))`.
-   The URL carries `?token=<jwt>` (EventSource can't send Authorization).
-6. Backend's `/debates/{id}/stream` handler runs the same `authenticate()`,
-   subscribes to the broadcast channel, streams SSE events as the tokio
-   debate task emits them.
-7. Cloudflare Tunnel keeps the TCP connection open; 30 s keepalive comments
-   prevent idle timeout.
-8. On `debate:completed` or `debate:failed`, the subscriber closes; the
-   broadcast sender is dropped from `AppState` after a 60 s grace period.
+1. Browser hits `https://lqcouncil.com/debates/abc` → Cloudflare edge → Cloudflare Tunnel → Axum on EVO. Axum's `ServeDir` resolves to `index.html` (SPA fallback — no file at `/debates/abc` on disk).
+2. Browser loads the SvelteKit bundle; before Clerk init, fetches `GET /api/config.json` to discover the `publishable_key`.
+3. `+layout.svelte` boots Clerk with that key. Stage `loading-clerk` is visible in the UI.
+4. On Clerk ready, `+layout.svelte` calls `isSignedIn()`. If not signed in, redirects to `/sign-in`.
+5. `refreshMe()` calls `GET /api/me` (relative URL) with the Clerk JWT. Backend runs `authenticate()` → JWKS verify → admin check. Returns `{ user_id, role: "admin" | "participant" }`.
+6. The page `+page.svelte` opens `new EventSource(debateStreamUrl(id, jwt))`, which resolves to `/api/debates/{id}/stream?token=<jwt>` (EventSource can't send Authorization headers).
+7. Backend's handler runs the same `authenticate()`, subscribes to the debate's broadcast channel, streams SSE events as the tokio debate task emits them.
+8. Cloudflare Tunnel keeps the QUIC connection open; 30s keepalive comments prevent idle timeout.
+9. On `debate:completed` or `debate:failed`, the subscriber closes; the broadcast sender is dropped from `AppState` after a 60s grace period.
 
 ## 6. Known gaps
 
-- `deploy/bot-council.service` and the `cloudflared` config are NOT in the
-  repo. Moving them under `deploy/` would make full-stack deploys
-  reproducible from source.
-- `frontend/.env.example` is stale; contributors cloning the repo will
+- `frontend/.env.example` still mentions old Vercel wording; minor.
+- One orphan Cloudflare DNS record: `lqcouncil.com.sovren.xyz` CNAME in the `sovren.xyz` zone (left over from a `cloudflared tunnel route dns` command that ran with `sovren.xyz`-scoped auth). Harmless; delete when convenient.
   paste the wrong `PUBLIC_API_URL` unless corrected.
 - No `.nvmrc` / `engines` field — Vercel and dev boxes can drift on Node
   version.

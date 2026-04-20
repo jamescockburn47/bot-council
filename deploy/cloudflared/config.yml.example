@@ -20,4 +20,6 @@ credentials-file: /home/james/.cloudflared/eef5ba90-6c24-4685-9c4d-e4d90e9f0db6.
 ingress:
   - hostname: lqcouncil.com
     service: http://localhost:3100
+  - hostname: www.lqcouncil.com
+    service: http://localhost:3100
   - service: http_status:404

@@ -81,21 +81,45 @@ pub async fn run_synthesis(
 
     // Canonicalise through the typed schema so malformed output is rejected
     // early and downstream consumers always get predictable JSON.
-    let parsed: SynthesisOutput = match serde_json::from_str(&content) {
-        Ok(parsed) => parsed,
-        Err(e) => {
-            tracing::warn!(error = %e, "local synthesis returned non-schema JSON; salvaging");
-            match serde_json::from_str::<serde_json::Value>(&content) {
-                Ok(value) => salvage_loose_output(
-                    topic,
-                    participant_map_text,
-                    transcript_text,
-                    precomputed_json,
-                    grounding_evidence_json,
-                    &value,
-                ),
-                Err(_) => conservative_fallback(topic, precomputed_json),
+    //
+    // Parse as a loose Value first and reinject the known `topic` if the
+    // model omitted or nulled it — we gave the topic as prompt input, it
+    // would be daft to drop a whole synthesis because the model forgot to
+    // echo a field we already have in hand. MiniMax-M2.7 is particularly
+    // prone to omitting `topic` on shorter/thinner transcripts, which
+    // reliably triggered `missing field topic at line 1 column N` on the
+    // first bulk resynth run.
+    let parsed: SynthesisOutput = match serde_json::from_str::<serde_json::Value>(&content) {
+        Ok(mut value) => {
+            if let Some(obj) = value.as_object_mut() {
+                let topic_missing = match obj.get("topic") {
+                    None => true,
+                    Some(serde_json::Value::Null) => true,
+                    Some(serde_json::Value::String(s)) if s.trim().is_empty() => true,
+                    _ => false,
+                };
+                if topic_missing {
+                    obj.insert("topic".into(), serde_json::Value::String(topic.to_string()));
+                }
             }
+            match serde_json::from_value::<SynthesisOutput>(value.clone()) {
+                Ok(parsed) => parsed,
+                Err(e) => {
+                    tracing::warn!(error = %e, "local synthesis returned non-schema JSON after topic-reinject; salvaging");
+                    salvage_loose_output(
+                        topic,
+                        participant_map_text,
+                        transcript_text,
+                        precomputed_json,
+                        grounding_evidence_json,
+                        &value,
+                    )
+                }
+            }
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "local synthesis returned unparseable JSON; using fallback");
+            conservative_fallback(topic, precomputed_json)
         }
     };
     let mut parsed = parsed;

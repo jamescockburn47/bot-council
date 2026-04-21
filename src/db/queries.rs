@@ -8,9 +8,9 @@ const BOT_COLUMNS: &str = "id, name, endpoint_url, token_ciphertext, \
     model_family, created_at, status, submitted_by, description, \
     rejection_reason, reviewed_at, reviewed_by";
 
-/// Marker phrases used to exclude operator/test debates from public listings
-/// and bot performance scoring.
-const NON_PRODUCTION_TOPIC_MARKERS: &[&str] = &[
+/// Marker phrases used to exclude operator/test debates from public listings,
+/// bot performance scoring, and to drive the scheduled test-debate cleanup.
+pub(crate) const NON_PRODUCTION_TOPIC_MARKERS: &[&str] = &[
     "quickfire readiness check",
     "candidate test",
     "smoke test",

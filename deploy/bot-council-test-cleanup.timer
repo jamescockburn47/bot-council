@@ -1,0 +1,13 @@
+[Unit]
+Description=LQ Bot Council test-debate cleanup (daily)
+Documentation=https://github.com/jamescockburn47/bot-council
+
+[Timer]
+# Once per day, with a random stagger so multiple maintenance units don't
+# all fire on the :00 wall-clock tick.
+OnCalendar=daily
+RandomizedDelaySec=300
+Persistent=true
+
+[Install]
+WantedBy=timers.target

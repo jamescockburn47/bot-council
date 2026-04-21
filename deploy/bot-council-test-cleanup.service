@@ -1,0 +1,21 @@
+[Unit]
+Description=LQ Bot Council — delete stale test/operator debates
+Documentation=https://github.com/jamescockburn47/bot-council
+# Don't race the main service on first boot; ordering (not requires) is
+# enough — if the main service is down the cleanup just idles.
+After=bot-council.service
+
+[Service]
+Type=oneshot
+User=james
+Group=james
+WorkingDirectory=/home/james/bot-council
+EnvironmentFile=/etc/bot-council.env
+ExecStart=/home/james/bot-council/target/release/bot-council test-cleanup
+Nice=10
+# The binary opens its own db pool, runs one pass, and exits. If it takes
+# more than a minute something is very wrong; fail loud and let the timer
+# try again tomorrow.
+TimeoutStartSec=120
+StandardOutput=journal
+StandardError=journal

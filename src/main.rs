@@ -27,6 +27,7 @@ fn main() -> anyhow::Result<()> {
         .build()?;
     match command.as_deref() {
         Some("scoreboard-weekly") => runtime.block_on(async_scoreboard_weekly(settings)),
+        Some("test-cleanup") => runtime.block_on(async_test_cleanup(settings)),
         _ => runtime.block_on(async_main()),
     }
 }
@@ -42,5 +43,11 @@ async fn async_main() -> anyhow::Result<()> {
 async fn async_scoreboard_weekly(settings: Settings) -> anyhow::Result<()> {
     let count = bot_council::scoreboard::run_weekly_snapshot(&settings).await?;
     tracing::info!(snapshot_count = count, "weekly scoreboard job finished");
+    Ok(())
+}
+
+async fn async_test_cleanup(settings: Settings) -> anyhow::Result<()> {
+    let deleted = bot_council::cleanup::run_test_cleanup(&settings).await?;
+    tracing::info!(deleted, "test-cleanup job finished");
     Ok(())
 }

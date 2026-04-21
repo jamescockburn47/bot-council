@@ -2,6 +2,7 @@ pub mod analyser;
 pub mod api;
 pub mod bot_client;
 pub mod cleanup;
+pub mod resynth;
 pub mod config;
 pub mod db;
 pub mod error;

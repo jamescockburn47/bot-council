@@ -90,7 +90,16 @@ pub async fn call_minimax(config: &ModelsConfig, system_prompt: &str) -> Result<
             tokio::time::sleep(delay).await;
         }
 
-        let resp = match client.post(&url).json(&request).send().await {
+        // Same bearer-token fix as the synthesiser: local llama-server
+        // ignores Authorization, hosted OpenAI-compatible endpoints
+        // (MiniMax, Together, etc.) require it. Add the key whenever
+        // one is configured so routing either way works.
+        let mut req = client.post(&url).json(&request);
+        let key = config.minimax_api_key.trim();
+        if !key.is_empty() {
+            req = req.bearer_auth(key);
+        }
+        let resp = match req.send().await {
             Ok(r) => r,
             Err(e) => {
                 last_err = format!("local analyser request failed: {e}");

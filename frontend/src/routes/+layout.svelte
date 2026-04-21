@@ -1,7 +1,7 @@
 <script lang="ts">
   import '../app.css';
   import Sidebar from '$lib/components/Sidebar.svelte';
-  import { afterNavigate, goto } from '$app/navigation';
+  import { goto } from '$app/navigation';
   import { getClerk, isSignedIn } from '$lib/auth/clerk';
   import { me, refreshMe } from '$lib/stores/me';
 
@@ -33,8 +33,17 @@
   // `$page`. Reactive `$page` has repeatedly been the source of the Svelte 5
   // "Cannot read properties of null (reading 'r')" runtime crash — during
   // early static-adapter hydration the page store's value is null and the
-  // compiled store-as-signal access crashes in the runtime. afterNavigate is
-  // a hook callback (not a reactive store), safe to use here.
+  // compiled store-as-signal access crashes in the runtime.
+  //
+  // `afterNavigate` from `$app/navigation` was tried first (as a callback
+  // hook, not a reactive store) but in practice our $state update inside its
+  // callback didn't always propagate to the layout template — after clicking
+  // a `goto('/debates')` button from the public landing page the layout
+  // stayed on the public branch until a full refresh. Instead, listen to
+  // history events directly: `popstate` for back/forward, and intercepted
+  // `pushState` / `replaceState` for SvelteKit's client-router navigations.
+  // That keeps `currentPath` in sync with `window.location.pathname`
+  // regardless of which code path triggers the change.
   function readPath(): string {
     if (typeof window === 'undefined') return '';
     return window.location.pathname;
@@ -42,8 +51,35 @@
 
   let currentPath = $state<string>(readPath());
 
-  afterNavigate(() => {
-    currentPath = readPath();
+  $effect(() => {
+    if (typeof window === 'undefined') return;
+
+    const sync = () => {
+      currentPath = readPath();
+    };
+    sync();
+
+    const origPush = history.pushState;
+    const origReplace = history.replaceState;
+    history.pushState = function (...args) {
+      const result = origPush.apply(this, args as Parameters<typeof origPush>);
+      sync();
+      return result;
+    };
+    history.replaceState = function (...args) {
+      const result = origReplace.apply(this, args as Parameters<typeof origReplace>);
+      sync();
+      return result;
+    };
+    window.addEventListener('popstate', sync);
+    window.addEventListener('hashchange', sync);
+
+    return () => {
+      history.pushState = origPush;
+      history.replaceState = origReplace;
+      window.removeEventListener('popstate', sync);
+      window.removeEventListener('hashchange', sync);
+    };
   });
 
   $effect(() => {

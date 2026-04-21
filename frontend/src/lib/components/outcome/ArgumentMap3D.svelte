@@ -30,12 +30,17 @@
     minority: 5,
   };
 
-  // Sprite text sizing in world units. The camera is ~200 units away at
-  // default framing, so these map to ~10–18px on screen.
+  // Sprite text sizing in world units. The camera is ~200–400 units
+  // away at default framing, so these map to ~10–18px on screen.
   const SHORT_LABEL_CHARS = 28;
   const SHORT_TEXT_HEIGHT = 2.4;
   const FULL_TEXT_HEIGHT = 1.8;
   const TOPIC_TEXT_HEIGHT = 3.2;
+
+  // Distance the camera lands from a clicked node. Has to be large enough
+  // for the full-text sprite (wrapped 44 chars, textHeight 1.8, ≈45 world
+  // units wide) to fit the canvas at the 50° default FOV.
+  const CLICK_ZOOM_DIST = 90;
 
   // LOD distance thresholds with hysteresis — prevent label-flicker when
   // the camera sits right on the boundary.
@@ -57,6 +62,34 @@
     fullSprite: import('three').Sprite;
     showingFull: boolean;
   }> = [];
+
+  /**
+   * Produce a short label from a longer argument string.
+   *
+   * `deriveGraph` hands us a `.label` that's already a character-sliced
+   * truncation of the full point, which often cuts mid-word. Here we at
+   * least snap to a word boundary and, where possible, take only the
+   * first clause (before a comma / period / semicolon). That turns
+   * "AI will displace 30-50% of junior associates, within 5 years" into
+   * "AI will displace 30-50%…" instead of "AI will displace 30-50% of j".
+   *
+   * This is a stopgap — the proper fix is an LLM-generated `headline`
+   * field on each synthesis node, noted as a backend follow-up.
+   */
+  function pithy(s: string, maxChars = SHORT_LABEL_CHARS): string {
+    if (!s) return '';
+    const clause = s.split(/[.,;:!?]/)[0].trim();
+    if (clause.length <= maxChars) return clause;
+    const words = clause.split(/\s+/);
+    let out = '';
+    for (const w of words) {
+      const next = (out + ' ' + w).trim();
+      if (next.length > maxChars - 1) break;
+      out = next;
+    }
+    if (!out) out = clause.slice(0, maxChars - 1);
+    return out + '…';
+  }
 
   function wrap(s: string, lineLen: number): string {
     const words = s.split(/\s+/);
@@ -142,10 +175,16 @@
 
   async function init() {
     if (!container) return;
-    const [{ default: ForceGraph3D }, three, { default: SpriteText }] = await Promise.all([
+    const [
+      { default: ForceGraph3D },
+      three,
+      { default: SpriteText },
+      d3f,
+    ] = await Promise.all([
       import('3d-force-graph'),
       import('three'),
       import('three-spritetext'),
+      import('d3-force-3d'),
     ]);
     THREE = three;
 
@@ -193,7 +232,9 @@
         // appears when the camera gets close. Coloured border encodes
         // kind (consensus / contested / minority) so no sphere needed.
         const colour = colourFor(node.kind);
-        const shortSprite = new SpriteText(truncate(node.label, SHORT_LABEL_CHARS));
+        const shortSprite = new SpriteText(
+          pithy(node.fullText || node.label, SHORT_LABEL_CHARS),
+        );
         shortSprite.color = '#e7e7ea';
         shortSprite.backgroundColor = 'rgba(10,10,17,0.78)';
         shortSprite.borderColor = `${colour}88`;
@@ -236,12 +277,14 @@
         return `<div style="background:#0a0a11;border:1px solid ${colourFor(node.kind)};padding:6px 9px;border-radius:6px;max-width:300px;font-family:ui-sans-serif;color:#e4e4e7;font-size:11px;line-height:1.4;"><div style="color:${colourFor(node.kind)};text-transform:uppercase;letter-spacing:0.08em;font-size:9px;margin-bottom:4px;">${node.kind} · ${support}${conf}</div>${body}</div>`;
       })
       .onNodeClick((n: any) => {
-        // Dolly the camera toward the node but don't get so close that the
-        // node itself clips out of view.
-        const dist = 18;
+        // Stop CLICK_ZOOM_DIST world units *past* the node along the
+        // radial from origin, so the full-text sprite (≈45 units wide)
+        // fits the canvas with margin at the default 50° FOV. `dist=18`
+        // used to put the camera right on top of the sprite and cropped
+        // every long argument.
         const x = n.x ?? 0, y = n.y ?? 0, z = n.z ?? 0;
         const r = Math.max(Math.hypot(x, y, z), 0.1);
-        const k = 1 + dist / r;
+        const k = 1 + CLICK_ZOOM_DIST / r;
         fg.cameraPosition({ x: x * k, y: y * k, z: z * k }, n, 700);
         onNodeClick(n.id);
       })
@@ -249,6 +292,44 @@
         const edge = e as GraphEdge;
         if (edge.kind === 'tension') onEdgeClick(edge.id);
       });
+
+    // Semantic force layout: encode each node-kind's meaning into
+    // position so the user reads the figure even before the legend.
+    //
+    //   +y (up)    consensus — bots converged
+    //   -y (down)  minority  — dissent preserved, isolated
+    //   -x (left)  contested side_a
+    //   +x (right) contested side_b
+    //   origin    topic (pinned via fx/fy/fz in shape())
+    //
+    // Magnitudes are chosen so the shape reads at the default camera
+    // distance without nodes clipping into the legend overlay.
+    fg.d3Force(
+      'consensus-y',
+      d3f
+        .forceY(100)
+        .strength((n: any) => ((n as GraphNode).kind === 'consensus' ? 0.13 : 0)),
+    )
+      .d3Force(
+        'minority-y',
+        d3f
+          .forceY(-100)
+          .strength((n: any) => ((n as GraphNode).kind === 'minority' ? 0.13 : 0)),
+      )
+      .d3Force(
+        'contested-a-x',
+        d3f.forceX(-120).strength((n: any) => {
+          const node = n as GraphNode;
+          return node.kind === 'contested' && node.sideKey === 'a' ? 0.16 : 0;
+        }),
+      )
+      .d3Force(
+        'contested-b-x',
+        d3f.forceX(120).strength((n: any) => {
+          const node = n as GraphNode;
+          return node.kind === 'contested' && node.sideKey === 'b' ? 0.16 : 0;
+        }),
+      );
 
     // Smoother orbit feel.
     try {

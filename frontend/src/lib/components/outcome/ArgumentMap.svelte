@@ -113,10 +113,14 @@
 
   let renderedNodes = $derived.by(() => {
     // Touch `tick` so this derivation re-runs on every simulation frame.
+    // Snapshot positions into plain primitives on new objects per tick so the
+    // child component receives fresh prop values — reading `node.x` directly
+    // inside the child doesn't trigger Svelte reactivity (d3-force mutates
+    // plain properties, which aren't tracked).
     tick;
-    return graph.nodes.filter(
-      (n) => n.kind === 'topic' || !hiddenKinds.has(n.kind),
-    );
+    return graph.nodes
+      .filter((n) => n.kind === 'topic' || !hiddenKinds.has(n.kind))
+      .map((n) => ({ id: n.id, node: n, x: n.x ?? 0, y: n.y ?? 0 }));
   });
 
   let renderedEdges = $derived.by(() => {
@@ -259,13 +263,15 @@
 
     <!-- Nodes -->
     <g>
-      {#each renderedNodes as n (n.id)}
+      {#each renderedNodes as rn (rn.id)}
         <ArgumentNode
-          node={n}
-          selected={selectedNodeId === n.id}
-          highlighted={isHighlighted(n)}
-          dimmed={isDimmed(n)}
-          ghost={n.kind !== 'topic' && n.support === 0}
+          node={rn.node}
+          x={rn.x}
+          y={rn.y}
+          selected={selectedNodeId === rn.id}
+          highlighted={isHighlighted(rn.node)}
+          dimmed={isDimmed(rn.node)}
+          ghost={rn.node.kind !== 'topic' && rn.node.support === 0}
           onClick={onNodeClick}
           onHover={() => {}}
         />

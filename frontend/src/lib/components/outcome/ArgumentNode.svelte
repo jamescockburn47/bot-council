@@ -3,8 +3,20 @@
   import { colourFor } from '$lib/argument-graph/types';
   import { nodeRadius } from '$lib/argument-graph/simulation';
 
+  // Positions (x, y) are passed as primitive props from the parent rather
+  // than read off `node.x` / `node.y` here. d3-force mutates those fields in
+  // place on the plain node object, and plain-property mutations are not
+  // tracked by Svelte 5's reactivity — `$derived(node.x ?? 0)` would record
+  // no signal dependency and never re-run. The parent's `renderedNodes`
+  // derivation reads the `tick` signal, so each tick it produces fresh
+  // {x, y} primitives that arrive here as new prop values, keeping the SVG
+  // in sync with the simulation. Ref the fix history in
+  // docs/upstream-issues/svelte5-ondestroy-ssr-context-in-csr-bundle.md
+  // for why we stay away from clever reactivity patterns in this codebase.
   let {
     node,
+    x,
+    y,
     selected,
     highlighted,
     dimmed,
@@ -13,6 +25,8 @@
     onHover,
   }: {
     node: GraphNode;
+    x: number;
+    y: number;
     selected: boolean;
     highlighted: boolean;
     dimmed: boolean;
@@ -21,8 +35,6 @@
     onHover: (id: string | null) => void;
   } = $props();
 
-  let x = $derived(node.x ?? 0);
-  let y = $derived(node.y ?? 0);
   let r = $derived(nodeRadius(node));
   let colour = $derived(colourFor(node.kind));
   let opacity = $derived(ghost ? 0.25 : dimmed ? 0.2 : 1);

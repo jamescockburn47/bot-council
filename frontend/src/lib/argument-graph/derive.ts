@@ -3,6 +3,18 @@ import type { GraphEdge, GraphNode, GraphState } from './types';
 import { truncate } from './types';
 
 /**
+ * Pick a short node label. Prefers the synthesiser-provided `headline`
+ * (a 3–6 word, keyword-style distillation). Falls back to a 40-char
+ * word-boundary truncation of the full sentence for older rows that
+ * predate the headline prompt.
+ */
+function pickLabel(headline: string | undefined, full: string | undefined): string {
+  const h = (headline ?? '').trim();
+  if (h.length > 0) return h;
+  return truncate(full ?? '', 40);
+}
+
+/**
  * Build the canonical terminal-state graph from a synthesis result.
  *
  * Nodes are argument-first: topic at centre, one node per consensus point,
@@ -37,7 +49,7 @@ export function deriveGraph(
     nodes.push({
       id,
       kind: 'consensus',
-      label: truncate(cp.point ?? '', 40),
+      label: pickLabel(cp.headline, cp.point),
       fullText: cp.point ?? '',
       support: cp.supporting_bots?.length ?? 0,
       totalBots,
@@ -74,7 +86,7 @@ export function deriveGraph(
     nodes.push({
       id: aId,
       kind: 'contested',
-      label: truncate(d.side_a?.position ?? '', 40),
+      label: pickLabel(d.side_a?.headline, d.side_a?.position),
       fullText: d.side_a?.position ?? '',
       support: d.side_a?.bots?.length ?? 0,
       totalBots,
@@ -89,7 +101,7 @@ export function deriveGraph(
     nodes.push({
       id: bId,
       kind: 'contested',
-      label: truncate(d.side_b?.position ?? '', 40),
+      label: pickLabel(d.side_b?.headline, d.side_b?.position),
       fullText: d.side_b?.position ?? '',
       support: d.side_b?.bots?.length ?? 0,
       totalBots,
@@ -130,7 +142,7 @@ export function deriveGraph(
     nodes.push({
       id,
       kind: 'minority',
-      label: truncate(m.position ?? '', 40),
+      label: pickLabel(m.headline, m.position),
       fullText: m.position ?? '',
       support: 1,
       totalBots,

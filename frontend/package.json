@@ -24,8 +24,12 @@
   "dependencies": {
     "@clerk/clerk-js": "^6.7.2",
     "@sentry/browser": "^10.49.0",
+    "@types/three": "^0.184.0",
+    "3d-force-graph": "^1.80.0",
     "chart.js": "^4",
-    "d3-force": "^3"
+    "d3-force": "^3",
+    "three": "^0.184.0",
+    "three-spritetext": "^1.10.0"
   },
   "type": "module"
 }

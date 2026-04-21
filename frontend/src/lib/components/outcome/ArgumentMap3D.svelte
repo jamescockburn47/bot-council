@@ -162,65 +162,54 @@
       .nodeId('id')
       .nodeVal((n: any) => NODE_VAL[(n as GraphNode).kind])
       .nodeColor((n: any) => nodeColour(n as GraphNode))
-      .nodeOpacity(0.92)
-      .nodeResolution(16)
-      .nodeThreeObjectExtend(true)
+      // `extend(false)` REPLACES the default sphere with our group — no
+      // more blob-under-the-text occlusion. The node's "presence" in the
+      // scene is now entirely its label; edges still connect to the
+      // logical node position (x/y/z), so the graph structure reads
+      // through line geometry rather than through spheres.
+      .nodeThreeObjectExtend(false)
       .nodeThreeObject((n: any) => {
         const node = n as GraphNode;
         const group = new THREE!.Group();
 
         if (node.kind === 'topic') {
-          // Topic: a permanent, always-readable billboard with the full
-          // question, plus a soft halo so the anchor is obvious from any
-          // angle. The sphere itself comes from 3d-force-graph's default
-          // (we use nodeThreeObjectExtend); we only add the label + halo.
-          const halo = new THREE!.Mesh(
-            new THREE!.SphereGeometry(4.5, 24, 24),
-            new THREE!.MeshBasicMaterial({
-              color: 0xffffff,
-              transparent: true,
-              opacity: 0.12,
-            }),
-          );
-          group.add(halo);
-
+          // Topic = a single permanent billboard centred at origin. No
+          // sphere, no halo — the label IS the topic. Made larger and
+          // bolder than argument labels so it reads as the focal point.
           const label = new SpriteText(wrap(node.fullText || 'Topic', 34));
           label.color = '#ffffff';
-          label.backgroundColor = 'rgba(10,10,17,0.92)';
-          label.borderColor = 'rgba(255,255,255,0.18)';
-          label.borderWidth = 0.5;
-          label.padding = 3;
+          label.backgroundColor = 'rgba(10,10,17,0.94)';
+          label.borderColor = 'rgba(255,255,255,0.28)';
+          label.borderWidth = 0.8;
+          label.padding = 4;
           label.fontFace = 'ui-sans-serif, system-ui, -apple-system, sans-serif';
-          label.fontWeight = '600';
+          label.fontWeight = '700';
           label.textHeight = TOPIC_TEXT_HEIGHT;
-          label.position.set(0, 7, 0);
           group.add(label);
           return group;
         }
 
-        // Non-topic: short label (always readable from afar) and a full
-        // label (kept hidden until the camera gets close). Swapped by the
-        // RAF loop below rather than rebuilt, so zoom feels instant.
+        // Argument nodes: short label always visible; full argument
+        // appears when the camera gets close. Coloured border encodes
+        // kind (consensus / contested / minority) so no sphere needed.
         const colour = colourFor(node.kind);
         const shortSprite = new SpriteText(truncate(node.label, SHORT_LABEL_CHARS));
         shortSprite.color = '#e7e7ea';
-        shortSprite.backgroundColor = 'rgba(10,10,17,0.70)';
-        shortSprite.borderColor = `${colour}55`;
-        shortSprite.borderWidth = 0.35;
-        shortSprite.padding = 2;
+        shortSprite.backgroundColor = 'rgba(10,10,17,0.78)';
+        shortSprite.borderColor = `${colour}88`;
+        shortSprite.borderWidth = 0.55;
+        shortSprite.padding = 2.5;
         shortSprite.fontFace = 'ui-sans-serif, system-ui, -apple-system, sans-serif';
         shortSprite.textHeight = SHORT_TEXT_HEIGHT;
-        shortSprite.position.set(0, 3.5, 0);
 
         const fullSprite = new SpriteText(wrap(node.fullText || node.label, 44));
         fullSprite.color = '#ffffff';
         fullSprite.backgroundColor = 'rgba(10,10,17,0.94)';
         fullSprite.borderColor = colour;
-        fullSprite.borderWidth = 0.5;
+        fullSprite.borderWidth = 0.75;
         fullSprite.padding = 3;
         fullSprite.fontFace = 'ui-sans-serif, system-ui, -apple-system, sans-serif';
         fullSprite.textHeight = FULL_TEXT_HEIGHT;
-        fullSprite.position.set(0, 3.5, 0);
         fullSprite.visible = false;
 
         group.add(shortSprite);
@@ -282,19 +271,17 @@
     ro.observe(container);
     resizeObserver = ro;
 
-    // Initial camera: gentle top-down angle looking at origin (= topic).
-    fg.cameraPosition({ x: 0, y: 60, z: 220 }, { x: 0, y: 0, z: 0 });
-
-    // Once the physics has roughly settled, frame the whole graph. A short
-    // timeout is simpler and more reliable than `onEngineStop`, which fires
-    // before labels are laid out.
-    setTimeout(() => {
-      try {
-        fg.zoomToFit(600, 60);
-      } catch {
-        // ignore — non-critical
-      }
-    }, 900);
+    // Camera sits on the +z axis looking at the origin, where the topic
+    // is pinned. This keeps the topic exactly at the canvas centre
+    // regardless of where d3-force pushes the argument nodes.
+    //
+    // We deliberately DON'T call `zoomToFit` — that would frame the
+    // bounding-box centroid, which drifts when one kind of argument
+    // dominates, pulling the topic off-centre. A fixed distance that
+    // scales with node count covers every realistic graph.
+    const nodeCount = graph.nodes.length;
+    const camZ = Math.max(280, 160 + nodeCount * 18);
+    fg.cameraPosition({ x: 0, y: 0, z: camZ }, { x: 0, y: 0, z: 0 });
 
     // LOD loop: reveal full argument text when the camera is close to a
     // node, hide it when far. Hysteresis band prevents flicker.
@@ -323,14 +310,9 @@
 
   function resetView() {
     if (!fg) return;
-    fg.cameraPosition({ x: 0, y: 60, z: 220 }, { x: 0, y: 0, z: 0 }, 600);
-    setTimeout(() => {
-      try {
-        fg.zoomToFit(500, 60);
-      } catch {
-        // ignore
-      }
-    }, 650);
+    const nodeCount = graph.nodes.length;
+    const camZ = Math.max(280, 160 + nodeCount * 18);
+    fg.cameraPosition({ x: 0, y: 0, z: camZ }, { x: 0, y: 0, z: 0 }, 600);
   }
 
   $effect(() => {
@@ -357,13 +339,7 @@
     if (!fg) return;
     nodeGroups = []; // rebuilt on data change via nodeThreeObject callback
     fg.graphData(shape(graph) as any);
-    setTimeout(() => {
-      try {
-        fg.zoomToFit(600, 60);
-      } catch {
-        // ignore
-      }
-    }, 700);
+    // No zoomToFit — camera target stays on origin (= pinned topic).
   });
 
   $effect(() => {

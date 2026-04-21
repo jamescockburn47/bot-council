@@ -61,6 +61,44 @@ jobs:
       - name: npm ci
         run: npm ci
 
+      - name: Forbid known-broken imports
+        # Two imports have produced the same "Cannot read properties of null
+        # (reading 'r')" production crash on this project and must be blocked
+        # until/unless the underlying Svelte 5 + adapter-static bundling bugs
+        # are fixed upstream:
+        #
+        #   1. `onDestroy` from 'svelte' — compiles to a helper that reads
+        #      Mt.r.on_destroy where Mt is the SSR renderer's current-component
+        #      -context (CkH79pZK's `var A = null`), never set in CSR. Any
+        #      mount-time registration crashes. Fix: use `$effect(() => () =>
+        #      cleanup())` instead. Ref: PR #73.
+        #
+        #   2. `page` store from '$app/stores' — reactive reads race an early
+        #      hydration window where the store value is null, crashing in the
+        #      store-as-signal reader. Fix: read `window.location` once and
+        #      refresh via `afterNavigate` from '$app/navigation'. Ref: PR #72.
+        #
+        # If you genuinely need one of these, add the exception with a comment
+        # referencing an open upstream issue AND a local mitigation.
+        working-directory: ${{ github.workspace }}
+        shell: bash
+        run: |
+          set -e
+          failed=0
+          if grep -rnE "from +['\"]svelte['\"]" frontend/src \
+              --include='*.svelte' --include='*.ts' --include='*.js' \
+            | grep -E "\bonDestroy\b"; then
+            echo "::error::Forbidden import: \`onDestroy\` from 'svelte'. Use \`\$effect(() => () => cleanup())\` instead — see PR #73."
+            failed=1
+          fi
+          if grep -rnE "from +['\"]\\\$app/stores['\"]" frontend/src \
+              --include='*.svelte' --include='*.ts' --include='*.js' \
+            | grep -E "\\bpage\\b"; then
+            echo "::error::Forbidden import: \`page\` from '\$app/stores'. Use \`afterNavigate\` from '\$app/navigation' + a \`window.location.pathname\` snapshot — see PR #72."
+            failed=1
+          fi
+          exit $failed
+
       - name: svelte-check + vite build
         # `npm run build` is the chained check: svelte-kit sync + svelte-check
         # + vite build (see frontend/package.json). One command covers

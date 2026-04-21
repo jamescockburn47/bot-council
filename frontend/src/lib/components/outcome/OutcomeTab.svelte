@@ -7,7 +7,7 @@
   import type { GraphNode, GraphState, NodeKind } from '$lib/argument-graph/types';
   import { deriveGraph } from '$lib/argument-graph/derive';
   import { reconstructGraphAtRound } from '$lib/argument-graph/reconstruct';
-  import ArgumentMap from './ArgumentMap.svelte';
+  import ArgumentMap3D from './ArgumentMap3D.svelte';
   import ReplaySlider from './ReplaySlider.svelte';
   import OutcomeFilters from './OutcomeFilters.svelte';
   import OutcomeDrawer from './OutcomeDrawer.svelte';
@@ -132,7 +132,7 @@
     onSupporterChange={(p) => (highlightedSupporter = p)}
   />
 
-  <ArgumentMap
+  <ArgumentMap3D
     {graph}
     {selectedNodeId}
     {hiddenKinds}

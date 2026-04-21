@@ -7,9 +7,12 @@
   let debates = $state<DebateResponse[]>([]);
   let loading = $state(true);
   let error = $state<string | null>(null);
-  let filter = $state('all');
+  // Default view is completed debates — that's where the outcome graphs
+  // and divergence metrics live, i.e. the reason most visits happen. Put
+  // the payoff first, everything else one click away.
+  let filter = $state<'complete' | 'running' | 'failed' | 'cancelled' | 'all'>('complete');
 
-  const FILTERS = ['all', 'running', 'complete', 'cancelled'] as const;
+  const FILTERS = ['complete', 'running', 'failed', 'cancelled', 'all'] as const;
 
   function formatDate(iso: string): string {
     const d = new Date(iso);

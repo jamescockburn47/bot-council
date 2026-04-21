@@ -356,7 +356,18 @@ async fn call_model_json(
             tokio::time::sleep(delay).await;
         }
 
-        let response = match client.post(&url).json(request).send().await {
+        // The synthesiser was originally written for llama-server
+        // (local, no auth). When the base URL points at a hosted
+        // OpenAI-compatible endpoint (MiniMax, Together, etc.) we need
+        // to attach the API key as a Bearer token. Local servers ignore
+        // headers they don't know, so we can always add when a key is
+        // configured — no harm in the local case.
+        let mut req = client.post(&url).json(request);
+        let key = config.minimax_api_key.trim();
+        if !key.is_empty() {
+            req = req.bearer_auth(key);
+        }
+        let response = match req.send().await {
             Ok(resp) => resp,
             Err(e) => {
                 last_err = format!("{label} request failed: {e}");

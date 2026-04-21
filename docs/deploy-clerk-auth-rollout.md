@@ -1,4 +1,13 @@
-# Deploy Runbook — Clerk Auth Rollout (Plan 1)
+# Deploy Runbook — Clerk Auth Rollout (Plan 1) — HISTORICAL
+
+> **HISTORICAL DOCUMENT.** This runbook describes the one-time cutover from
+> pre-Clerk dev-mode auto-admin to the current Clerk-JWT + admin-registry +
+> AES-encrypted-bot-token state. The cutover completed in April 2026 (see
+> PR history around that time). The Step 6 "Frontend deploy (Vercel)"
+> instructions are superseded — Vercel was fully retired 2026-04-20 and
+> the frontend is now served by Axum on EVO. For current deploy procedure
+> use `./scripts/ship.sh`; for current env surface see `ARCHITECTURE.md §3.9`
+> and `CLAUDE.md`. Kept as a reference for how the cutover was executed.
 
 This runbook covers cutting the EVO over from the pre-Clerk dev-mode
 auto-admin state to Clerk JWT + in-app admin registry + AES-encrypted bot

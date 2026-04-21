@@ -27,10 +27,10 @@ set -euo pipefail
 KEY="${SSH_KEY:-C:/Users/James/.ssh/id_ed25519}"
 HOST="${EVO_HOST:-james@100.90.66.54}"
 REMOTE="~/bot-council"
-# The bot-council Vercel frontend project was retired; lqcouncil.com now
-# points at the single lqcouncil-api-proxy Vercel project whose only job
-# is `rewrites: [{source:"/(.*)", destination: tailscale-funnel-url/$1}]`.
-# Axum on EVO serves both the static frontend and the /api/* routes.
+# Public path: browser -> Cloudflare edge -> Cloudflare Tunnel (sovren-evo)
+# -> cloudflared on EVO -> Axum on :3100. Axum serves both the static
+# SvelteKit bundle (/*) and the JSON API (/api/*) from the same binary.
+# Vercel fully retired 2026-04-20.
 PUBLIC_URL="${PUBLIC_URL:-https://lqcouncil.com}"
 SKIP_FRONTEND=0
 
@@ -137,10 +137,9 @@ for i in $(seq 1 15); do
 done
 
 # Stage 7: public smoke test. Checks actual JSON content, not just HTTP 200 —
-# a misconfigured frontend rewrite can return 200 with an HTML SPA shell.
+# a misconfigured SPA fallback can return 200 with an HTML shell.
 stage "7/7 public smoke"
-# Try /api/health first; if that's HTML, also try /health (backward-compat path
-# that still works until Phase F drops the Vercel proxy).
+# Try /api/health first; fall back to /health (the backend mounts both).
 probe() {
   local url=$1
   local body
@@ -154,7 +153,7 @@ probe() {
 if probe "$PUBLIC_URL/api/health" || probe "$PUBLIC_URL/health"; then
   true
 else
-  echo "WARNING: public smoke failed at $PUBLIC_URL — deploy is live on EVO but the public path may be stale. Check api.lqcouncil.com proxy rewrites." >&2
+  echo "WARNING: public smoke failed at $PUBLIC_URL — deploy is live on EVO but the public path may be stale. Check Cloudflare Tunnel state: 'systemctl status sovren-cloudflared' on EVO." >&2
 fi
 
 echo

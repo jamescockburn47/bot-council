@@ -31,11 +31,20 @@
   };
 
   // Sprite text sizing in world units. The camera is ~200–400 units
-  // away at default framing, so these map to ~10–18px on screen.
-  const SHORT_LABEL_CHARS = 28;
-  const SHORT_TEXT_HEIGHT = 2.4;
-  const FULL_TEXT_HEIGHT = 1.8;
-  const TOPIC_TEXT_HEIGHT = 3.2;
+  // away at default framing, so these map to ~12–22px on screen.
+  // Short labels are now the model-generated 3–6 word headlines, so we
+  // can afford to show them at a readable size without overlapping the
+  // scene. three-spritetext auto-sizes the surrounding sprite to the
+  // rendered text + padding, so these values govern the apparent size
+  // of the "box" around each label adaptively.
+  const SHORT_LABEL_CHARS = 32; // fallback cap for rows with no headline
+  const SHORT_TEXT_HEIGHT = 2.9;
+  const SHORT_PADDING = 3.0;
+  const FULL_TEXT_HEIGHT = 2.1;
+  const FULL_PADDING = 3.0;
+  const FULL_WRAP_CHARS = 52;
+  const TOPIC_TEXT_HEIGHT = 3.4;
+  const TOPIC_WRAP_CHARS = 36;
 
   // Distance the camera lands from a clicked node. Has to be large enough
   // for the full-text sprite (wrapped 44 chars, textHeight 1.8, ≈45 world
@@ -215,7 +224,7 @@
           // Topic = a single permanent billboard centred at origin. No
           // sphere, no halo — the label IS the topic. Made larger and
           // bolder than argument labels so it reads as the focal point.
-          const label = new SpriteText(wrap(node.fullText || 'Topic', 34));
+          const label = new SpriteText(wrap(node.fullText || 'Topic', TOPIC_WRAP_CHARS));
           label.color = '#ffffff';
           label.backgroundColor = 'rgba(10,10,17,0.94)';
           label.borderColor = 'rgba(255,255,255,0.28)';
@@ -231,24 +240,32 @@
         // Argument nodes: short label always visible; full argument
         // appears when the camera gets close. Coloured border encodes
         // kind (consensus / contested / minority) so no sphere needed.
+        //
+        // `node.label` is the synthesiser-written headline (3–6 words)
+        // when available, falling back to a word-boundary truncation for
+        // older rows. three-spritetext auto-sizes the sprite to its
+        // content + padding — nothing to do here to make the box
+        // adaptive, it already is.
         const colour = colourFor(node.kind);
-        const shortSprite = new SpriteText(
-          pithy(node.fullText || node.label, SHORT_LABEL_CHARS),
-        );
-        shortSprite.color = '#e7e7ea';
-        shortSprite.backgroundColor = 'rgba(10,10,17,0.78)';
-        shortSprite.borderColor = `${colour}88`;
-        shortSprite.borderWidth = 0.55;
-        shortSprite.padding = 2.5;
+        const shortText = node.label && node.label.trim().length > 0
+          ? node.label
+          : pithy(node.fullText || '', SHORT_LABEL_CHARS);
+        const shortSprite = new SpriteText(shortText);
+        shortSprite.color = '#f4f4f5';
+        shortSprite.backgroundColor = 'rgba(10,10,17,0.82)';
+        shortSprite.borderColor = `${colour}aa`;
+        shortSprite.borderWidth = 0.65;
+        shortSprite.padding = SHORT_PADDING;
         shortSprite.fontFace = 'ui-sans-serif, system-ui, -apple-system, sans-serif';
+        shortSprite.fontWeight = '600';
         shortSprite.textHeight = SHORT_TEXT_HEIGHT;
 
-        const fullSprite = new SpriteText(wrap(node.fullText || node.label, 44));
+        const fullSprite = new SpriteText(wrap(node.fullText || node.label, FULL_WRAP_CHARS));
         fullSprite.color = '#ffffff';
-        fullSprite.backgroundColor = 'rgba(10,10,17,0.94)';
+        fullSprite.backgroundColor = 'rgba(10,10,17,0.95)';
         fullSprite.borderColor = colour;
-        fullSprite.borderWidth = 0.75;
-        fullSprite.padding = 3;
+        fullSprite.borderWidth = 0.85;
+        fullSprite.padding = FULL_PADDING;
         fullSprite.fontFace = 'ui-sans-serif, system-ui, -apple-system, sans-serif';
         fullSprite.textHeight = FULL_TEXT_HEIGHT;
         fullSprite.visible = false;

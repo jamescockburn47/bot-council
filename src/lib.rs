@@ -45,7 +45,9 @@ async fn static_cache_headers(req: Request, next: Next) -> Response {
     } else {
         HeaderValue::from_static("no-store")
     };
-    response.headers_mut().insert(header::CACHE_CONTROL, header_value);
+    response
+        .headers_mut()
+        .insert(header::CACHE_CONTROL, header_value);
     response
 }
 

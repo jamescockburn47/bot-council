@@ -223,6 +223,7 @@ pub async fn create_debate(
             status: "created".to_string(),
             created_at: chrono::Utc::now().to_rfc3339(),
             completed_at: None,
+            archived_at: None,
             bots: bot_infos,
             results: None,
         }),
@@ -241,6 +242,7 @@ pub async fn list_debates(
         params.status.as_deref(),
         limit,
         params.test.unwrap_or(false),
+        params.archived.unwrap_or(false),
     )
     .await?;
 
@@ -256,6 +258,7 @@ pub async fn list_debates(
             status: row.status,
             created_at: row.created_at,
             completed_at: row.completed_at,
+            archived_at: row.archived_at,
             bots: bot_infos,
             results: None,
         });
@@ -350,7 +353,41 @@ pub async fn get_debate(
         status: debate.status,
         created_at: debate.created_at,
         completed_at: debate.completed_at,
+        archived_at: debate.archived_at,
         bots: bot_infos,
         results,
     }))
+}
+
+/// PATCH /debates/{id}/archive — admin-only. Body: `{"archived": bool}`.
+/// `true` sets `archived_at = now()`, hiding the debate from the default
+/// list. `false` clears it (unarchive). Does not delete any data.
+pub async fn set_archive_state(
+    State(state): State<AppState>,
+    _auth: RequireAdmin,
+    Path(id): Path<String>,
+    Json(req): Json<SetArchivedRequest>,
+) -> AppResult<StatusCode> {
+    // 404 first so we don't silently no-op on a typo'd id.
+    queries::get_debate(state.db(), &id)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("debate {id} not found")))?;
+    queries::set_debate_archived(state.db(), &id, req.archived).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// DELETE /debates/{id} — admin-only permanent delete. Cascades to every
+/// child table in one transaction via `queries_cleanup::cascade_delete_debate`.
+/// Returns 404 if the debate doesn't exist, 204 on success.
+pub async fn delete_debate(
+    State(state): State<AppState>,
+    _auth: RequireAdmin,
+    Path(id): Path<String>,
+) -> AppResult<StatusCode> {
+    queries::get_debate(state.db(), &id)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("debate {id} not found")))?;
+    crate::db::queries_cleanup::cascade_delete_debate(state.db(), &id).await?;
+    tracing::info!(debate_id = %id, "admin permanently deleted debate");
+    Ok(StatusCode::NO_CONTENT)
 }

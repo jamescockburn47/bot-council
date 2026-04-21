@@ -34,6 +34,8 @@ export interface DebateResponse {
   status: string;
   created_at: string;
   completed_at: string | null;
+  /** Soft-delete timestamp; null for live debates. */
+  archived_at: string | null;
   bots: DebateBotInfo[];
   results: DebateResults | null;
 }

@@ -78,10 +78,11 @@ export const api = {
   me: () => request<UserInfoResponse>('/me'),
 
   debates: {
-    list: (params?: { status?: string; limit?: number }) => {
+    list: (params?: { status?: string; limit?: number; archived?: boolean }) => {
       const sp = new URLSearchParams();
       if (params?.status) sp.set('status', params.status);
       if (params?.limit) sp.set('limit', String(params.limit));
+      if (params?.archived) sp.set('archived', 'true');
       const qs = sp.toString();
       return request<DebateResponse[]>(`/debates${qs ? `?${qs}` : ''}`);
     },
@@ -93,6 +94,15 @@ export const api = {
       }),
     transcript: (id: string) => request<TranscriptResponse>(`/debates/${id}/transcript`),
     synthesis: (id: string) => request<SynthesisResponse>(`/debates/${id}/synthesis`),
+    /** Soft-delete toggle (admin). Archived debates are hidden from the
+     * default list; set `archived=false` to restore. */
+    setArchived: (id: string, archived: boolean) =>
+      request<void>(`/debates/${id}/archive`, {
+        method: 'PATCH',
+        body: JSON.stringify({ archived }),
+      }),
+    /** Permanent delete (admin). Cascades to every child row. */
+    remove: (id: string) => request<void>(`/debates/${id}`, { method: 'DELETE' }),
   },
 
   bots: {

@@ -13,7 +13,43 @@ pub mod synthesiser;
 pub mod types;
 
 use axum::Router;
+use axum::extract::Request;
+use axum::http::{HeaderValue, header};
+use axum::middleware::{self, Next};
+use axum::response::Response;
 use tower_http::services::{ServeDir, ServeFile};
+
+/// Set `Cache-Control` for static-service responses based on the request path.
+///
+/// Two rules:
+///
+/// * `/_app/immutable/*` — hashed, content-addressed assets emitted by Vite.
+///   Cache forever (`immutable`).
+///
+/// * Everything else handled by the static service (the SPA fallback
+///   `index.html`) — `no-store`. This is what keeps the browser's
+///   back/forward cache from restoring a stale `index.html` whose
+///   `<link rel="modulepreload">` hints point at hashed chunks that the
+///   current build no longer ships, producing the
+///   `Unable to preload CSS for .../0.BiJTopi9.css` console error on
+///   back-navigation. `no-store` (not `no-cache`) is the directive the
+///   HTML spec treats as disqualifying for bfcache.
+///
+/// `/api/*` is NOT routed through this middleware (see where it's applied
+/// in `build_app`); handlers set their own cache headers where appropriate.
+async fn static_cache_headers(req: Request, next: Next) -> Response {
+    let path = req.uri().path().to_string();
+    let mut response = next.run(req).await;
+    let header_value = if path.starts_with("/_app/immutable/") {
+        HeaderValue::from_static("public, max-age=31536000, immutable")
+    } else {
+        HeaderValue::from_static("no-store")
+    };
+    response
+        .headers_mut()
+        .insert(header::CACHE_CONTROL, header_value);
+    response
+}
 
 /// Build the full application router with state.
 ///
@@ -67,9 +103,17 @@ pub async fn build_app() -> anyhow::Result<Router> {
     let index_path = format!("{static_dir}/index.html");
     let static_service = ServeDir::new(&static_dir).not_found_service(ServeFile::new(&index_path));
 
+    // Apply the cache-header middleware to the static fallback only — not to
+    // `/api/*` (those handlers set their own cache semantics). A dedicated
+    // Router lets us attach the `middleware::from_fn` layer; `fallback_service`
+    // on the outer router then mounts it for any non-`/api` path.
+    let static_router = Router::new()
+        .fallback_service(static_service)
+        .layer(middleware::from_fn(static_cache_headers));
+
     Ok(Router::new()
         .nest("/api", api_nested)
-        .fallback_service(static_service))
+        .fallback_service(static_router))
 }
 
 /// Retry the initial JWKS fetch with exponential backoff.

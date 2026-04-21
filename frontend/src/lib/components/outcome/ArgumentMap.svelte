@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, untrack } from 'svelte';
+  import { untrack } from 'svelte';
   import type { GraphEdge, GraphNode, GraphState, NodeKind } from '$lib/argument-graph/types';
   import { createSimulation, type SimulationHandle } from '$lib/argument-graph/simulation';
   import ArgumentNode from './ArgumentNode.svelte';
@@ -102,9 +102,12 @@
     return () => ro.disconnect();
   });
 
-  onDestroy(() => {
-    handle?.stop();
-  });
+  // Effect-return cleanup rather than onDestroy. The compiled onDestroy helper
+  // in the shipped bundle resolves to the SSR-context path (Mt.r.on_destroy on
+  // CkH79pZK's server-renderer context) which is null during CSR hydration,
+  // producing "Cannot read properties of null (reading 'r')". $effect return
+  // cleanup goes through the CSR runtime unambiguously.
+  $effect(() => () => handle?.stop());
 
   // ---- Derived rendering helpers (read `tick` to update with sim) ----
 

@@ -1,6 +1,4 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
-
   let {
     rounds,
     round,
@@ -57,9 +55,6 @@
     };
   });
 
-  onDestroy(() => {
-    if (playTimer) clearInterval(playTimer);
-  });
 </script>
 
 <div

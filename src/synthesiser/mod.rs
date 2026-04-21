@@ -253,10 +253,13 @@ fn build_synthesis_prompt(
         - meta_observations must start with \"Conclusion:\" then use these exact section headings and order: \"Summary of arguments\", \"Key disagreements\", \"Minority positions\", \"Overall outcome\", \"Bot behaviour notes\".\n\n\
          HEADLINE RULES (applies to every consensus_point, disagreement side, and minority_position):\n\
          - `headline` is a graph-node label shown to the user at normal zoom. It MUST be 3–6 words, keyword-style, no trailing punctuation.\n\
+         - The headline is the SUBSTANCE of the claim — what is being asserted — NOT meta-information about who agrees.\n\
+         - NEVER write agreement-count statements as the headline. These are forbidden: \"All 4 participants agree\", \"All agents converge\", \"3 of 4 concur\", \"Majority position\", \"Unanimous view\". That information already lives in supporting_bots / the node's kind. The headline must tell the reader WHAT was agreed/disputed/held, not that agreement exists.\n\
          - Omit articles (\"the\", \"a\", \"an\") and filler where possible. Use concrete nouns and verbs.\n\
          - Headlines should be mutually distinguishable at a glance — avoid generic stems (\"position holds\", \"claim that\") and repeated openers across nodes.\n\
          - DO NOT truncate the full sentence into the headline. Write a fresh 3–6 word distillation of the claim's substance.\n\
-         - Examples: \"Junior hiring collapses 30%\", \"Liability gap closable\", \"Contrarian function irreplaceable\", \"Chaos tests overkill\", \"Unjustified zero-day bypass\".\n\n\
+         - Good examples: \"Junior hiring collapses 30%\", \"Liability gap closable\", \"Contrarian function irreplaceable\", \"Chaos tests overkill\", \"Unjustified zero-day bypass\", \"SOC2 certifiable under 100k\".\n\
+         - Bad examples (reject these patterns): \"All 4 participants agree\" (meta-info), \"Consensus on liability\" (vague + meta), \"Disagreement about AI impact\" (describes the disagreement instead of stating either side's position), \"Position that AI will replace lawyers\" (filler stem \"position that\").\n\n\
          TOPIC: {topic}\n\n\
          <participant-map>\n{participant_map}\n</participant-map>\n\n\
          <grounding-evidence>\n{grounding_evidence}\n</grounding-evidence>\n\n\

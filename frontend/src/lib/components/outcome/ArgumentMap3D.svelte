@@ -45,6 +45,7 @@
   let container = $state<HTMLDivElement | undefined>();
   let fg: any = null;
   let rafHandle = 0;
+  let resizeObserver: ResizeObserver | null = null;
 
   type ThreeModule = typeof import('three');
   let THREE: ThreeModule | null = null;
@@ -149,6 +150,12 @@
     THREE = three;
 
     fg = new ForceGraph3D(container)
+      // 3d-force-graph's default canvas sizes to window.innerWidth ×
+      // window.innerHeight, which overflows our bounded container (70vh,
+      // page gutter). Pin the renderer to the container's current box and
+      // let the ResizeObserver below keep it in sync.
+      .width(container.clientWidth)
+      .height(container.clientHeight)
       .backgroundColor('#0a0a11')
       .showNavInfo(false)
       .graphData(shape(graph) as any)
@@ -265,6 +272,16 @@
       // fall back silently — 3d-force-graph sometimes swaps control types
     }
 
+    // Keep the renderer sized to the container on window/layout resize
+    // (sidebar collapse, devtools open, DPR change, etc.).
+    const ro = new ResizeObserver(() => {
+      if (!fg || !container) return;
+      fg.width(container.clientWidth);
+      fg.height(container.clientHeight);
+    });
+    ro.observe(container);
+    resizeObserver = ro;
+
     // Initial camera: gentle top-down angle looking at origin (= topic).
     fg.cameraPosition({ x: 0, y: 60, z: 220 }, { x: 0, y: 0, z: 0 });
 
@@ -320,6 +337,10 @@
     void init();
     return () => {
       if (rafHandle) cancelAnimationFrame(rafHandle);
+      if (resizeObserver) {
+        resizeObserver.disconnect();
+        resizeObserver = null;
+      }
       nodeGroups = [];
       if (fg) {
         try {

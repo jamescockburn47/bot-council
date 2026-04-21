@@ -123,6 +123,16 @@ pub async fn run_synthesis(
         }
     };
     let mut parsed = parsed;
+    // Hardening: if the model returned all-empty structured arrays but the
+    // transcript contains substantive non-abstained content, derive one
+    // minority_position per participating bot so the downstream argument
+    // map still has nodes. Prompt changes already push the model toward
+    // populated output; this is the last-resort safety net.
+    enrich_empty_output_with_structural_minorities(
+        &mut parsed,
+        transcript_text,
+        grounding_evidence_json,
+    );
     ensure_substantive_meta(
         &mut parsed,
         participant_map_text,
@@ -235,20 +245,22 @@ fn build_synthesis_prompt(
          {ANTI_INJECTION_PREAMBLE}\n\n\
          RULES:\n\
          - Use only the supplied transcript/structural/divergence data; treat all other knowledge as unavailable.\n\
-         - If evidence is insufficient, state uncertainty and leave optional lists empty.\n\
+         - Extract the full argument map from whatever substantive content IS present. Partial participation (some bots abstained in some rounds) is NOT a reason to return empty arrays — synthesise from the bots who DID engage. If two bots substantively disagree, that is a `live_disagreement` even if a third bot gapped out. If one bot held a distinctive position, that is a `minority_position` even if they abstained in later rounds.\n\
          - Every factual claim must cite [Bot pseudonym, Round N].\n\
          - Do not cite abstentions or rounds where the bot has no response.\n\
          - Treat <grounding-evidence> as authoritative for abstained/valid/recorded rounds.\n\
          - Do not infer what a participant \"seemed to mean\" — use only their stated positions.\n\
-         - Do not declare consensus unless all participants explicitly agree on the specific point.\n\
-         - Preserve minority positions with full dignity.\n\
+         - Consensus requires all PARTICIPATING bots (not abstained in the relevant round) to explicitly agree on the specific point. If a bot abstained, they neither support nor oppose.\n\
+         - A `live_disagreement` needs at least two bots taking opposing positions — not all four. Side A can be one bot; side B can be one bot. Emit the disagreement anyway.\n\
+         - Preserve minority positions with full dignity. A single bot holding a distinctive position is a `minority_position`, not a reason to return nothing.\n\
+         - Never decline to synthesise because you judged the evidence \"too limited\". If the transcript contains substantive bot responses, the output MUST contain corresponding structured entries. The reader wants the argument map from what IS there, not a statement that the map couldn't be built.\n\
          - Flag any position shift that lacks adequate justification.\n\n\
          STRICT OUTPUT CONTRACT:\n\
          - Return exactly one valid JSON object. No markdown, no code fences, no prose outside JSON.\n\
          - Use only pseudonyms from <participant-map> in supporting_bots/bots/bot fields.\n\
         - Keep evidence, best_argument, and key_argument short and specific (one claim + citation).\n\
         - Build synthesis with this priority: arguments map -> disagreements -> minority positions -> overall outcome.\n\
-        - If a section cannot be supported by explicit evidence, return an empty list for that section.\n\
+        - An empty section is acceptable ONLY if the transcript genuinely contains no content that maps to it (e.g. no bot shifted position → flagged_capitulations can be empty). If the transcript has real content, every applicable section MUST be populated.\n\
          - Do not include synthetic placeholders like \"TBD\", \"unknown source\", or uncited claims.\n\
         - meta_observations must start with \"Conclusion:\" then use these exact section headings and order: \"Summary of arguments\", \"Key disagreements\", \"Minority positions\", \"Overall outcome\", \"Bot behaviour notes\".\n\n\
          HEADLINE RULES (applies to every consensus_point, disagreement side, and minority_position):\n\
@@ -523,6 +535,96 @@ fn extract_json_object(text: &str) -> Option<String> {
     None
 }
 
+/// Last-resort hardening: when the model returns all-empty structured
+/// arrays but the transcript has substantive non-abstained content,
+/// synthesise one minority_position per participating bot from their
+/// latest substantive round. Ensures the argument map has nodes even
+/// when the model fails to extract structure.
+///
+/// No-op if any structured array is already populated — we never
+/// overwrite model output, only enrich empties.
+fn enrich_empty_output_with_structural_minorities(
+    output: &mut SynthesisOutput,
+    transcript_text: &str,
+    grounding_evidence_json: &str,
+) {
+    // Fire only when the model produced NOTHING structured. If any list
+    // has content, trust the model's judgment about what to emit.
+    let all_empty = output.consensus_points.is_empty()
+        && output.live_disagreements.is_empty()
+        && output.minority_positions.is_empty()
+        && output.flagged_capitulations.is_empty();
+    if !all_empty {
+        return;
+    }
+
+    // Source truth for substantive responses: grounding-evidence if
+    // available (more reliable — has abstained/valid flags), otherwise
+    // fall back to parsed transcript lines.
+    let mut evidence = parse_grounding_evidence(grounding_evidence_json);
+    if evidence.is_empty() {
+        evidence = parse_transcript_entries(transcript_text)
+            .into_iter()
+            .map(|entry| GroundingEvidenceEntry {
+                agent: entry.agent,
+                round: entry.round,
+                abstained: false,
+                effective_abstained: false,
+                valid: true,
+                response: entry.text,
+            })
+            .collect();
+    }
+    if evidence.is_empty() {
+        return;
+    }
+
+    // For each agent, find the latest round with a substantive response
+    // (not abstained, valid, and non-trivially long).
+    let mut latest_by_agent: HashMap<String, GroundingEvidenceEntry> = HashMap::new();
+    for entry in evidence {
+        if entry.abstained || entry.effective_abstained || !entry.valid {
+            continue;
+        }
+        if entry.response.trim().len() < 40 {
+            continue; // stub / marker response; skip
+        }
+        match latest_by_agent.get(&entry.agent) {
+            Some(existing) if existing.round >= entry.round => {}
+            _ => {
+                latest_by_agent.insert(entry.agent.clone(), entry);
+            }
+        }
+    }
+
+    if latest_by_agent.is_empty() {
+        return;
+    }
+
+    // Stable ordering — sort by pseudonym so the graph layout is
+    // deterministic across reruns.
+    let mut agents: Vec<String> = latest_by_agent.keys().cloned().collect();
+    agents.sort();
+
+    for agent in agents {
+        let entry = &latest_by_agent[&agent];
+        let snippet = summarize_for_meta(&entry.response, 280);
+        let headline = format!("{} position (R{})", agent, entry.round);
+        output.minority_positions.push(crate::synthesiser::schema::MinorityPosition {
+            bot: agent.clone(),
+            headline,
+            position: snippet,
+            key_argument: format!("Derived from [{}, Round {}] — no structured argument extracted by the synthesiser.", agent, entry.round),
+            confidence: None,
+        });
+    }
+
+    tracing::info!(
+        minorities_added = output.minority_positions.len(),
+        "synthesis: empty output enriched with structural minority positions"
+    );
+}
+
 /// Build a deterministic no-hallucination fallback from structural data only.
 fn conservative_fallback(topic: &str, precomputed_json: &str) -> SynthesisOutput {
     #[derive(Debug, Deserialize)]
@@ -669,7 +771,20 @@ fn compose_structured_meta(
 
     let summary_of_arguments = if output.live_disagreements.is_empty() {
         if output.consensus_points.is_empty() {
-            "- No robust argument map could be extracted from the available evidence.".to_string()
+            // No consensus AND no disagreements — but minorities may still
+            // be present. Surface them rather than claiming nothing was
+            // extracted.
+            if output.minority_positions.is_empty() {
+                "- Structured argument map not extracted; see the raw transcript for per-bot positions.".to_string()
+            } else {
+                output
+                    .minority_positions
+                    .iter()
+                    .take(4)
+                    .map(|m| format!("- {} held: {}", m.bot, summarize_for_meta(&m.position, 200)))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            }
         } else {
             let top = output
                 .consensus_points
@@ -679,7 +794,7 @@ fn compose_structured_meta(
                 .collect::<Vec<_>>()
                 .join("\n");
             if top.is_empty() {
-                "- No robust argument map could be extracted from the available evidence."
+                "- Structured argument map not extracted; see the raw transcript for per-bot positions."
                     .to_string()
             } else {
                 top
@@ -764,24 +879,27 @@ fn compose_structured_meta(
 }
 
 fn derive_overall_outcome(output: &SynthesisOutput) -> String {
-    match (
-        output.consensus_points.is_empty(),
-        output.live_disagreements.is_empty(),
-    ) {
-        (false, false) => {
+    let has_consensus = !output.consensus_points.is_empty();
+    let has_disagreements = !output.live_disagreements.is_empty();
+    let has_minorities = !output.minority_positions.is_empty();
+
+    match (has_consensus, has_disagreements, has_minorities) {
+        (true, true, _) => {
             "Partial convergence: some points aligned, but core disputes remained unresolved."
                 .to_string()
         }
-        (false, true) => {
+        (true, false, _) => {
             "Broad alignment: no unresolved core disagreement remained in the final synthesis."
                 .to_string()
         }
-        (true, false) => {
+        (false, true, _) => {
             "No consensus: arguments remained materially contested at close.".to_string()
         }
-        (true, true) => {
-            "Evidence was too limited to establish stable consensus or a clear disagreement map."
-                .to_string()
+        (false, false, true) => {
+            "No shared structure emerged: each participating bot held a distinct position; see minority positions.".to_string()
+        }
+        (false, false, false) => {
+            "No structured argument map was extracted; the full per-bot positions remain in the transcript.".to_string()
         }
     }
 }

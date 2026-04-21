@@ -2,9 +2,6 @@
   import * as Sentry from '@sentry/browser';
   import { api, debateStreamUrl } from '$lib/api/client';
   import { getSessionToken } from '$lib/auth/clerk';
-  import { page } from '$app/stores';
-  import { goto } from '$app/navigation';
-  import { get } from 'svelte/store';
   import StatusBadge from '$lib/components/StatusBadge.svelte';
   import TabBar from '$lib/components/TabBar.svelte';
   import DebateTranscriptView from '$lib/components/DebateTranscriptView.svelte';
@@ -57,11 +54,28 @@
     return TERMINAL.includes(status);
   }
 
-  let activeTab = $derived.by<Tab>(() => {
-    const p = $page.url?.searchParams.get('tab') ?? null;
-    if (p === 'outcome' || p === 'transcript' || p === 'raw') return p;
-    return isTerminal ? 'outcome' : 'transcript';
-  });
+  // Read the ?tab= query once at mount via window.location to avoid the
+  // $app/stores `page` subscription entirely. The reactive $page pattern
+  // has been the source of the "Cannot read properties of null (reading
+  // 'r')" Svelte 5 runtime crash — the page store's value can be null
+  // during early static-adapter hydration. setTab() below uses history
+  // API directly so we never depend on reactive URL updates here.
+  function readInitialTab(): Tab | null {
+    if (typeof window === 'undefined') return null;
+    try {
+      const p = new URLSearchParams(window.location.search).get('tab');
+      if (p === 'outcome' || p === 'transcript' || p === 'raw') return p;
+    } catch {
+      // ignore
+    }
+    return null;
+  }
+
+  let explicitTab = $state<Tab | null>(readInitialTab());
+
+  let activeTab = $derived<Tab>(
+    explicitTab ?? (isTerminal ? 'outcome' : 'transcript'),
+  );
 
   let tabs = $derived([
     {
@@ -74,9 +88,16 @@
   ]);
 
   function setTab(id: string) {
-    const url = new URL(get(page).url);
-    url.searchParams.set('tab', id);
-    goto(url, { replaceState: true, noScroll: true, keepFocus: true });
+    const tab = id as Tab;
+    explicitTab = tab;
+    if (typeof window === 'undefined') return;
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.set('tab', tab);
+      window.history.replaceState(window.history.state, '', url.toString());
+    } catch {
+      // history API can throw in rare cases; tab selection still updates in-memory
+    }
   }
 
   // Initial fetch

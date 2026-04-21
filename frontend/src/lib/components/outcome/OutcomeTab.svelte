@@ -8,6 +8,7 @@
   import { deriveGraph } from '$lib/argument-graph/derive';
   import { reconstructGraphAtRound } from '$lib/argument-graph/reconstruct';
   import ArgumentMap3D from './ArgumentMap3D.svelte';
+  import BotStanceMap from './BotStanceMap.svelte';
   import DivergenceHeadline from './DivergenceHeadline.svelte';
   import ReplaySlider from './ReplaySlider.svelte';
   import OutcomeFilters from './OutcomeFilters.svelte';
@@ -25,6 +26,10 @@
 
   const TERMINAL = ['complete', 'cancelled', 'failed'];
   let isTerminal = $derived(TERMINAL.includes(debate.status));
+
+  // Outcome-tab sub-view: Arguments (3D graph of claims) or Positions
+  // (per-bot confidence / reversal matrix). Two graphs, one click apart.
+  let outcomeView = $state<'arguments' | 'positions'>('arguments');
 
   // Round state: -1 = Final (terminal synthesis), 0..N-1 = reconstruction
   let selectedRound = $state(-1);
@@ -127,32 +132,59 @@
 {:else}
   <DivergenceHeadline synthesis={synthesis.synthesis} />
 
-  <OutcomeFilters
-    {hiddenKinds}
-    {supporters}
-    {highlightedSupporter}
-    onToggleKind={toggleKind}
-    onSupporterChange={(p) => (highlightedSupporter = p)}
-  />
+  <!-- Sub-tabs: Arguments (3D map) / Positions (reversal matrix). -->
+  <div class="flex gap-2 mb-4">
+    <button
+      onclick={() => (outcomeView = 'arguments')}
+      class="px-3 py-1.5 text-xs mono rounded border transition-colors
+             {outcomeView === 'arguments'
+               ? 'text-[var(--text-primary)] border-[var(--text-muted)] bg-[var(--surface-hover)]'
+               : 'text-[var(--text-secondary)] border-[var(--border)] hover:border-[var(--text-muted)] hover:text-[var(--text-primary)]'}"
+    >
+      Arguments
+    </button>
+    <button
+      onclick={() => (outcomeView = 'positions')}
+      class="px-3 py-1.5 text-xs mono rounded border transition-colors
+             {outcomeView === 'positions'
+               ? 'text-[var(--text-primary)] border-[var(--text-muted)] bg-[var(--surface-hover)]'
+               : 'text-[var(--text-secondary)] border-[var(--border)] hover:border-[var(--text-muted)] hover:text-[var(--text-primary)]'}"
+      disabled={!transcript || transcript.rounds.length === 0}
+    >
+      Positions
+    </button>
+  </div>
 
-  <ArgumentMap3D
-    {graph}
-    {selectedNodeId}
-    {hiddenKinds}
-    {highlightedSupporter}
-    onNodeClick={handleNodeClick}
-    onEdgeClick={handleEdgeClick}
-  />
-
-  {#if totalRounds > 1}
-    <ReplaySlider
-      rounds={totalRounds}
-      round={selectedRound}
-      {playing}
-      inferred={selectedRound !== -1}
-      onRoundChange={(r) => (selectedRound = r)}
-      onPlayToggle={() => (playing = !playing)}
+  {#if outcomeView === 'arguments'}
+    <OutcomeFilters
+      {hiddenKinds}
+      {supporters}
+      {highlightedSupporter}
+      onToggleKind={toggleKind}
+      onSupporterChange={(p) => (highlightedSupporter = p)}
     />
+
+    <ArgumentMap3D
+      {graph}
+      {selectedNodeId}
+      {hiddenKinds}
+      {highlightedSupporter}
+      onNodeClick={handleNodeClick}
+      onEdgeClick={handleEdgeClick}
+    />
+
+    {#if totalRounds > 1}
+      <ReplaySlider
+        rounds={totalRounds}
+        round={selectedRound}
+        {playing}
+        inferred={selectedRound !== -1}
+        onRoundChange={(r) => (selectedRound = r)}
+        onPlayToggle={() => (playing = !playing)}
+      />
+    {/if}
+  {:else if transcript}
+    <BotStanceMap {transcript} {synthesis} />
   {/if}
 
   <OutcomeDrawer

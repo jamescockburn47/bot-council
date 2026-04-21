@@ -1,8 +1,7 @@
 <script lang="ts">
   import '../app.css';
   import Sidebar from '$lib/components/Sidebar.svelte';
-  import { page } from '$app/stores';
-  import { goto } from '$app/navigation';
+  import { afterNavigate, goto } from '$app/navigation';
   import { getClerk, isSignedIn } from '$lib/auth/clerk';
   import { me, refreshMe } from '$lib/stores/me';
 
@@ -30,12 +29,29 @@
 
   const PUBLIC_PATHS = new Set(['/', '/sign-in']);
 
+  // Read the current path from window.location rather than subscribing to
+  // `$page`. Reactive `$page` has repeatedly been the source of the Svelte 5
+  // "Cannot read properties of null (reading 'r')" runtime crash — during
+  // early static-adapter hydration the page store's value is null and the
+  // compiled store-as-signal access crashes in the runtime. afterNavigate is
+  // a hook callback (not a reactive store), safe to use here.
+  function readPath(): string {
+    if (typeof window === 'undefined') return '';
+    return window.location.pathname;
+  }
+
+  let currentPath = $state<string>(readPath());
+
+  afterNavigate(() => {
+    currentPath = readPath();
+  });
+
   $effect(() => {
     if (didRunAuthBootstrap) return;
     didRunAuthBootstrap = true;
 
     void (async () => {
-      const path = $page.url.pathname;
+      const path = currentPath;
       const isPublic = PUBLIC_PATHS.has(path);
       console.info('[layout] onMount start, path=', path, 'public=', isPublic);
 
@@ -80,7 +96,7 @@
   });
 </script>
 
-{#if PUBLIC_PATHS.has($page.url.pathname)}
+{#if PUBLIC_PATHS.has(currentPath)}
   {@render children()}
 {:else if fatalError}
   <div class="flex items-center justify-center min-h-screen flex-col gap-3 p-8">
@@ -93,7 +109,7 @@
   </div>
 {:else if stage === 'ready' && $me}
   <div class="flex min-h-screen">
-    <Sidebar currentPath={$page.url.pathname} role={$me.role} />
+    <Sidebar currentPath={currentPath} role={$me.role} />
     <main class="ml-56 flex-1 p-8">
       {@render children()}
     </main>

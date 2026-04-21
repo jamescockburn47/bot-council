@@ -8,6 +8,7 @@
   import { deriveGraph } from '$lib/argument-graph/derive';
   import { reconstructGraphAtRound } from '$lib/argument-graph/reconstruct';
   import ArgumentMap3D from './ArgumentMap3D.svelte';
+  import DivergenceHeadline from './DivergenceHeadline.svelte';
   import ReplaySlider from './ReplaySlider.svelte';
   import OutcomeFilters from './OutcomeFilters.svelte';
   import OutcomeDrawer from './OutcomeDrawer.svelte';
@@ -124,6 +125,8 @@
     </p>
   </div>
 {:else}
+  <DivergenceHeadline synthesis={synthesis.synthesis} />
+
   <OutcomeFilters
     {hiddenKinds}
     {supporters}

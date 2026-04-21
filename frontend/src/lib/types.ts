@@ -146,6 +146,10 @@ export interface SynthesisData {
 
 export interface ConsensusPoint {
   point: string;
+  /** 3–6 word label from the synthesiser. Empty string on older rows
+   *  that predate the headline prompt; frontend falls back to a
+   *  truncation of `point`. */
+  headline?: string;
   supporting_bots: string[];
   evidence: string;
 }
@@ -158,6 +162,8 @@ export interface Disagreement {
 
 export interface DisagreementSide {
   position: string;
+  /** 3–6 word label from the synthesiser. */
+  headline?: string;
   bots: string[];
   best_argument: string;
 }
@@ -173,6 +179,8 @@ export interface Capitulation {
 export interface MinorityPosition {
   bot: string;
   position: string;
+  /** 3–6 word label from the synthesiser. */
+  headline?: string;
   key_argument: string;
   confidence: number;
 }

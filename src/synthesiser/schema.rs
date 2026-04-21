@@ -23,8 +23,14 @@ pub struct SynthesisOutput {
 /// A point of consensus with supporting evidence.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConsensusPoint {
-    /// The agreed point.
+    /// The agreed point, full sentence.
     pub point: String,
+    /// 3–6 word keyword headline for the point, suitable as a graph-node
+    /// label. Model-generated; if absent (older rows, salvage path)
+    /// defaults to empty — the frontend falls back to a truncation of
+    /// `point`.
+    #[serde(default)]
+    pub headline: String,
     /// Pseudonyms of bots that supported this point.
     pub supporting_bots: Vec<String>,
     /// Evidence with citations.
@@ -45,8 +51,12 @@ pub struct LiveDisagreement {
 /// One side of a disagreement.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DisagreementSide {
-    /// The position held.
+    /// The position held, full sentence.
     pub position: String,
+    /// 3–6 word keyword headline for this side of the disagreement,
+    /// suitable as a graph-node label. Defaults to empty for older rows.
+    #[serde(default)]
+    pub headline: String,
     /// Pseudonyms of bots holding this position.
     pub bots: Vec<String>,
     /// The strongest argument offered, with citation.
@@ -73,8 +83,12 @@ pub struct FlaggedCapitulation {
 pub struct MinorityPosition {
     /// Pseudonym of the bot holding this position.
     pub bot: String,
-    /// The position itself.
+    /// The position itself, full sentence.
     pub position: String,
+    /// 3–6 word keyword headline suitable as a graph-node label.
+    /// Defaults to empty for older rows.
+    #[serde(default)]
+    pub headline: String,
     /// The strongest argument offered, with citation.
     pub key_argument: String,
     /// Confidence level at the end of the debate, if provided.

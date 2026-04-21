@@ -251,6 +251,12 @@ fn build_synthesis_prompt(
         - If a section cannot be supported by explicit evidence, return an empty list for that section.\n\
          - Do not include synthetic placeholders like \"TBD\", \"unknown source\", or uncited claims.\n\
         - meta_observations must start with \"Conclusion:\" then use these exact section headings and order: \"Summary of arguments\", \"Key disagreements\", \"Minority positions\", \"Overall outcome\", \"Bot behaviour notes\".\n\n\
+         HEADLINE RULES (applies to every consensus_point, disagreement side, and minority_position):\n\
+         - `headline` is a graph-node label shown to the user at normal zoom. It MUST be 3–6 words, keyword-style, no trailing punctuation.\n\
+         - Omit articles (\"the\", \"a\", \"an\") and filler where possible. Use concrete nouns and verbs.\n\
+         - Headlines should be mutually distinguishable at a glance — avoid generic stems (\"position holds\", \"claim that\") and repeated openers across nodes.\n\
+         - DO NOT truncate the full sentence into the headline. Write a fresh 3–6 word distillation of the claim's substance.\n\
+         - Examples: \"Junior hiring collapses 30%\", \"Liability gap closable\", \"Contrarian function irreplaceable\", \"Chaos tests overkill\", \"Unjustified zero-day bypass\".\n\n\
          TOPIC: {topic}\n\n\
          <participant-map>\n{participant_map}\n</participant-map>\n\n\
          <grounding-evidence>\n{grounding_evidence}\n</grounding-evidence>\n\n\
@@ -260,10 +266,10 @@ fn build_synthesis_prompt(
          OUTPUT SCHEMA (return valid JSON):\n\
          {{\n\
            \"topic\": \"string\",\n\
-           \"consensus_points\": [{{ \"point\": \"string\", \"supporting_bots\": [\"pseudonym\"], \"evidence\": \"string [citations]\" }}],\n\
-           \"live_disagreements\": [{{ \"issue\": \"string\", \"side_a\": {{ \"position\": \"string\", \"bots\": [\"pseudonym\"], \"best_argument\": \"string [citation]\" }}, \"side_b\": {{ \"position\": \"string\", \"bots\": [\"pseudonym\"], \"best_argument\": \"string [citation]\" }} }}],\n\
+           \"consensus_points\": [{{ \"headline\": \"3-6 word label\", \"point\": \"string\", \"supporting_bots\": [\"pseudonym\"], \"evidence\": \"string [citations]\" }}],\n\
+           \"live_disagreements\": [{{ \"issue\": \"string\", \"side_a\": {{ \"headline\": \"3-6 word label\", \"position\": \"string\", \"bots\": [\"pseudonym\"], \"best_argument\": \"string [citation]\" }}, \"side_b\": {{ \"headline\": \"3-6 word label\", \"position\": \"string\", \"bots\": [\"pseudonym\"], \"best_argument\": \"string [citation]\" }} }}],\n\
            \"flagged_capitulations\": [{{ \"bot\": \"pseudonym\", \"from\": \"string\", \"to\": \"string\", \"justification_adequate\": bool, \"flag_reason\": \"string\" }}],\n\
-           \"minority_positions\": [{{ \"bot\": \"pseudonym\", \"position\": \"string\", \"key_argument\": \"string [citation]\", \"confidence\": int }}],\n\
+           \"minority_positions\": [{{ \"bot\": \"pseudonym\", \"headline\": \"3-6 word label\", \"position\": \"string\", \"key_argument\": \"string [citation]\", \"confidence\": int }}],\n\
            \"confidence_trajectories\": {{ \"pseudonym\": [null, int, int, int, int] }},\n\
            \"meta_observations\": \"string — target 350-700 words\"\n\
          }}"
@@ -1333,12 +1339,14 @@ mod tests {
                 issue: "Whether identity certificates improve trust".into(),
                 side_a: DisagreementSide {
                     position: "Certificates materially improve trust".into(),
+                    headline: "Certificates improve trust".into(),
                     bots: vec!["Agent A".into()],
                     best_argument:
                         "Trust improves when attestations are verifiable [Agent A, Round 2]".into(),
                 },
                 side_b: DisagreementSide {
                     position: "Certificates do not address root accountability gaps".into(),
+                    headline: "Accountability gaps remain".into(),
                     bots: vec!["Agent B".into()],
                     best_argument:
                         "Operational controls matter more than identity badges [Agent B, Round 2]"
@@ -1349,6 +1357,7 @@ mod tests {
             minority_positions: vec![MinorityPosition {
                 bot: "Agent C".into(),
                 position: "Keep identity optional and audit controls mandatory".into(),
+                headline: "Audit over identity".into(),
                 key_argument:
                     "Mandatory identity can be theatre without enforcement [Agent C, Round 2]"
                         .into(),

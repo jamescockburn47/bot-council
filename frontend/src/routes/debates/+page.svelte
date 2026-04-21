@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { api } from '$lib/api/client';
+  import { api, ApiError } from '$lib/api/client';
   import StatusBadge from '$lib/components/StatusBadge.svelte';
   import type { DebateResponse } from '$lib/types';
   import { me } from '$lib/stores/me';
@@ -11,13 +11,23 @@
   // and divergence metrics live, i.e. the reason most visits happen. Put
   // the payoff first, everything else one click away.
   let filter = $state<'complete' | 'running' | 'failed' | 'cancelled' | 'all'>('complete');
+  let showArchived = $state(false);
+  // A pending delete confirmation: holds the debate id the admin has
+  // clicked "Delete" on. Clicking Delete a second time on the same id
+  // commits. Clicking Delete on a different id (or any other action)
+  // resets the prompt.
+  let confirmingDelete = $state<string | null>(null);
+  let busyId = $state<string | null>(null);
 
   const FILTERS = ['complete', 'running', 'failed', 'cancelled', 'all'] as const;
 
   function formatDate(iso: string): string {
     const d = new Date(iso);
-    return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) +
-      ' ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    return (
+      d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) +
+      ' ' +
+      d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+    );
   }
 
   function truncate(text: string, len: number): string {
@@ -25,15 +35,66 @@
   }
 
   let filtered = $derived(
-    filter === 'all' ? debates : debates.filter(d => d.status === filter)
+    filter === 'all' ? debates : debates.filter((d) => d.status === filter),
   );
 
+  async function reload() {
+    loading = true;
+    error = null;
+    try {
+      debates = await api.debates.list({ archived: showArchived });
+    } catch (e) {
+      error = e instanceof Error ? e.message : 'Failed to load debates';
+    } finally {
+      loading = false;
+    }
+  }
+
   $effect(() => {
-    api.debates.list()
-      .then(data => { debates = data; })
-      .catch(e => { error = e.message ?? 'Failed to load debates'; })
-      .finally(() => { loading = false; });
+    // Re-run whenever showArchived flips.
+    showArchived;
+    void reload();
   });
+
+  async function doArchive(d: DebateResponse, archived: boolean) {
+    if (busyId) return;
+    busyId = d.id;
+    confirmingDelete = null;
+    try {
+      await api.debates.setArchived(d.id, archived);
+      // If we just archived it and we're not showing archived, drop the
+      // row locally so the UI feels instant without a refetch.
+      if (archived && !showArchived) {
+        debates = debates.filter((x) => x.id !== d.id);
+      } else {
+        debates = debates.map((x) =>
+          x.id === d.id ? { ...x, archived_at: archived ? new Date().toISOString() : null } : x,
+        );
+      }
+    } catch (e) {
+      error = e instanceof Error ? e.message : 'Failed to archive';
+    } finally {
+      busyId = null;
+    }
+  }
+
+  async function doDelete(d: DebateResponse) {
+    if (confirmingDelete !== d.id) {
+      confirmingDelete = d.id;
+      return;
+    }
+    if (busyId) return;
+    busyId = d.id;
+    try {
+      await api.debates.remove(d.id);
+      debates = debates.filter((x) => x.id !== d.id);
+      confirmingDelete = null;
+    } catch (e) {
+      error = e instanceof ApiError ? `Delete failed: ${e.status}` : 'Failed to delete';
+    } finally {
+      busyId = null;
+    }
+  }
 </script>
 
 <div class="max-w-5xl">
@@ -49,8 +110,8 @@
     {/if}
   </div>
 
-  <!-- Status filters -->
-  <div class="flex gap-2 mb-6">
+  <!-- Status filters + archived toggle -->
+  <div class="flex items-center gap-2 mb-6 flex-wrap">
     {#each FILTERS as f}
       <button
         onclick={() => (filter = f)}
@@ -61,9 +122,19 @@
         {f.charAt(0).toUpperCase() + f.slice(1)}
       </button>
     {/each}
+    {#if $me?.role === 'admin'}
+      <span class="w-px h-5 bg-[var(--border)] mx-1"></span>
+      <label class="flex items-center gap-2 text-xs mono text-[var(--text-secondary)] cursor-pointer select-none">
+        <input
+          type="checkbox"
+          bind:checked={showArchived}
+          class="accent-[#8b5cf6]"
+        />
+        Show archived
+      </label>
+    {/if}
   </div>
 
-  <!-- Loading skeleton -->
   {#if loading}
     <div class="space-y-4">
       {#each Array(4) as _}
@@ -74,20 +145,16 @@
         </div>
       {/each}
     </div>
-
-  <!-- Error state -->
   {:else if error}
     <div class="bg-red-500/10 border border-red-500/30 rounded-lg p-6 text-center">
       <p class="text-red-400 mono text-sm">{error}</p>
       <button
-        onclick={() => { loading = true; error = null; api.debates.list().then(d => { debates = d; }).catch(e => { error = e.message; }).finally(() => { loading = false; }); }}
+        onclick={reload}
         class="mt-3 px-4 py-1.5 text-xs mono text-red-400 border border-red-500/30 rounded hover:bg-red-500/10 transition-colors"
       >
         Retry
       </button>
     </div>
-
-  <!-- Empty state -->
   {:else if filtered.length === 0}
     <div class="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-12 text-center">
       {#if filter !== 'all' && debates.length > 0}
@@ -107,19 +174,26 @@
         {/if}
       {/if}
     </div>
-
-  <!-- Debate cards -->
   {:else}
     <div class="space-y-3">
       {#each filtered as debate (debate.id)}
-        <a
-          href="/debates/{debate.id}"
-          class="block bg-[var(--surface)] border border-[var(--border)] rounded-lg p-5 hover:border-[#8b5cf6]/40 transition-colors no-underline group"
+        {@const archived = debate.archived_at != null}
+        <div
+          class="bg-[var(--surface)] border rounded-lg p-5 transition-colors group
+                 {archived ? 'border-[var(--border)] opacity-60' : 'border-[var(--border)] hover:border-[#8b5cf6]/40'}"
         >
           <div class="flex items-start justify-between gap-4">
-            <div class="flex-1 min-w-0">
+            <a
+              href="/debates/{debate.id}"
+              class="flex-1 min-w-0 no-underline"
+            >
               <h3 class="text-sm font-medium text-[var(--text-primary)] group-hover:text-white transition-colors mb-1.5">
                 {truncate(debate.topic, 120)}
+                {#if archived}
+                  <span class="ml-2 text-[10px] mono uppercase tracking-wider text-[var(--text-muted)] border border-[var(--border)] rounded px-1.5 py-0.5 align-middle">
+                    archived
+                  </span>
+                {/if}
               </h3>
               <div class="flex items-center gap-3 flex-wrap">
                 <StatusBadge status={debate.status} />
@@ -129,13 +203,38 @@
                 <span class="text-[10px] mono text-[var(--text-muted)]">
                   {debate.id.slice(0, 8)}
                 </span>
+                <span class="text-[10px] mono text-[var(--text-muted)]">
+                  {formatDate(debate.created_at)}
+                </span>
               </div>
-            </div>
-            <span class="text-[10px] mono text-[var(--text-muted)] shrink-0">
-              {formatDate(debate.created_at)}
-            </span>
+            </a>
+
+            {#if $me?.role === 'admin'}
+              <div class="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  disabled={busyId === debate.id}
+                  onclick={() => doArchive(debate, !archived)}
+                  class="px-2.5 py-1 text-[10px] mono text-[var(--text-secondary)] border border-[var(--border)] rounded hover:text-[var(--text-primary)] hover:border-[var(--text-muted)] transition-colors disabled:opacity-50"
+                >
+                  {archived ? 'Unarchive' : 'Archive'}
+                </button>
+                <button
+                  type="button"
+                  disabled={busyId === debate.id}
+                  onclick={() => doDelete(debate)}
+                  class="px-2.5 py-1 text-[10px] mono rounded border transition-colors disabled:opacity-50
+                         {confirmingDelete === debate.id
+                           ? 'text-red-300 bg-red-500/20 border-red-500/50'
+                           : 'text-[var(--text-muted)] border-[var(--border)] hover:text-red-400 hover:border-red-500/40'}"
+                  title="Permanent delete (cascade)"
+                >
+                  {confirmingDelete === debate.id ? 'Click to confirm' : 'Delete'}
+                </button>
+              </div>
+            {/if}
           </div>
-        </a>
+        </div>
       {/each}
     </div>
   {/if}

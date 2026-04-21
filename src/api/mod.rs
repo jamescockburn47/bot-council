@@ -62,7 +62,11 @@ pub fn router(state: AppState) -> Router {
             "/debates",
             get(debates::list_debates).post(debates::create_debate),
         )
-        .route("/debates/{id}", get(debates::get_debate))
+        .route(
+            "/debates/{id}",
+            get(debates::get_debate).delete(debates::delete_debate),
+        )
+        .route("/debates/{id}/archive", patch(debates::set_archive_state))
         .route("/debates/{id}/transcript", get(transcript::get_transcript))
         .route("/debates/{id}/synthesis", get(synthesis::get_synthesis))
         .route("/debates/{id}/stream", get(stream::stream_debate))

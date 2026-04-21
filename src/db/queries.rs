@@ -143,21 +143,29 @@ pub async fn get_debate(pool: &SqlitePool, id: &str) -> Result<Option<DebateRow>
 }
 
 /// List debates, optionally filtered by status, most recent first.
+/// When `include_archived` is false (the default), soft-deleted debates
+/// are hidden. Admins can pass `?archived=true` to see them.
 pub async fn list_debates(
     pool: &SqlitePool,
     status: Option<&str>,
     limit: i64,
     test_only: bool,
+    include_archived: bool,
 ) -> Result<Vec<DebateRow>, sqlx::Error> {
     let topic_filter = if test_only {
         only_non_production_topic_filter("topic")
     } else {
         non_production_topic_filter("topic")
     };
+    let archived_filter = if include_archived {
+        ""
+    } else {
+        " AND archived_at IS NULL"
+    };
     match status {
         Some(s) => {
             let sql = format!(
-                "SELECT * FROM debates WHERE status = ? AND ({topic_filter}) ORDER BY created_at DESC LIMIT ?"
+                "SELECT * FROM debates WHERE status = ? AND ({topic_filter}){archived_filter} ORDER BY created_at DESC LIMIT ?"
             );
             sqlx::query_as::<_, DebateRow>(&sql)
                 .bind(s)
@@ -167,7 +175,7 @@ pub async fn list_debates(
         }
         None => {
             let sql = format!(
-                "SELECT * FROM debates WHERE ({topic_filter}) ORDER BY created_at DESC LIMIT ?"
+                "SELECT * FROM debates WHERE ({topic_filter}){archived_filter} ORDER BY created_at DESC LIMIT ?"
             );
             sqlx::query_as::<_, DebateRow>(&sql)
                 .bind(limit)
@@ -175,6 +183,25 @@ pub async fn list_debates(
                 .await
         }
     }
+}
+
+/// Set or clear a debate's archived_at timestamp.
+pub async fn set_debate_archived(
+    pool: &SqlitePool,
+    id: &str,
+    archived: bool,
+) -> Result<(), sqlx::Error> {
+    let value = if archived {
+        Some(chrono::Utc::now().to_rfc3339())
+    } else {
+        None
+    };
+    sqlx::query("UPDATE debates SET archived_at = ? WHERE id = ?")
+        .bind(value)
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(())
 }
 
 /// Update a debate's status and set completed_at for terminal states.

@@ -26,6 +26,10 @@ pub struct DebateRow {
     pub config_json: String,
     pub created_at: String,
     pub completed_at: Option<String>,
+    /// When set (ISO-8601), the debate has been soft-deleted by an admin
+    /// and is hidden from the default list. Permanent deletion goes through
+    /// `queries_cleanup::cascade_delete_debate` and doesn't use this.
+    pub archived_at: Option<String>,
 }
 
 /// Join table row linking a bot to a debate with its assigned pseudonym.

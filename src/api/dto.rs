@@ -104,6 +104,12 @@ pub struct DebateResponse {
     pub status: String,
     pub created_at: String,
     pub completed_at: Option<String>,
+    /// Soft-delete timestamp — `None` for live debates, ISO-8601 once an
+    /// admin has archived it. Archived debates are hidden from the default
+    /// list view; the frontend's "Show archived" toggle requests them
+    /// explicitly.
+    #[serde(default)]
+    pub archived_at: Option<String>,
     pub bots: Vec<DebateBotInfo>,
     pub results: Option<DebateResults>,
 }
@@ -148,6 +154,16 @@ pub struct ListDebatesQuery {
     pub status: Option<String>,
     pub limit: Option<i64>,
     pub test: Option<bool>,
+    /// Include soft-deleted (archived) debates. Default false. Admins
+    /// toggling "Show archived" in the UI pass `archived=true`.
+    #[serde(default)]
+    pub archived: Option<bool>,
+}
+
+/// Body for `PATCH /api/debates/{id}/archive`.
+#[derive(Debug, Deserialize)]
+pub struct SetArchivedRequest {
+    pub archived: bool,
 }
 
 /// Response for GET /debates/{id}/transcript.

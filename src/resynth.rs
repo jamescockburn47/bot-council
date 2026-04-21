@@ -14,6 +14,7 @@ use crate::config::Settings;
 use crate::db;
 use crate::db::queries;
 use crate::db::queries_phase1;
+use crate::orchestrator::multi_round::is_effective_abstention_response;
 use crate::synthesiser;
 use crate::synthesiser::{citation_check, precompute};
 use anyhow::{Context, Result};
@@ -296,13 +297,3 @@ fn prompt_hash_for_inputs(topic: &str, participants: &str, transcript: &str) -> 
     hex::encode(h.finalize())
 }
 
-/// Mirror of the orchestrator's is_effective_abstention_response helper.
-/// Kept local so resynth doesn't pull in the orchestrator module tree.
-fn is_effective_abstention_response(response: &str) -> bool {
-    let trimmed = response.trim().to_lowercase();
-    trimmed.is_empty()
-        || trimmed.starts_with("i abstain")
-        || trimmed.starts_with("abstain")
-        || trimmed.contains("i am unable to")
-        || trimmed.contains("i cannot provide")
-}

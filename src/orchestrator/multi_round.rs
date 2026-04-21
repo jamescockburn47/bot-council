@@ -79,7 +79,16 @@ fn is_conservative_empty_synthesis(s: &serde_json::Value) -> bool {
         && arrays_empty("minority_positions")
 }
 
-fn is_effective_abstention_response(text: &str) -> bool {
+/// True when a bot's stored response is a fallback/non-answer string —
+/// "(abstained)", "unable to formulate", etc. — even though the
+/// `abstained` column on its row is false. These show up when a bot
+/// timed out or returned a stock polite refusal; treating them as
+/// substantive pollutes the synthesis input.
+///
+/// Exposed so the resynth CLI uses the same markers as the live
+/// orchestrator (drift between the two produced empty-synthesis
+/// regressions during the MiniMax rerun).
+pub fn is_effective_abstention_response(text: &str) -> bool {
     let normalized = text.trim().to_lowercase();
     if normalized.is_empty() {
         return true;

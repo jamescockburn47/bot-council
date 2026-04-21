@@ -7,6 +7,7 @@ pub mod db;
 pub mod error;
 pub mod observability;
 pub mod orchestrator;
+pub mod resynth;
 pub mod sanitise;
 pub mod scoreboard;
 pub mod state;

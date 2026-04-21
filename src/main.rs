@@ -28,6 +28,10 @@ fn main() -> anyhow::Result<()> {
     match command.as_deref() {
         Some("scoreboard-weekly") => runtime.block_on(async_scoreboard_weekly(settings)),
         Some("test-cleanup") => runtime.block_on(async_test_cleanup(settings)),
+        Some("resynthesise") | Some("resynthesize") => {
+            let args: Vec<String> = std::env::args().skip(2).collect();
+            runtime.block_on(async_resynth(settings, args))
+        }
         _ => runtime.block_on(async_main()),
     }
 }
@@ -49,5 +53,44 @@ async fn async_scoreboard_weekly(settings: Settings) -> anyhow::Result<()> {
 async fn async_test_cleanup(settings: Settings) -> anyhow::Result<()> {
     let deleted = bot_council::cleanup::run_test_cleanup(&settings).await?;
     tracing::info!(deleted, "test-cleanup job finished");
+    Ok(())
+}
+
+/// CLI: `bot-council resynthesise [<debate_id>] [--throttle-ms N]`
+///
+/// No positional arg → resynth every completed/failed debate
+/// (non-archived, production topic), throttled at 2s between calls.
+/// A positional arg treats it as a single debate id (bypasses throttle).
+async fn async_resynth(settings: Settings, args: Vec<String>) -> anyhow::Result<()> {
+    let mut only_id: Option<String> = None;
+    let mut throttle_ms: Option<u64> = None;
+    let mut i = 0;
+    while i < args.len() {
+        let a = &args[i];
+        if a == "--throttle-ms" {
+            if let Some(v) = args.get(i + 1) {
+                throttle_ms = v.parse().ok();
+                i += 2;
+                continue;
+            }
+        }
+        // First non-flag positional is the debate id.
+        if only_id.is_none() && !a.starts_with("--") {
+            only_id = Some(a.clone());
+        }
+        i += 1;
+    }
+
+    let report = bot_council::resynth::resynth(&settings, only_id.as_deref(), throttle_ms).await?;
+    tracing::info!(
+        considered = report.considered,
+        succeeded = report.succeeded,
+        skipped = report.skipped,
+        failed = report.failed.len(),
+        "resynth job finished"
+    );
+    for (id, msg) in &report.failed {
+        tracing::warn!(debate_id = %id, error = %msg, "resynth failure detail");
+    }
     Ok(())
 }

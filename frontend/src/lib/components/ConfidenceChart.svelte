@@ -3,6 +3,7 @@
     Chart,
     CategoryScale,
     LinearScale,
+    LineController,
     PointElement,
     LineElement,
     Tooltip,
@@ -10,7 +11,18 @@
   } from 'chart.js';
   import { AGENT_COLORS } from '$lib/utils/agent-colors';
 
-  Chart.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend);
+  // Chart.js v4 requires the controller for the chart type to be registered
+  // alongside the scales/elements. Without LineController a `type: 'line'`
+  // Chart() throws "line is not a registered controller."
+  Chart.register(
+    CategoryScale,
+    LinearScale,
+    LineController,
+    PointElement,
+    LineElement,
+    Tooltip,
+    Legend,
+  );
 
   let { trajectories }: { trajectories: Record<string, (number | null)[]> } = $props();
   let canvas: HTMLCanvasElement;

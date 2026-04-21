@@ -67,6 +67,12 @@
     handle = createSimulation(graph.nodes, graph.edges, width, height, () => {
       tick++;
     });
+    // Converge synchronously before the first render so nodes don't show up
+    // stacked at the origin while the async d3-force rAF loop warms up.
+    // `sim.tick(n)` advances alpha n times without dispatching the tick
+    // event, so we bump `tick` manually once to trigger Svelte's reactivity.
+    handle.sim.tick(300);
+    tick++;
   }
 
   $effect(() => {

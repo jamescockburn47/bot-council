@@ -154,11 +154,10 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(remaining, 0);
-        let child: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM rounds WHERE debate_id = 'd1'")
-                .fetch_one(&pool)
-                .await
-                .unwrap();
+        let child: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM rounds WHERE debate_id = 'd1'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
         assert_eq!(child, 0);
     }
 

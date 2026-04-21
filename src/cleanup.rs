@@ -47,10 +47,6 @@ pub async fn run_test_cleanup(settings: &Settings) -> anyhow::Result<usize> {
             }
         }
     }
-    tracing::info!(
-        deleted,
-        considered = ids.len(),
-        "test-cleanup: done"
-    );
+    tracing::info!(deleted, considered = ids.len(), "test-cleanup: done");
     Ok(deleted)
 }

@@ -14,7 +14,7 @@
 | **GitHub repo** | `jamescockburn47/bot-council` |
 | **Default branch** | `main` |
 | **Prod URL** | `https://lqcouncil.com` — single origin, Axum serves both `/` (frontend) and `/api/*` (backend) |
-| **LLM** | local `llama-server` (llama.cpp) on EVO `:8086`, model `gemma-4-31B-it-Q4_K_M.gguf` |
+| **LLM** | MiniMax-M2.7 via `https://api.minimax.io/v1/chat/completions` (OpenAI-compatible, Bearer auth). Local llama-server + Gemma remains available on EVO `:8086` as a rollback target but is not currently wired to any model route. |
 
 ## Public request chain
 
@@ -222,6 +222,8 @@ All routes mounted under `/api/*` in production. Tests use the un-prefixed route
 | GET | /api/debates/{id}/transcript | RequireAuth | Round-by-round transcript |
 | GET | /api/debates/{id}/synthesis | RequireAuth | Final synthesis JSON |
 | GET | /api/debates/{id}/stream | RequireAuth (header OR `?token=`) | SSE live stream |
+| PATCH | /api/debates/{id}/archive | RequireAdmin | Body `{"archived": bool}` — soft archive/unarchive. Sets/clears `archived_at`. Archived debates hide from the default list; `?archived=true` surfaces them. |
+| DELETE | /api/debates/{id} | RequireAdmin | Permanent cascade delete (transcript, responses, analyses, syntheses, debate_bots, broadcast channel). Not reversible. |
 | GET | /api/admins | RequireAdmin | List admins |
 | POST | /api/admins | RequireAdmin | Promote a user_id |
 | DELETE | /api/admins/{user_id} | RequireAdmin | Demote (cannot demote self) |
@@ -235,17 +237,20 @@ All routes mounted under `/api/*` in production. Tests use the un-prefixed route
 - **Admin bearer token** (`APP__AUTH__ADMIN_TOKEN`): CLI / emergency / bootstrap-first-admin path. Sends `Authorization: Bearer <token>` — identity is `Admin { user_id: None, source: BearerToken }`.
 - **Promotion**: `POST /api/admins` with a Clerk user_id. First admin bootstrapped by bearer token before the user has admin rights via any other path. **Already done** — 4 admins in DB as of 2026-04-18.
 
-## Current state (2026-04-20)
+## Current state (2026-04-21)
 
 **Live architecture**: single-origin EVO fronted by Cloudflare Tunnel. Vercel fully retired (both the bot-council frontend project and the lqcouncil-api-proxy project removed).
 
-**Local LLM**: all inference hits `http://127.0.0.1:8086` (gemma-4-31B via llama.cpp's llama-server). Stray Anthropic + CometAPI keys found in `/etc/bot-council.env` were zeroed out on 2026-04-20; revoke at provider consoles if not already done.
+**LLM routing**: all analyser + final-synthesis calls hit **MiniMax-M2.7 at `https://api.minimax.io`** (OpenAI-compatible API, Bearer auth). Env file has `APP__MODELS__ANALYSIS_BASE_URL`, `APP__MODELS__FINAL_SYNTHESIS_BASE_URL`, and `APP__MODELS__MINIMAX_BASE_URL` all pointing at api.minimax.io, and `APP__MODELS__MINIMAX_API_KEY` set. `APP__MODELS__FINAL_SYNTHESIS_WARMUP_ENABLED=false` (not needed for a hosted API). The historic Anthropic + CometAPI keys zeroed 2026-04-20 remain zeroed. `config/default.toml` defaults still point at the local llama-server for analysis + final_synthesis, so if MiniMax is down the rollback is "unset the `APP__MODELS__*_BASE_URL` overrides, restart bot-council, llama-server picks up the traffic" — provided the local llama-server on `:8086` is running.
+
+**Resynth / cleanup CLI**: `bot-council resynthesise` rebuilds the stored synthesis for one or all concluded debates by re-running the analyser + synthesiser against the existing transcript. Used after a synthesis-prompt change to refresh historical debate headlines without re-running the full debate. `bot-council test-cleanup` sweeps auto-deletable test debates. Both source `/etc/bot-council.env` to pick up admin-level model routing — see `/home/james/resynth-launch.sh` on EVO for the standard invocation (default `--throttle-ms 2000`; use `500` on Pro-tier MiniMax).
 
 **CI**: GitHub Actions enforces backend (fmt/clippy/test) and frontend (svelte-check/build). Enable branch protection in GitHub Settings → Branches to require CI pass before merging.
 
 **Hardening live**:
 - `src/lib.rs`: JWKS startup-wait retries with exponential backoff (1s/2s/4s/8s/16s × ~91s worst case) then `bail!`. Previously a Clerk DNS hiccup at boot gave a 10-minute degraded-auth window.
 - `deploy/bot-council.service`: `StartLimitBurst=5`/`StartLimitIntervalSec=300` (in [Unit]) caps restart loops; `ExecStartPre=/usr/bin/test -s /etc/bot-council.env` refuses empty configs; `TimeoutStartSec=120` caps startup hangs.
+- Synthesis schema (`src/synthesiser/schema.rs`): every top-level field and every `headline` field carries `#[serde(default)]`. MiniMax occasionally drops one field on shorter transcripts; without defaults the typed parse would fail and the whole synthesis would fall through to an empty-template salvage. With defaults, only the dropped section is empty.
 
 ## Specs + plans
 
@@ -269,10 +274,11 @@ Things learned the hard way. Do not rediscover them.
 6. **Svelte 5 runes.** Use `$state`, `$derived`, `$effect`, `$props()`, `$effect.root()`. `let x = $state(...)` not `let x: T = $state<T>(...)`. Read existing pages before adding new ones.
 7. **`$app/stores` vs `$app/state`** — neither is safe for `page` reads in this adapter-static + Svelte 5 build. `$app/state` breaks hydration silently; the `page` store from `$app/stores` is null for a microtask on first render and the store-as-signal read crashes with *"Cannot read properties of null (reading 'r')"*. Use `afterNavigate` from `$app/navigation` + a `window.location.pathname` snapshot. Ref: PR #72. Enforced by CI (see `.github/workflows/ci.yml` "Forbid known-broken imports").
 8. **`onDestroy` from 'svelte' is banned in this repo.** Current Svelte 5 + Vite splitting routes it to the SSR renderer's context (`Mt.r.on_destroy`), whose `Mt` is null in CSR — same null-signal crash as #7. Use `$effect(() => () => cleanup())` instead. Ref: PR #73. Enforced by CI.
-8. **Subagent rigour.** For backend Rust: full implementer + spec + code review on substantive tasks; manual verification on mechanical ones (migrations, config tweaks, extractor renames). Write tests before delegating.
-9. **Always check for open PRs first.** `gh pr list --state open` before starting any branch. Parallel PRs touching the same files cause conflicts and risk dropping fixes.
-10. **User has all project access.** Do not ask the user to run commands you can run yourself (`gh pr merge`, `git push`, `scp` to EVO). Autonomous end-to-end execution expected.
-11. **Never edit migrations that have been applied to prod.** sqlx's `migrate!()` macro embeds file bytes at compile time and checksums them against `_sqlx_migrations`. Any byte-level change (including CRLF↔LF conversion!) makes the binary refuse to boot. `.gitattributes` enforces LF repo-wide; never override with `core.autocrlf=true`.
-12. **EVO has no git repo.** `~/bot-council/` is scp'd source. Rollback is binary-swap (`.prev`), not git-based. Don't design tooling that assumes git on EVO.
-13. **Deploy-driven config drift.** An earlier session installed cloud API keys in `/etc/bot-council.env` (CometAPI + Anthropic) without tracking it in git. Probe `sudo grep '^APP__' /etc/bot-council.env` at the start of any config-touching session to see what's actually live. Memory file `project_local_models.md` captures the intent.
-14. **cloudflared CLI is zone-scoped.** `cloudflared tunnel route dns <tunnel> <host>` adds the CNAME in whatever zone `cert.pem` is authenticated for (`sovren.xyz` in our case). For a different zone (`lqcouncil.com`), add the CNAME manually in the Cloudflare dashboard. We have one leftover `lqcouncil.com.sovren.xyz` orphan record from this quirk.
+9. **Subagent rigour.** For backend Rust: full implementer + spec + code review on substantive tasks; manual verification on mechanical ones (migrations, config tweaks, extractor renames). Write tests before delegating.
+10. **Always check for open PRs first.** `gh pr list --state open` before starting any branch. Parallel PRs touching the same files cause conflicts and risk dropping fixes.
+11. **User has all project access.** Do not ask the user to run commands you can run yourself (`gh pr merge`, `git push`, `scp` to EVO). Autonomous end-to-end execution expected.
+12. **Never edit migrations that have been applied to prod.** sqlx's `migrate!()` macro embeds file bytes at compile time and checksums them against `_sqlx_migrations`. Any byte-level change (including CRLF↔LF conversion!) makes the binary refuse to boot. `.gitattributes` enforces LF repo-wide; never override with `core.autocrlf=true`.
+13. **EVO has no git repo.** `~/bot-council/` is scp'd source. Rollback is binary-swap (`.prev`), not git-based. Don't design tooling that assumes git on EVO.
+14. **Deploy-driven config drift.** `/etc/bot-council.env` has been modified out-of-band multiple times (CometAPI/Anthropic keys added by an earlier session without a git trail; Gemma→MiniMax route switch via env override). Probe `sudo grep '^APP__' /etc/bot-council.env` at the start of any config-touching session to see what's actually live — don't trust `config/default.toml` as a source of truth for runtime routing.
+15. **cloudflared CLI is zone-scoped.** `cloudflared tunnel route dns <tunnel> <host>` adds the CNAME in whatever zone `cert.pem` is authenticated for (`sovren.xyz` in our case). For a different zone (`lqcouncil.com`), add the CNAME manually in the Cloudflare dashboard. We have one leftover `lqcouncil.com.sovren.xyz` orphan record from this quirk.
+16. **After any synthesis-prompt change, run the resynth batch.** The synthesis prompt in `src/synthesiser/mod.rs::build_synthesis_prompt` is used by `bot-council resynthesise` too; existing concluded debates won't pick up prompt fixes until you rerun them. Ship first, then `ssh evo "bash /home/james/resynth-launch.sh"` (or `bot-council resynthesise <debate_id>` to target one). `--throttle-ms 500` is safe on MiniMax Pro; default `2000` for free-tier.

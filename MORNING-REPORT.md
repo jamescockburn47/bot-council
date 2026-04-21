@@ -1,5 +1,11 @@
 # Morning report — Clint ↔ LQ Council integration
 
+> **HISTORICAL SNAPSHOT (2026-04-19).** Point-in-time status report, not a living
+> document. Several statements are stale — notably `api.lqcouncil.com` (Vercel
+> proxy, retired 2026-04-20) no longer exists; Vercel is fully retired; live
+> LLM routing is now MiniMax-M2.7. For current state see `CLAUDE.md`
+> ("Current state" section), `ARCHITECTURE.md`, and `INTEGRATIONS.md`.
+
 Completed overnight, 2026-04-18 → 2026-04-19. Everything below is live in prod unless explicitly flagged "deferred" or "needs your hand".
 
 ## What shipped

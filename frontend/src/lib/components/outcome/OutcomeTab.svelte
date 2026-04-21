@@ -10,6 +10,7 @@
   import ArgumentMap3D from './ArgumentMap3D.svelte';
   import BotStanceMap from './BotStanceMap.svelte';
   import DivergenceHeadline from './DivergenceHeadline.svelte';
+  import MapLegend from './MapLegend.svelte';
   import ReplaySlider from './ReplaySlider.svelte';
   import OutcomeFilters from './OutcomeFilters.svelte';
   import OutcomeDrawer from './OutcomeDrawer.svelte';
@@ -163,6 +164,8 @@
       onToggleKind={toggleKind}
       onSupporterChange={(p) => (highlightedSupporter = p)}
     />
+
+    <MapLegend />
 
     <ArgumentMap3D
       {graph}

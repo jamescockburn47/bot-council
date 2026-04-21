@@ -99,10 +99,7 @@ pub async fn run_synthesis(
                     _ => false,
                 };
                 if topic_missing {
-                    obj.insert(
-                        "topic".into(),
-                        serde_json::Value::String(topic.to_string()),
-                    );
+                    obj.insert("topic".into(), serde_json::Value::String(topic.to_string()));
                 }
             }
             match serde_json::from_value::<SynthesisOutput>(value.clone()) {

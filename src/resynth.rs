@@ -296,4 +296,3 @@ fn prompt_hash_for_inputs(topic: &str, participants: &str, transcript: &str) -> 
     h.update(transcript.as_bytes());
     hex::encode(h.finalize())
 }
-

@@ -2,21 +2,39 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// The rigid output schema for Opus synthesis.
+///
+/// Every field carries `#[serde(default)]`. The model is *asked* for all
+/// of these in the prompt, but MiniMax-M2.7 sometimes drops fields —
+/// `consensus_points`, `minority_positions`, etc. — on shorter transcripts.
+/// Without defaults, dropping one field nukes the whole synthesis: the
+/// typed parse fails and we fall through to the empty-template salvage.
+/// With defaults, we preserve whatever fields the model DID return and
+/// only the missing section is empty — far more useful than losing
+/// everything.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SynthesisOutput {
-    /// The debate topic.
+    /// The debate topic. Defaulted to empty when the model drops it;
+    /// `run_synthesis` reinjects the known topic before parsing so the
+    /// default rarely fires for this field specifically.
+    #[serde(default)]
     pub topic: String,
     /// Points on which all participants explicitly agreed.
+    #[serde(default)]
     pub consensus_points: Vec<ConsensusPoint>,
     /// Issues that remained unresolved at the end of the debate.
+    #[serde(default)]
     pub live_disagreements: Vec<LiveDisagreement>,
     /// Position shifts identified as inadequately justified.
+    #[serde(default)]
     pub flagged_capitulations: Vec<FlaggedCapitulation>,
     /// Minority positions preserved with full dignity.
+    #[serde(default)]
     pub minority_positions: Vec<MinorityPosition>,
     /// Per-pseudonym confidence values across rounds 0–4 (None = absent).
+    #[serde(default)]
     pub confidence_trajectories: HashMap<String, Vec<Option<i64>>>,
     /// High-level meta-observations (deterministic evidence-grounded narrative).
+    #[serde(default)]
     pub meta_observations: String,
 }
 

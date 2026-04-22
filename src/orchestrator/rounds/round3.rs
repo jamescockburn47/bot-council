@@ -80,6 +80,9 @@ pub async fn run_round3(
             let q_bot_id = resolve(q_pseudo);
             let bot = bots.iter().find(|b| b.id == q_bot_id);
             let endpoint = bot.map(|b| b.endpoint_url.clone()).unwrap_or_default();
+            let bot_kind = bot
+                .map(|b| b.bot_kind.clone())
+                .unwrap_or_else(|| "external".to_string());
             let token = bot_tokens.get(&q_bot_id).cloned().unwrap_or_default();
             let role = role_assignments
                 .get(&q_bot_id)
@@ -103,7 +106,7 @@ pub async fn run_round3(
                 };
                 let result = tokio::time::timeout(
                     std::time::Duration::from_secs(timeout_secs),
-                    bot_client::send_debate_request(&client, &endpoint, &token, &req),
+                    bot_client::dispatch_round_request(&client, &bot_kind, &endpoint, &token, &req),
                 )
                 .await;
                 match result {
@@ -168,6 +171,7 @@ pub async fn run_round3(
 
         let client = client.clone();
         let endpoint = bot.endpoint_url.clone();
+        let bot_kind = bot.bot_kind.clone();
         let token = bot_tokens.get(&bot.id).cloned().unwrap_or_default();
         let role = role_assignments.get(&bot.id).copied().unwrap_or(Role::Proponent);
         let session_id = debate_id.to_string();
@@ -179,7 +183,7 @@ pub async fn run_round3(
             };
             let result = tokio::time::timeout(
                 std::time::Duration::from_secs(timeout_secs),
-                bot_client::send_debate_request(&client, &endpoint, &token, &req),
+                bot_client::dispatch_round_request(&client, &bot_kind, &endpoint, &token, &req),
             ).await;
             match result {
                 Ok(Ok(resp)) => (bot_id, Some(resp)),
@@ -229,6 +233,7 @@ pub async fn run_round3(
             true,
             0,
             abstained,
+            None,
         )
         .await
         .map_err(|e| format!("db error storing Round 3 response: {e}"))?;

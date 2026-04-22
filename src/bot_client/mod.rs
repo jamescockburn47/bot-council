@@ -6,6 +6,14 @@ use reqwest_retry::{RetryTransientMiddleware, policies::ExponentialBackoff};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
+pub mod position_scoring;
+pub mod text_only;
+pub use position_scoring::{
+    PositionRequest, PositionResponse, ScoreEntry, ScoringContext, ScoringRequest, ScoringResponse,
+    send_position_request, send_scoring_request,
+};
+pub use text_only::send_text_only_request;
+
 /// Build the HTTP client with retry middleware.
 pub fn build_http_client(config: &HttpClientConfig) -> ClientWithMiddleware {
     let retry_policy = ExponentialBackoff::builder()
@@ -22,100 +30,6 @@ pub fn build_http_client(config: &HttpClientConfig) -> ClientWithMiddleware {
     ClientBuilder::new(base)
         .with(RetryTransientMiddleware::new_with_policy(retry_policy))
         .build()
-}
-
-/// Request payload sent to a bot's position endpoint.
-#[derive(Debug, Serialize)]
-pub struct PositionRequest {
-    pub session_id: String,
-    pub round: i64,
-    pub prompt: String,
-}
-
-/// Request payload sent to a bot's scoring endpoint.
-#[derive(Debug, Clone, Serialize)]
-pub struct ScoringRequest {
-    pub session_id: String,
-    pub round: String,
-    pub context: Vec<ScoringContext>,
-    pub prompt: String,
-}
-
-/// One entry in the scoring context (a pseudonymised response to evaluate).
-#[derive(Debug, Clone, Serialize)]
-pub struct ScoringContext {
-    pub pseudonym: String,
-    pub response: String,
-}
-
-/// Response body from a bot's position endpoint.
-#[derive(Debug, Deserialize)]
-pub struct PositionResponse {
-    pub response: String,
-}
-
-/// Response body from a bot's scoring endpoint.
-#[derive(Debug, Deserialize)]
-pub struct ScoringResponse {
-    pub scores: Vec<ScoreEntry>,
-}
-
-/// A single score entry within a ScoringResponse.
-#[derive(Debug, Deserialize)]
-pub struct ScoreEntry {
-    pub pseudonym: String,
-    pub reasoning_quality: i64,
-    pub factual_grounding: i64,
-    pub overall: i64,
-    pub reasoning: String,
-}
-
-/// Send a position request to a bot.
-pub async fn send_position_request(
-    client: &ClientWithMiddleware,
-    endpoint_url: &str,
-    token: &str,
-    request: &PositionRequest,
-) -> Result<PositionResponse, String> {
-    let mut req = client.post(endpoint_url);
-    if !token.is_empty() {
-        req = req.bearer_auth(token);
-    }
-    let resp = req
-        .json(request)
-        .send()
-        .await
-        .map_err(|e| format!("connection failed: {e}"))?;
-    if !resp.status().is_success() {
-        return Err(format!("bot returned HTTP {}", resp.status()));
-    }
-    resp.json::<PositionResponse>()
-        .await
-        .map_err(|e| format!("invalid response body: {e}"))
-}
-
-/// Send a scoring request to a bot.
-pub async fn send_scoring_request(
-    client: &ClientWithMiddleware,
-    endpoint_url: &str,
-    token: &str,
-    request: &ScoringRequest,
-) -> Result<ScoringResponse, String> {
-    let mut req = client.post(endpoint_url);
-    if !token.is_empty() {
-        req = req.bearer_auth(token);
-    }
-    let resp = req
-        .json(request)
-        .send()
-        .await
-        .map_err(|e| format!("connection failed: {e}"))?;
-    if !resp.status().is_success() {
-        return Err(format!("bot returned HTTP {}", resp.status()));
-    }
-    resp.json::<ScoringResponse>()
-        .await
-        .map_err(|e| format!("invalid response body: {e}"))
 }
 
 /// Context entry sent to bots in Rounds 1+. Contains anonymised prior responses.
@@ -199,4 +113,112 @@ pub async fn send_debate_request(
     }
     serde_json::from_slice::<DebateRoundResponse>(&body)
         .map_err(|e| format!("invalid response body: {e}"))
+}
+
+/// Dispatch a debate round request to a bot, routing based on `bot_kind`.
+///
+/// - `"external"` (default): existing `/debate` contract via `send_debate_request`.
+/// - `"text_only"`: minimal `/hook` contract via `send_text_only_request`;
+///   `request.session_id` and `request.prompt` are used, and the structured
+///   output fields come back as None.
+///
+/// Unknown kinds are treated as errors to fail loudly if a new kind is
+/// added elsewhere without updating this dispatcher.
+pub async fn dispatch_round_request(
+    client: &ClientWithMiddleware,
+    bot_kind: &str,
+    endpoint_url: &str,
+    token: &str,
+    request: &DebateRoundRequest,
+) -> Result<DebateRoundResponse, String> {
+    match bot_kind {
+        "external" => send_debate_request(client, endpoint_url, token, request).await,
+        "text_only" => {
+            text_only::send_text_only_request(
+                client,
+                endpoint_url,
+                token,
+                &request.session_id,
+                &request.prompt,
+            )
+            .await
+        }
+        other => Err(format!("unknown bot_kind: {other}")),
+    }
+}
+
+#[cfg(test)]
+mod dispatch_tests {
+    use super::*;
+    use wiremock::matchers::{body_partial_json, method};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    fn cfg() -> crate::config::HttpClientConfig {
+        crate::config::HttpClientConfig {
+            connect_timeout_secs: 2,
+            request_timeout_secs: 5,
+            max_retries: 0,
+            retry_delay_secs: 1,
+        }
+    }
+
+    fn round_request() -> DebateRoundRequest {
+        DebateRoundRequest {
+            session_id: "s1".into(),
+            round: 0,
+            role: "proponent".into(),
+            context: vec![],
+            prompt: "Make your case.".into(),
+        }
+    }
+
+    #[tokio::test]
+    async fn external_kind_uses_full_contract() {
+        let server = MockServer::start().await;
+        // The external contract sends role/context/round — assert the body shape.
+        Mock::given(method("POST"))
+            .and(body_partial_json(serde_json::json!({
+                "session_id": "s1", "round": 0, "role": "proponent"
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "response": "answer"
+            })))
+            .mount(&server)
+            .await;
+        let client = build_http_client(&cfg());
+        let resp = dispatch_round_request(&client, "external", &server.uri(), "", &round_request())
+            .await
+            .unwrap();
+        assert_eq!(resp.response, "answer");
+    }
+
+    #[tokio::test]
+    async fn text_only_kind_uses_minimal_contract() {
+        let server = MockServer::start().await;
+        // The text_only contract sends only session_id + prompt — body must not
+        // contain round/role/context keys.
+        Mock::given(method("POST"))
+            .and(body_partial_json(serde_json::json!({
+                "session_id": "s1", "prompt": "Make your case."
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "text": "answer"
+            })))
+            .mount(&server)
+            .await;
+        let client = build_http_client(&cfg());
+        let resp =
+            dispatch_round_request(&client, "text_only", &server.uri(), "", &round_request())
+                .await
+                .unwrap();
+        assert_eq!(resp.response, "answer");
+    }
+
+    #[tokio::test]
+    async fn unknown_kind_errors() {
+        let client = build_http_client(&cfg());
+        let out =
+            dispatch_round_request(&client, "wizard", "http://unused", "", &round_request()).await;
+        assert!(out.unwrap_err().contains("unknown bot_kind"));
+    }
 }

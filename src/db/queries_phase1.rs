@@ -235,6 +235,7 @@ pub async fn get_synthesis(
 }
 
 /// Insert a response with all Phase 1 fields.
+#[allow(clippy::too_many_arguments)]
 pub async fn insert_response_full(
     pool: &SqlitePool,
     id: &str,
@@ -248,12 +249,14 @@ pub async fn insert_response_full(
     valid: bool,
     retry_count: i64,
     abstained: bool,
+    extraction_metadata: Option<&str>,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
         "INSERT INTO responses \
          (id, debate_id, round_number, bot_id, response_json, confidence, \
-          challenge_json, position_change_json, valid, retry_count, abstained) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          challenge_json, position_change_json, valid, retry_count, abstained, \
+          extraction_metadata) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(id)
     .bind(debate_id)
@@ -266,6 +269,7 @@ pub async fn insert_response_full(
     .bind(valid)
     .bind(retry_count)
     .bind(abstained)
+    .bind(extraction_metadata)
     .execute(pool)
     .await?;
     Ok(())

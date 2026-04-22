@@ -26,6 +26,7 @@ pub async fn run_round1(
         .map(|bot| {
             let client = client.clone();
             let endpoint = bot.endpoint_url.clone();
+            let bot_kind = bot.bot_kind.clone();
             let token = bot_tokens.get(&bot.id).cloned().unwrap_or_default();
             let session_id = debate_id.to_string();
             let role = role_assignments
@@ -46,7 +47,7 @@ pub async fn run_round1(
                 };
                 let result = tokio::time::timeout(
                     std::time::Duration::from_secs(timeout_secs),
-                    bot_client::send_debate_request(&client, &endpoint, &token, &req),
+                    bot_client::dispatch_round_request(&client, &bot_kind, &endpoint, &token, &req),
                 )
                 .await;
                 match result {
@@ -90,6 +91,7 @@ pub async fn run_round1(
             true,
             0,
             abstained,
+            None,
         )
         .await
         .map_err(|e| format!("db error storing Round 1 response: {e}"))?;

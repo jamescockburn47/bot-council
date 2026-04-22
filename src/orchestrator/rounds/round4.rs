@@ -1,4 +1,5 @@
 use crate::bot_client::{self, DebateRoundRequest, DebateRoundResponse, RoundContext};
+use crate::config::ModelsConfig;
 use crate::db::models::BotRow;
 use crate::db::queries_phase1;
 use crate::orchestrator::{prompts, response_parser};
@@ -8,6 +9,7 @@ use sqlx::SqlitePool;
 use std::collections::HashMap;
 
 /// Run Round 4: final position with position_change declaration.
+#[allow(clippy::too_many_arguments)]
 pub async fn run_round4(
     pool: &SqlitePool,
     client: &ClientWithMiddleware,
@@ -17,6 +19,7 @@ pub async fn run_round4(
     bot_tokens: &HashMap<String, String>,
     role_assignments: &HashMap<String, Role>,
     full_context: Vec<RoundContext>,
+    models_config: &ModelsConfig,
     timeout_secs: u64,
 ) -> Result<Vec<(String, Option<DebateRoundResponse>)>, String> {
     let prompt = prompts::round4_prompt(topic);
@@ -26,6 +29,7 @@ pub async fn run_round4(
         .map(|bot| {
             let client = client.clone();
             let endpoint = bot.endpoint_url.clone();
+            let bot_kind = bot.bot_kind.clone();
             let token = bot_tokens.get(&bot.id).cloned().unwrap_or_default();
             let session_id = debate_id.to_string();
             let role = role_assignments
@@ -45,7 +49,7 @@ pub async fn run_round4(
                 };
                 let result = tokio::time::timeout(
                     std::time::Duration::from_secs(timeout_secs),
-                    bot_client::send_debate_request(&client, &endpoint, &token, &req),
+                    bot_client::dispatch_round_request(&client, &bot_kind, &endpoint, &token, &req),
                 )
                 .await;
                 match result {
@@ -70,17 +74,41 @@ pub async fn run_round4(
             response_parser::normalise_response(r);
         }
     }
-    for (bot_id, resp_opt) in &results {
-        let (response_text, confidence, pc_json, abstained) = match resp_opt {
-            Some(r) => {
-                let pc = r
-                    .position_change
-                    .as_ref()
-                    .and_then(|pc| serde_json::to_string(pc).ok());
-                (r.response.clone(), r.confidence, pc, false)
-            }
-            None => ("(abstained)".to_string(), None, None, true),
-        };
+    // Persist each response. For non-abstained text_only bots whose
+    // response lacks a structured position_change field, run post-round
+    // extraction first so the patched field + provenance land together in
+    // the DB. External bots short-circuit inside `extract_if_needed`.
+    // Iteration is sequential because each extraction call may hit MiniMax;
+    // the per-round bot count is small (typically 5).
+    for (bot_id, resp_opt) in &mut results {
+        let (response_text, confidence, pc_json, abstained, extraction_metadata_json) =
+            match resp_opt {
+                Some(resp) => {
+                    let bot_kind = bots
+                        .iter()
+                        .find(|b| &b.id == bot_id)
+                        .map(|b| b.bot_kind.as_str())
+                        .unwrap_or("external")
+                        .to_string();
+                    let provenance = crate::orchestrator::extraction::extract_if_needed(
+                        models_config,
+                        &bot_kind,
+                        crate::extractor::ExtractTarget::PositionChange,
+                        resp,
+                    )
+                    .await;
+                    let meta = serde_json::to_string(&serde_json::json!({
+                        "position_change": provenance.to_json()
+                    }))
+                    .ok();
+                    let pc = resp
+                        .position_change
+                        .as_ref()
+                        .and_then(|pc| serde_json::to_string(pc).ok());
+                    (resp.response.clone(), resp.confidence, pc, false, meta)
+                }
+                None => ("(abstained)".to_string(), None, None, true, None),
+            };
         let resp_id = uuid::Uuid::new_v4().to_string();
         queries_phase1::insert_response_full(
             pool,
@@ -95,6 +123,7 @@ pub async fn run_round4(
             true,
             0,
             abstained,
+            extraction_metadata_json.as_deref(),
         )
         .await
         .map_err(|e| format!("db error storing Round 4 response: {e}"))?;

@@ -6,7 +6,7 @@ use std::collections::HashMap;
 /// touch one spot instead of six.
 const BOT_COLUMNS: &str = "id, name, endpoint_url, token_ciphertext, \
     model_family, created_at, status, submitted_by, description, \
-    rejection_reason, reviewed_at, reviewed_by";
+    rejection_reason, reviewed_at, reviewed_by, bot_kind, introduction";
 
 /// Marker phrases used to exclude operator/test debates from public listings,
 /// bot performance scoring, and to drive the scheduled test-debate cleanup.
@@ -54,11 +54,12 @@ pub async fn insert_bot(
     submitted_by: Option<&str>,
     description: Option<&str>,
     status: &str,
+    bot_kind: &str,
 ) -> Result<BotRow, sqlx::Error> {
     sqlx::query_as::<_, BotRow>(
         "INSERT INTO bots (id, name, endpoint_url, token_ciphertext, \
-         model_family, submitted_by, description, status) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING *",
+         model_family, submitted_by, description, status, bot_kind) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *",
     )
     .bind(id)
     .bind(name)
@@ -68,6 +69,7 @@ pub async fn insert_bot(
     .bind(submitted_by)
     .bind(description)
     .bind(status)
+    .bind(bot_kind)
     .fetch_one(pool)
     .await
 }
@@ -692,6 +694,29 @@ pub async fn transition_bot_status(
         q = q.bind(*s);
     }
     q.fetch_optional(pool).await
+}
+
+/// Persist the introduction text captured from a text-only bot's smoke probe
+/// onto its row. Used by the approval handler so the admin UI can surface
+/// "agent vs. wrapper" signal in Task 15's approval view.
+///
+/// Returns `sqlx::Error::RowNotFound` when no row matched `bot_id`, so the
+/// repository layer enforces the invariant instead of relying on a
+/// downstream NotFound check.
+pub async fn set_bot_introduction(
+    pool: &SqlitePool,
+    bot_id: &str,
+    introduction: &str,
+) -> Result<(), sqlx::Error> {
+    let result = sqlx::query("UPDATE bots SET introduction = ?1 WHERE id = ?2")
+        .bind(introduction)
+        .bind(bot_id)
+        .execute(pool)
+        .await?;
+    if result.rows_affected() == 0 {
+        return Err(sqlx::Error::RowNotFound);
+    }
+    Ok(())
 }
 
 // ─── Admin registry ────────────────────────────────────────────────────────

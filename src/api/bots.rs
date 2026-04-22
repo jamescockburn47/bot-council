@@ -27,11 +27,16 @@ fn bot_to_response(row: &BotRow, performance: Option<BotPerformanceSummary>) -> 
         reviewed_at: row.reviewed_at.clone(),
         reviewed_by: row.reviewed_by.clone(),
         created_at: row.created_at.clone(),
+        bot_kind: row.bot_kind.clone(),
+        introduction: row.introduction.clone(),
         performance,
     }
 }
 
 const RESPONSE_SAMPLE_LIMIT: i64 = 24;
+
+const INTRODUCTION_SESSION_ID: &str = "smoke-introduction";
+const INTRODUCTION_PROMPT: &str = "Introduce yourself in two or three sentences — who you are, what you bring to a debate, what makes you distinct from a generic assistant.";
 
 #[derive(Debug, Clone, Copy)]
 struct ScoringDimensions {
@@ -590,6 +595,12 @@ pub async fn create_bot(
     if req.token.is_empty() && !simple_mode {
         return Err(AppError::BadRequest("token is required".into()));
     }
+    match req.bot_kind.as_str() {
+        "external" | "text_only" => {}
+        other => {
+            return Err(AppError::BadRequest(format!("unknown bot_kind: {other}")));
+        }
+    }
     let submitted_by = auth.user_id().map(String::from);
     if let Some(user_id) = submitted_by.as_deref() {
         queries::archive_prior_submissions_for_submitter(state.db(), user_id, &req.name).await?;
@@ -618,6 +629,7 @@ pub async fn create_bot(
         submitted_by.as_deref(),
         req.description.as_deref(),
         status,
+        &req.bot_kind,
     )
     .await?;
     Ok((StatusCode::CREATED, Json(bot_to_response(&row, None))))
@@ -833,6 +845,91 @@ fn validate_smoke_json_for_round(json: &serde_json::Value, round: i64) -> Result
     Ok(())
 }
 
+/// Smoke probe for text-only bots. Sends a `/hook`-shape body and validates
+/// only that `text` is a non-empty string.
+async fn send_text_only_smoke_probe(
+    client: &reqwest::Client,
+    endpoint_url: &str,
+    token: Option<&str>,
+    prompt: &str,
+    label: &str,
+) -> Result<(), String> {
+    let body = serde_json::json!({
+        "session_id": format!("smoke-{label}"),
+        "prompt": prompt,
+    });
+    let mut request = client
+        .post(endpoint_url)
+        .timeout(std::time::Duration::from_secs(60));
+    if let Some(t) = token {
+        if !t.is_empty() {
+            request = request.header("authorization", format!("Bearer {t}"));
+        }
+    }
+    let response = request
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("{label} request failed: {e}"))?;
+    if !response.status().is_success() {
+        return Err(format!("{label} bot returned HTTP {}", response.status()));
+    }
+    let json: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("{label} response is not valid JSON: {e}"))?;
+    let text = json
+        .get("text")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| format!("{label} response missing 'text' string field"))?;
+    if text.trim().is_empty() {
+        return Err(format!("{label} response 'text' is empty"));
+    }
+    Ok(())
+}
+
+/// Introduction probe for text-only bots. Dispatches a `/hook`-shape request
+/// with the introduction prompt and returns the bot's answer for storage.
+async fn send_introduction_probe(
+    client: &reqwest::Client,
+    endpoint_url: &str,
+    token: Option<&str>,
+) -> Result<String, String> {
+    let body = serde_json::json!({
+        "session_id": INTRODUCTION_SESSION_ID,
+        "prompt": INTRODUCTION_PROMPT,
+    });
+    let mut request = client
+        .post(endpoint_url)
+        .timeout(std::time::Duration::from_secs(60));
+    if let Some(t) = token {
+        if !t.is_empty() {
+            request = request.header("authorization", format!("Bearer {t}"));
+        }
+    }
+    let response = request
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("introduction request failed: {e}"))?;
+    let status = response.status();
+    if !status.is_success() {
+        return Err(format!("introduction bot returned HTTP {status}"));
+    }
+    let json: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("introduction response is not valid JSON: {e}"))?;
+    let text = json
+        .get("text")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "introduction response missing 'text' string field".to_string())?;
+    if text.trim().is_empty() {
+        return Err("introduction response 'text' is empty".to_string());
+    }
+    Ok(text.to_string())
+}
+
 async fn send_smoke_probe(
     client: &reqwest::Client,
     endpoint_url: &str,
@@ -885,13 +982,31 @@ async fn send_smoke_probe(
 
 /// Send a multi-step smoke test to a bot endpoint.
 ///
-/// Runs both a round-0 and round-1 style probe to catch integrations that only
-/// handle the simplest payload shape.
+/// Runs the full 5-round gauntlet (round 0-4) with round-specific schema
+/// validation so broken bots are caught at approval time rather than
+/// silently abstaining in every real debate.
+///
+/// `capture_introduction` controls whether the introduction probe fires
+/// ahead of the 5-round gauntlet:
+/// - `true` + `bot.bot_kind == "text_only"` → run `send_introduction_probe`
+///   and return `Ok(Some(intro))` so the caller can persist the captured
+///   introduction. Used by `approve_bot` where capturing the intro is
+///   part of the approval action.
+/// - `true` + external bot (any non-text_only `bot_kind`) → skip the intro
+///   probe (not applicable to external bots), return `Ok(None)`.
+/// - `false` → skip the intro probe entirely regardless of `bot_kind`,
+///   return `Ok(None)`. Used by `test_bot` (manual retest — keep it
+///   cheap and non-destructive) and `debates::create_debate` preflight
+///   (reachability check only; intro was already captured at approval).
+///
+/// Invariant: a successful return is always `Ok(Some(..))` xor `Ok(None)` —
+/// `Some` is returned only when an introduction was actually captured.
 pub(crate) async fn smoke_test_bot(
     _client: &reqwest_middleware::ClientWithMiddleware,
     bot: &BotRow,
     key: &crate::api::bot_token_crypto::BotTokenKey,
-) -> Result<(), String> {
+    capture_introduction: bool,
+) -> Result<Option<String>, String> {
     let direct_client = reqwest::Client::builder()
         // Debate endpoint probes should always connect directly so local
         // addresses (for co-hosted bots) are not routed via any proxy env.
@@ -911,6 +1026,17 @@ pub(crate) async fn smoke_test_bot(
         None
     };
 
+    // For text_only bots, run the introduction probe first and capture the
+    // answer so the admin approval UI can show "agent vs. wrapper" signal.
+    // External bots keep the existing 5-round-only contract. Gated by
+    // `capture_introduction` so the debate preflight and manual retest can
+    // skip the extra LLM round-trip (the intro is captured at approval).
+    let introduction = if capture_introduction && bot.bot_kind == "text_only" {
+        Some(send_introduction_probe(&direct_client, &bot.endpoint_url, token.as_deref()).await?)
+    } else {
+        None
+    };
+
     // Full 5-round gauntlet with round-specific schema validation.
     //
     // Background: the previous smoke test only probed rounds 0 and 1,
@@ -925,60 +1051,100 @@ pub(crate) async fn smoke_test_bot(
     // Probes are sequential: some bot servers are single-threaded and
     // would serialise concurrent requests anyway, and sequential keeps
     // per-round error messages clean for `rejection_reason`.
-    let stub_peer_r0 = serde_json::json!([
-        {"pseudonym": "Argon", "round": 0, "response": "The proposal improves reliability by introducing preflight checks. Absent those checks, failures cascade through the whole pipeline.", "confidence": null},
-        {"pseudonym": "Beryl", "round": 0, "response": "Preflight checks are premature optimisation; the real cost is in deploy complexity, not runtime reliability.", "confidence": null}
-    ]);
-    let stub_peer_r1 = serde_json::json!([
-        {"pseudonym": "Argon", "round": 1, "response": "Preflight checks reduce incident volume by 60% in our data. The cost is negligible.", "confidence": 72},
-        {"pseudonym": "Beryl", "round": 1, "response": "The 60% figure comes from a biased sample; unbiased data shows closer to 15%.", "confidence": 65}
-    ]);
+    //
+    // Branch on bot_kind: text_only bots use the `/hook` contract
+    // (body = {session_id, prompt}, validation = non-empty text), while
+    // external bots use the round-shaped probes with round-specific
+    // schema validation.
+    if bot.bot_kind == "text_only" {
+        let prompts = [
+            (
+                "round0",
+                "Round 0: state a clear initial position on whether runtime preflight checks reduce production incidents.",
+            ),
+            (
+                "round1",
+                "Round 1: identify the single strongest opposing argument to your round 0 position, and what evidence would change your mind.",
+            ),
+            (
+                "round2",
+                "Round 2: pose at least one specific challenge against a peer argument. Name the claim, give counter-evidence, and say whether the challenge is factual, logical, or about a premise.",
+            ),
+            (
+                "round3",
+                "Round 3: pose one pointed question surfacing a hidden assumption in an opposing argument.",
+            ),
+            (
+                "round4",
+                "Round 4: state your final position. If your view has shifted since round 0, describe what changed and why.",
+            ),
+        ];
+        for (label, prompt) in prompts {
+            send_text_only_smoke_probe(
+                &direct_client,
+                &bot.endpoint_url,
+                token.as_deref(),
+                prompt,
+                label,
+            )
+            .await?;
+        }
+    } else {
+        let stub_peer_r0 = serde_json::json!([
+            {"pseudonym": "Argon", "round": 0, "response": "The proposal improves reliability by introducing preflight checks. Absent those checks, failures cascade through the whole pipeline.", "confidence": null},
+            {"pseudonym": "Beryl", "round": 0, "response": "Preflight checks are premature optimisation; the real cost is in deploy complexity, not runtime reliability.", "confidence": null}
+        ]);
+        let stub_peer_r1 = serde_json::json!([
+            {"pseudonym": "Argon", "round": 1, "response": "Preflight checks reduce incident volume by 60% in our data. The cost is negligible.", "confidence": 72},
+            {"pseudonym": "Beryl", "round": 1, "response": "The 60% figure comes from a biased sample; unbiased data shows closer to 15%.", "confidence": 65}
+        ]);
 
-    let round0 = serde_json::json!({
-        "session_id": "smoke-test", "round": 0, "role": "proponent",
-        "context": [],
-        "prompt": "Smoke test round 0 — blind formation. Topic: whether runtime preflight checks reduce production incidents. State a clear initial position. Return JSON with a non-empty 'response' string."
-    });
-    let round1 = serde_json::json!({
-        "session_id": "smoke-test", "round": 1, "role": "skeptic",
-        "context": stub_peer_r0,
-        "prompt": "Smoke test round 1 — anonymous distribution. Identify the single strongest opposing argument and what evidence would change your mind. Return JSON with a non-empty 'response' string."
-    });
-    let round2 = serde_json::json!({
-        "session_id": "smoke-test", "round": 2, "role": "empiricist",
-        "context": stub_peer_r1,
-        "prompt": "Smoke test round 2 — structured rebuttal. Pose at least one specific challenge against another participant. Return JSON with 'response' (string) AND a 'challenge' object with fields {claim_targeted, counter_evidence, type ∈ factual|logical|premise}. The challenge is MANDATORY this round."
-    });
-    let round3 = serde_json::json!({
-        "session_id": "smoke-test", "round": 3, "role": "devils_advocate",
-        "context": stub_peer_r1,
-        "prompt": "Smoke test round 3 — cross-examination. Pose one pointed question surfacing a hidden assumption in Argon's argument. Return JSON with 'response' (string)."
-    });
-    let round4 = serde_json::json!({
-        "session_id": "smoke-test", "round": 4, "role": "steelman",
-        "context": stub_peer_r1,
-        "prompt": "Smoke test round 4 — final position. State your final position in 'response' (string). ALSO return a 'position_change' object with {changed: boolean, from_summary: string, to_summary: string, reason: string}. The position_change is MANDATORY this round."
-    });
+        let round0 = serde_json::json!({
+            "session_id": "smoke-test", "round": 0, "role": "proponent",
+            "context": [],
+            "prompt": "Smoke test round 0 — blind formation. Topic: whether runtime preflight checks reduce production incidents. State a clear initial position. Return JSON with a non-empty 'response' string."
+        });
+        let round1 = serde_json::json!({
+            "session_id": "smoke-test", "round": 1, "role": "skeptic",
+            "context": stub_peer_r0,
+            "prompt": "Smoke test round 1 — anonymous distribution. Identify the single strongest opposing argument and what evidence would change your mind. Return JSON with a non-empty 'response' string."
+        });
+        let round2 = serde_json::json!({
+            "session_id": "smoke-test", "round": 2, "role": "empiricist",
+            "context": stub_peer_r1,
+            "prompt": "Smoke test round 2 — structured rebuttal. Pose at least one specific challenge against another participant. Return JSON with 'response' (string) AND a 'challenge' object with fields {claim_targeted, counter_evidence, type ∈ factual|logical|premise}. The challenge is MANDATORY this round."
+        });
+        let round3 = serde_json::json!({
+            "session_id": "smoke-test", "round": 3, "role": "devils_advocate",
+            "context": stub_peer_r1,
+            "prompt": "Smoke test round 3 — cross-examination. Pose one pointed question surfacing a hidden assumption in Argon's argument. Return JSON with 'response' (string)."
+        });
+        let round4 = serde_json::json!({
+            "session_id": "smoke-test", "round": 4, "role": "steelman",
+            "context": stub_peer_r1,
+            "prompt": "Smoke test round 4 — final position. State your final position in 'response' (string). ALSO return a 'position_change' object with {changed: boolean, from_summary: string, to_summary: string, reason: string}. The position_change is MANDATORY this round."
+        });
 
-    let probes = [
-        (round0, "round0", 0i64),
-        (round1, "round1", 1),
-        (round2, "round2", 2),
-        (round3, "round3", 3),
-        (round4, "round4", 4),
-    ];
-    for (body, label, round) in probes {
-        send_smoke_probe(
-            &direct_client,
-            &bot.endpoint_url,
-            token.as_deref(),
-            body,
-            label,
-            round,
-        )
-        .await?;
+        let probes = [
+            (round0, "round0", 0i64),
+            (round1, "round1", 1),
+            (round2, "round2", 2),
+            (round3, "round3", 3),
+            (round4, "round4", 4),
+        ];
+        for (body, label, round) in probes {
+            send_smoke_probe(
+                &direct_client,
+                &bot.endpoint_url,
+                token.as_deref(),
+                body,
+                label,
+                round,
+            )
+            .await?;
+        }
     }
-    Ok(())
+    Ok(introduction)
 }
 
 /// Shared transition helper: maps `transition_bot_status` results to either the
@@ -1029,8 +1195,13 @@ pub async fn approve_bot(
             bot.status
         )));
     }
-    match smoke_test_bot(state.http_client(), &bot, state.bot_token_key()).await {
-        Ok(()) => {
+    match smoke_test_bot(state.http_client(), &bot, state.bot_token_key(), true).await {
+        Ok(introduction) => {
+            // text_only bots return Some(intro); persist before flipping to
+            // active so the approval UI sees the captured introduction.
+            if let Some(intro) = introduction {
+                queries::set_bot_introduction(state.db(), &bot.id, &intro).await?;
+            }
             let row = do_transition(
                 &state,
                 &admin,
@@ -1068,19 +1239,22 @@ pub async fn test_bot(
         .await?
         .ok_or_else(|| AppError::NotFound("bot not found".into()))?;
     let started = std::time::Instant::now();
-    let response = match smoke_test_bot(state.http_client(), &bot, state.bot_token_key()).await {
-        Ok(()) => BotHealthCheckResponse {
-            ok: true,
-            message: format!(
-                "Smoke test PASSED all 5 rounds (round 0-4) in {} ms.",
-                started.elapsed().as_millis()
-            ),
-        },
-        Err(reason) => BotHealthCheckResponse {
-            ok: false,
-            message: classify_smoke_test_error(&reason),
-        },
-    };
+    // `false` keeps manual retest cheap and non-destructive — the introduction
+    // is captured once at approval time and not refreshed here.
+    let response =
+        match smoke_test_bot(state.http_client(), &bot, state.bot_token_key(), false).await {
+            Ok(_) => BotHealthCheckResponse {
+                ok: true,
+                message: format!(
+                    "Smoke test PASSED all 5 rounds (round 0-4) in {} ms.",
+                    started.elapsed().as_millis()
+                ),
+            },
+            Err(reason) => BotHealthCheckResponse {
+                ok: false,
+                message: classify_smoke_test_error(&reason),
+            },
+        };
     Ok(Json(response))
 }
 
@@ -1205,5 +1379,89 @@ mod classifier_tests {
     fn unknown_error_falls_through() {
         let out = classify_smoke_test_error("something unexpected");
         assert_eq!(out, "Smoke test failed: something unexpected");
+    }
+}
+
+#[cfg(test)]
+mod introduction_probe_tests {
+    use super::send_introduction_probe;
+    use wiremock::matchers::method;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    #[tokio::test]
+    async fn introduction_happy_path_returns_text() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "text": "Hi, I'm Sunclaw."
+            })))
+            .mount(&server)
+            .await;
+        let client = reqwest::Client::new();
+        let out = send_introduction_probe(&client, &server.uri(), None).await;
+        assert_eq!(out.unwrap(), "Hi, I'm Sunclaw.");
+    }
+
+    #[tokio::test]
+    async fn introduction_http_error_propagates() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(500))
+            .mount(&server)
+            .await;
+        let client = reqwest::Client::new();
+        let err = send_introduction_probe(&client, &server.uri(), None)
+            .await
+            .unwrap_err();
+        assert!(err.contains("HTTP"), "unexpected error: {err}");
+    }
+
+    #[tokio::test]
+    async fn introduction_invalid_json_propagates() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("not json"))
+            .mount(&server)
+            .await;
+        let client = reqwest::Client::new();
+        let err = send_introduction_probe(&client, &server.uri(), None)
+            .await
+            .unwrap_err();
+        assert!(err.contains("not valid JSON"), "unexpected error: {err}");
+    }
+
+    #[tokio::test]
+    async fn introduction_missing_text_field_errors() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "other": "foo"
+            })))
+            .mount(&server)
+            .await;
+        let client = reqwest::Client::new();
+        let err = send_introduction_probe(&client, &server.uri(), None)
+            .await
+            .unwrap_err();
+        assert!(
+            err.contains("missing 'text' string field"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn introduction_empty_text_errors() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "text": "   "
+            })))
+            .mount(&server)
+            .await;
+        let client = reqwest::Client::new();
+        let err = send_introduction_probe(&client, &server.uri(), None)
+            .await
+            .unwrap_err();
+        assert!(err.contains("is empty"), "unexpected error: {err}");
     }
 }

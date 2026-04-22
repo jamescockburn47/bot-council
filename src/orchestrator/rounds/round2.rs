@@ -11,6 +11,7 @@ use std::collections::HashMap;
 
 async fn send_round2_request_with_timeout(
     client: &ClientWithMiddleware,
+    bot_kind: &str,
     endpoint: &str,
     token: &str,
     req: &DebateRoundRequest,
@@ -18,7 +19,7 @@ async fn send_round2_request_with_timeout(
 ) -> Result<DebateRoundResponse, String> {
     match tokio::time::timeout(
         std::time::Duration::from_secs(timeout_secs),
-        bot_client::send_debate_request(client, endpoint, token, req),
+        bot_client::dispatch_round_request(client, bot_kind, endpoint, token, req),
     )
     .await
     {
@@ -54,6 +55,7 @@ pub async fn run_round2(
         .map(|bot| {
             let client = client.clone();
             let endpoint = bot.endpoint_url.clone();
+            let bot_kind = bot.bot_kind.clone();
             let token = bot_tokens.get(&bot.id).cloned().unwrap_or_default();
             let session_id = debate_id.to_string();
             let role = role_assignments
@@ -77,7 +79,7 @@ pub async fn run_round2(
                 };
                 let result = tokio::time::timeout(
                     std::time::Duration::from_secs(timeout_secs),
-                    bot_client::send_debate_request(&client, &endpoint, &token, &req),
+                    bot_client::dispatch_round_request(&client, &bot_kind, &endpoint, &token, &req),
                 )
                 .await;
                 match result {
@@ -115,6 +117,7 @@ pub async fn run_round2(
                     true,
                     0,
                     true,
+                    None,
                 )
                 .await
                 .map_err(|e| format!("db error: {e}"))?;
@@ -141,6 +144,7 @@ pub async fn run_round2(
                         true,
                         0,
                         false,
+                        None,
                     )
                     .await
                     .map_err(|e| format!("db error: {e}"))?;
@@ -152,6 +156,10 @@ pub async fn run_round2(
                 let endpoint = bot
                     .map(|b| b.endpoint_url.as_str())
                     .unwrap_or("")
+                    .to_string();
+                let bot_kind = bot
+                    .map(|b| b.bot_kind.as_str())
+                    .unwrap_or("external")
                     .to_string();
                 let token = bot_tokens.get(&bot_id).cloned().unwrap_or_default();
                 let role = role_assignments
@@ -186,6 +194,7 @@ pub async fn run_round2(
                                 };
                                 match send_round2_request_with_timeout(
                                     client,
+                                    &bot_kind,
                                     &endpoint,
                                     &token,
                                     &req,
@@ -227,6 +236,7 @@ pub async fn run_round2(
                         };
                         match send_round2_request_with_timeout(
                             client,
+                            &bot_kind,
                             &endpoint,
                             &token,
                             &req,
@@ -246,6 +256,22 @@ pub async fn run_round2(
                     }
                 }
 
+                // Post-round extraction for text_only bots whose response
+                // lacks a structured challenge field. No-op for external bots
+                // (short-circuits on bot_kind check). Runs AFTER the retry
+                // loop's final accepted response, BEFORE persist.
+                let provenance = crate::orchestrator::extraction::extract_if_needed(
+                    models_config,
+                    &bot_kind,
+                    crate::extractor::ExtractTarget::Challenge,
+                    &mut resp,
+                )
+                .await;
+                let extraction_metadata_json = serde_json::to_string(&serde_json::json!({
+                    "challenge": provenance.to_json()
+                }))
+                .ok();
+
                 let challenge_json = resp
                     .challenge
                     .as_ref()
@@ -264,6 +290,7 @@ pub async fn run_round2(
                     valid,
                     retry_count as i64,
                     false,
+                    extraction_metadata_json.as_deref(),
                 )
                 .await
                 .map_err(|e| format!("db error: {e}"))?;
@@ -334,6 +361,7 @@ mod tests {
         let start = std::time::Instant::now();
         let result = send_round2_request_with_timeout(
             &client,
+            "external",
             &format!("{}/debate", server.uri()),
             "",
             &req,

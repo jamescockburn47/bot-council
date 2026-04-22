@@ -1,4 +1,5 @@
 pub mod anonymiser;
+pub mod extraction;
 pub mod multi_round;
 pub mod prompts;
 pub mod response_parser;

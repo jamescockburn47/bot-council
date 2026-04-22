@@ -54,11 +54,12 @@ pub async fn insert_bot(
     submitted_by: Option<&str>,
     description: Option<&str>,
     status: &str,
+    bot_kind: &str,
 ) -> Result<BotRow, sqlx::Error> {
     sqlx::query_as::<_, BotRow>(
         "INSERT INTO bots (id, name, endpoint_url, token_ciphertext, \
-         model_family, submitted_by, description, status) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING *",
+         model_family, submitted_by, description, status, bot_kind) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *",
     )
     .bind(id)
     .bind(name)
@@ -68,6 +69,7 @@ pub async fn insert_bot(
     .bind(submitted_by)
     .bind(description)
     .bind(status)
+    .bind(bot_kind)
     .fetch_one(pool)
     .await
 }

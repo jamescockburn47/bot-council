@@ -594,6 +594,14 @@ pub async fn create_bot(
     if req.token.is_empty() && !simple_mode {
         return Err(AppError::BadRequest("token is required".into()));
     }
+    match req.bot_kind.as_str() {
+        "external" | "text_only" => {}
+        other => {
+            return Err(AppError::BadRequest(format!(
+                "unknown bot_kind: {other}"
+            )));
+        }
+    }
     let submitted_by = auth.user_id().map(String::from);
     if let Some(user_id) = submitted_by.as_deref() {
         queries::archive_prior_submissions_for_submitter(state.db(), user_id, &req.name).await?;
@@ -622,6 +630,7 @@ pub async fn create_bot(
         submitted_by.as_deref(),
         req.description.as_deref(),
         status,
+        &req.bot_kind,
     )
     .await?;
     Ok((StatusCode::CREATED, Json(bot_to_response(&row, None))))

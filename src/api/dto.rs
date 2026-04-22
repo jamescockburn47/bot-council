@@ -9,6 +9,12 @@ pub struct CreateBotRequest {
     pub token: String,
     pub model_family: Option<String>,
     pub description: Option<String>,
+    #[serde(default = "default_bot_kind")]
+    pub bot_kind: String,
+}
+
+fn default_bot_kind() -> String {
+    "external".to_string()
 }
 
 /// Response body for a bot resource.

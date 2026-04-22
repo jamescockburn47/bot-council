@@ -793,6 +793,75 @@ async fn bot_analytics_returns_recent_debate_rows() {
 }
 
 #[tokio::test]
+async fn bot_response_exposes_kind_and_introduction() {
+    // Regression guard: the bot response surface (BotResponse DTO) must expose
+    // `bot_kind` and `introduction` so clients can tell text-only bots apart
+    // from external bots and render the captured introduction. Fields were
+    // added by the text-only bot mode work — this test pins them down so a
+    // future DTO refactor doesn't silently drop them.
+    let (app, pool) = common::test_app().await;
+
+    // Create a text_only bot via the public POST endpoint.
+    let body = json!({
+        "name": "TextOnlyBot",
+        "endpoint_url": "https://example.com/hook",
+        "token": "tok",
+        "bot_kind": "text_only",
+        "description": "test"
+    });
+    let req = common::admin_auth(
+        Request::builder()
+            .method("POST")
+            .uri("/bots")
+            .header("content-type", "application/json"),
+    )
+    .body(Body::from(body.to_string()))
+    .unwrap();
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::CREATED);
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let created: Value = serde_json::from_slice(&bytes).unwrap();
+    let bot_id = created["id"].as_str().unwrap().to_string();
+    // Create-response already carries bot_kind for text_only bots.
+    assert_eq!(created["bot_kind"], "text_only");
+
+    // Manually set the introduction on the DB (in production this happens
+    // during the approval smoke test; the direct helper keeps this test
+    // fast and mock-server-free).
+    bot_council::db::queries::set_bot_introduction(
+        &pool,
+        &bot_id,
+        "I am a text-only bot with strong opinions about logging.",
+    )
+    .await
+    .expect("set_bot_introduction");
+
+    // GET bot via the analytics endpoint — the nearest existing "get bot by
+    // id" route; wraps BotResponse under `bot`.
+    let req = common::admin_auth(
+        Request::builder()
+            .method("GET")
+            .uri(format!("/bots/{bot_id}/analytics")),
+    )
+    .body(Body::empty())
+    .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let fetched: Value = serde_json::from_slice(&bytes).unwrap();
+
+    assert_eq!(fetched["bot"]["bot_kind"], "text_only");
+    assert_eq!(
+        fetched["bot"]["introduction"],
+        "I am a text-only bot with strong opinions about logging."
+    );
+}
+
+#[tokio::test]
 async fn legacy_bot_schema_endpoint_returns_compat_payload() {
     let (app, _pool) = common::test_app().await;
     let req = common::admin_auth(Request::builder().method("GET").uri("/bots/schema"))

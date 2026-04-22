@@ -31,6 +31,12 @@ pub struct BotResponse {
     pub reviewed_at: Option<String>,
     pub reviewed_by: Option<String>,
     pub created_at: String,
+    /// Dispatch mode — `"external"` (default legacy contract) or
+    /// `"text_only"` (minimal `/hook` contract; see text-only bot mode spec).
+    pub bot_kind: String,
+    /// Introduction captured during approval smoke test for text_only bots.
+    /// `None` for external bots or bots that have not yet been approved.
+    pub introduction: Option<String>,
     pub performance: Option<BotPerformanceSummary>,
 }
 

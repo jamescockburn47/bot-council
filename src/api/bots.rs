@@ -27,6 +27,8 @@ fn bot_to_response(row: &BotRow, performance: Option<BotPerformanceSummary>) -> 
         reviewed_at: row.reviewed_at.clone(),
         reviewed_by: row.reviewed_by.clone(),
         created_at: row.created_at.clone(),
+        bot_kind: row.bot_kind.clone(),
+        introduction: row.introduction.clone(),
         performance,
     }
 }

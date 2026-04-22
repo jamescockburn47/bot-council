@@ -368,10 +368,58 @@ async fn simple_mode_same_name_different_owner_keeps_both_active() {
 async fn test_bot_endpoint_returns_ok_true_for_healthy_bot() {
     let (app, pool) = common::test_app().await;
     let bot_server = MockServer::start().await;
+    // Full-5-round smoke gauntlet. Each round requires round-specific
+    // fields: confidence (R1-R4), challenge (R2), position_change (R4).
+    // Mock one matcher per round so the test bot behaves like a bot
+    // that correctly implements all five round schemas.
     Mock::given(method("POST"))
         .and(path("/debate"))
+        .and(body_string_contains("Smoke test round 0"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"response": "round0 ok"})))
+        .mount(&bot_server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/debate"))
+        .and(body_string_contains("Smoke test round 1"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "response": "alive",
+            "response": "round1 ok", "confidence": 70
+        })))
+        .mount(&bot_server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/debate"))
+        .and(body_string_contains("Smoke test round 2"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "response": "round2 ok",
+            "confidence": 65,
+            "challenge": {
+                "claim_targeted": "The 60% figure is biased",
+                "counter_evidence": "Unbiased data shows 15%",
+                "type": "factual"
+            }
+        })))
+        .mount(&bot_server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/debate"))
+        .and(body_string_contains("Smoke test round 3"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "response": "round3 ok", "confidence": 60
+        })))
+        .mount(&bot_server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/debate"))
+        .and(body_string_contains("Smoke test round 4"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "response": "round4 ok",
+            "confidence": 75,
+            "position_change": {
+                "changed": false,
+                "from_summary": "preflight good",
+                "to_summary": "preflight good",
+                "reason": "opposing arguments did not disprove the reliability gain"
+            }
         })))
         .mount(&bot_server)
         .await;

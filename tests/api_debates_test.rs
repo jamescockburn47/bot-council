@@ -4,21 +4,74 @@ use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use serde_json::{Value, json};
 use tower::ServiceExt;
-use wiremock::matchers::{method, path};
+use wiremock::matchers::{body_string_contains, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
+
+/// Mount round-specific /debate mocks that satisfy the 5-round approval
+/// smoke gauntlet: round 2 needs `challenge`, round 4 needs
+/// `position_change`, rounds 1-4 need integer `confidence`.
+async fn mount_five_round_mocks(server: &MockServer, body_suffix: &str) {
+    Mock::given(method("POST"))
+        .and(path("/debate"))
+        .and(body_string_contains("round 0"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "response": format!("r0 {body_suffix}")
+        })))
+        .mount(server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/debate"))
+        .and(body_string_contains("round 1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "response": format!("r1 {body_suffix}"), "confidence": 70
+        })))
+        .mount(server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/debate"))
+        .and(body_string_contains("round 2"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "response": format!("r2 {body_suffix}"),
+            "confidence": 65,
+            "challenge": {
+                "claim_targeted": "stub",
+                "counter_evidence": "stub",
+                "type": "factual"
+            }
+        })))
+        .mount(server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/debate"))
+        .and(body_string_contains("round 3"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "response": format!("r3 {body_suffix}"), "confidence": 60
+        })))
+        .mount(server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/debate"))
+        .and(body_string_contains("round 4"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "response": format!("r4 {body_suffix}"),
+            "confidence": 75,
+            "position_change": {
+                "changed": false,
+                "from_summary": "stub",
+                "to_summary": "stub",
+                "reason": "stub"
+            }
+        })))
+        .mount(server)
+        .await;
+}
 
 async fn seed_bots(app: &mut axum::Router) -> (Vec<String>, Vec<MockServer>) {
     let mut ids = Vec::new();
     let mut servers = Vec::new();
     for i in 0..3 {
         let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/debate"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "response": format!("mock response from bot {i}")
-            })))
-            .mount(&server)
-            .await;
+        mount_five_round_mocks(&server, &format!("bot {i}")).await;
         let body = json!({
             "name": format!("Bot{}", i),
             "endpoint_url": format!("{}/debate", server.uri()),

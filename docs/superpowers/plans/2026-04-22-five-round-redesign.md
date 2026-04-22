@@ -17,7 +17,7 @@
 ## File Map
 
 **New files:**
-- `migrations/20260423000001_crux_and_resilience.sql` — two `responses` columns.
+- `migrations/20260423000001_crux_and_resilience.sql` — adds `responses.fallback_from_round` (retry_count already present from Phase 1).
 - `src/orchestrator/dispatch.rs` — shared retry + R0-carry-forward helper.
 - `src/analyser/crux.rs` — crux selector (MiniMax call + source-quote verification).
 - `tests/abstention_resilience_test.rs` — integration test for retry/carry-forward.
@@ -39,7 +39,7 @@
 - `src/analyser/divergence.rs` — add `crux_shift` field.
 - `src/analyser/mod.rs` — register `crux` module.
 - `src/synthesiser/mod.rs` — prompt gains crux-outcome section.
-- `src/db/models.rs` — `ResponseRow` gets `retry_count`, `fallback_from_round`.
+- `src/db/models.rs` — `ResponseRow` gets `fallback_from_round` (retry_count already present).
 - `src/db/queries.rs` + `queries_phase1.rs` — reads/writes of new columns.
 - `frontend/src/routes/debates/[id]/+page.svelte` — crux header, steelman display, carry-forward badge.
 - Existing tests that reference `test_mode_simple`.

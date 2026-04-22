@@ -53,10 +53,14 @@
     <ChallengeBlock
       challenge={entry.challenge}
       validationReasoning={entry.validation_reasoning}
+      provenance={entry.extraction_metadata?.challenge ?? null}
     />
   {/if}
 
   {#if entry.position_change}
-    <PositionChangeBlock change={entry.position_change} />
+    <PositionChangeBlock
+      change={entry.position_change}
+      provenance={entry.extraction_metadata?.position_change ?? null}
+    />
   {/if}
 </div>

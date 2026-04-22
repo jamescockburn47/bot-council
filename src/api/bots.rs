@@ -33,6 +33,10 @@ fn bot_to_response(row: &BotRow, performance: Option<BotPerformanceSummary>) -> 
 
 const RESPONSE_SAMPLE_LIMIT: i64 = 24;
 
+const INTRODUCTION_SESSION_ID: &str = "smoke-introduction";
+const INTRODUCTION_PROMPT: &str =
+    "Introduce yourself in two or three sentences — who you are, what you bring to a debate, what makes you distinct from a generic assistant.";
+
 #[derive(Debug, Clone, Copy)]
 struct ScoringDimensions {
     critical_thinking: f64,
@@ -841,8 +845,8 @@ async fn send_introduction_probe(
     token: Option<&str>,
 ) -> Result<String, String> {
     let body = serde_json::json!({
-        "session_id": "smoke-introduction",
-        "prompt": "Introduce yourself in two or three sentences — who you are, what you bring to a debate, what makes you distinct from a generic assistant."
+        "session_id": INTRODUCTION_SESSION_ID,
+        "prompt": INTRODUCTION_PROMPT,
     });
     let mut request = client
         .post(endpoint_url)
@@ -927,12 +931,30 @@ async fn send_smoke_probe(
 
 /// Send a multi-step smoke test to a bot endpoint.
 ///
-/// Runs both a round-0 and round-1 style probe to catch integrations that only
-/// handle the simplest payload shape.
+/// Runs the full 5-round gauntlet (round 0-4) with round-specific schema
+/// validation so broken bots are caught at approval time rather than
+/// silently abstaining in every real debate.
+///
+/// `capture_introduction` controls whether the introduction probe fires
+/// ahead of the 5-round gauntlet:
+/// - `true` + `bot.bot_kind == "text_only"` → run `send_introduction_probe`
+///   and return `Ok(Some(intro))` so the caller can persist the captured
+///   introduction. Used by `approve_bot` where capturing the intro is
+///   part of the approval action.
+/// - `true` + external bot (any non-text_only `bot_kind`) → skip the intro
+///   probe (not applicable to external bots), return `Ok(None)`.
+/// - `false` → skip the intro probe entirely regardless of `bot_kind`,
+///   return `Ok(None)`. Used by `test_bot` (manual retest — keep it
+///   cheap and non-destructive) and `debates::create_debate` preflight
+///   (reachability check only; intro was already captured at approval).
+///
+/// Invariant: a successful return is always `Ok(Some(..))` xor `Ok(None)` —
+/// `Some` is returned only when an introduction was actually captured.
 pub(crate) async fn smoke_test_bot(
     _client: &reqwest_middleware::ClientWithMiddleware,
     bot: &BotRow,
     key: &crate::api::bot_token_crypto::BotTokenKey,
+    capture_introduction: bool,
 ) -> Result<Option<String>, String> {
     let direct_client = reqwest::Client::builder()
         // Debate endpoint probes should always connect directly so local
@@ -955,8 +977,10 @@ pub(crate) async fn smoke_test_bot(
 
     // For text_only bots, run the introduction probe first and capture the
     // answer so the admin approval UI can show "agent vs. wrapper" signal.
-    // External bots keep the existing 5-round-only contract.
-    let introduction = if bot.bot_kind == "text_only" {
+    // External bots keep the existing 5-round-only contract. Gated by
+    // `capture_introduction` so the debate preflight and manual retest can
+    // skip the extra LLM round-trip (the intro is captured at approval).
+    let introduction = if capture_introduction && bot.bot_kind == "text_only" {
         Some(send_introduction_probe(&direct_client, &bot.endpoint_url, token.as_deref()).await?)
     } else {
         None
@@ -1080,7 +1104,7 @@ pub async fn approve_bot(
             bot.status
         )));
     }
-    match smoke_test_bot(state.http_client(), &bot, state.bot_token_key()).await {
+    match smoke_test_bot(state.http_client(), &bot, state.bot_token_key(), true).await {
         Ok(introduction) => {
             // text_only bots return Some(intro); persist before flipping to
             // active so the approval UI sees the captured introduction.
@@ -1124,9 +1148,11 @@ pub async fn test_bot(
         .await?
         .ok_or_else(|| AppError::NotFound("bot not found".into()))?;
     let started = std::time::Instant::now();
-    let response = match smoke_test_bot(state.http_client(), &bot, state.bot_token_key()).await {
-        // Introduction result is intentionally discarded on manual retest —
-        // persistence is approval-time only (see `approve_bot`).
+    // `false` keeps manual retest cheap and non-destructive — the introduction
+    // is captured once at approval time and not refreshed here.
+    let response = match smoke_test_bot(state.http_client(), &bot, state.bot_token_key(), false)
+        .await
+    {
         Ok(_) => BotHealthCheckResponse {
             ok: true,
             message: format!(
@@ -1263,5 +1289,89 @@ mod classifier_tests {
     fn unknown_error_falls_through() {
         let out = classify_smoke_test_error("something unexpected");
         assert_eq!(out, "Smoke test failed: something unexpected");
+    }
+}
+
+#[cfg(test)]
+mod introduction_probe_tests {
+    use super::send_introduction_probe;
+    use wiremock::matchers::method;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    #[tokio::test]
+    async fn introduction_happy_path_returns_text() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "text": "Hi, I'm Sunclaw."
+            })))
+            .mount(&server)
+            .await;
+        let client = reqwest::Client::new();
+        let out = send_introduction_probe(&client, &server.uri(), None).await;
+        assert_eq!(out.unwrap(), "Hi, I'm Sunclaw.");
+    }
+
+    #[tokio::test]
+    async fn introduction_http_error_propagates() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(500))
+            .mount(&server)
+            .await;
+        let client = reqwest::Client::new();
+        let err = send_introduction_probe(&client, &server.uri(), None)
+            .await
+            .unwrap_err();
+        assert!(err.contains("HTTP"), "unexpected error: {err}");
+    }
+
+    #[tokio::test]
+    async fn introduction_invalid_json_propagates() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("not json"))
+            .mount(&server)
+            .await;
+        let client = reqwest::Client::new();
+        let err = send_introduction_probe(&client, &server.uri(), None)
+            .await
+            .unwrap_err();
+        assert!(err.contains("not valid JSON"), "unexpected error: {err}");
+    }
+
+    #[tokio::test]
+    async fn introduction_missing_text_field_errors() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "other": "foo"
+            })))
+            .mount(&server)
+            .await;
+        let client = reqwest::Client::new();
+        let err = send_introduction_probe(&client, &server.uri(), None)
+            .await
+            .unwrap_err();
+        assert!(
+            err.contains("missing 'text' string field"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn introduction_empty_text_errors() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "text": "   "
+            })))
+            .mount(&server)
+            .await;
+        let client = reqwest::Client::new();
+        let err = send_introduction_probe(&client, &server.uri(), None)
+            .await
+            .unwrap_err();
+        assert!(err.contains("is empty"), "unexpected error: {err}");
     }
 }

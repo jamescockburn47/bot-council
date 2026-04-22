@@ -79,11 +79,13 @@ pub async fn create_debate(
                 started.elapsed().as_millis(),
             );
         }
+        // `false` — preflight is a reachability check, not an approval.
+        // The introduction was captured once at approval time; no need to
+        // re-fire the intro probe on every debate.
         let failure =
-            match bot_checks::smoke_test_bot(state.http_client(), bot, state.bot_token_key()).await
+            match bot_checks::smoke_test_bot(state.http_client(), bot, state.bot_token_key(), false)
+                .await
             {
-                // Introduction (if any) is discarded — debate preflight is a
-                // reachability check, not a re-approval.
                 Ok(_) => None,
                 Err(reason) => Some(format!(
                     "{} ({}): {}",

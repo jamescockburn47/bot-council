@@ -15,6 +15,8 @@ pub struct BotRow {
     pub rejection_reason: Option<String>,
     pub reviewed_at: Option<String>,
     pub reviewed_by: Option<String>,
+    pub bot_kind: String,
+    pub introduction: Option<String>,
 }
 
 /// Database row for a debate session.
@@ -55,6 +57,7 @@ pub struct ResponseRow {
     pub retry_count: i64,
     pub abstained: bool,
     pub created_at: String,
+    pub extraction_metadata: Option<String>,
 }
 
 /// Database row for a peer score issued by one bot against another's pseudonym.

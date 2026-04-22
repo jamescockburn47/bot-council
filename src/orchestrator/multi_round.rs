@@ -349,6 +349,8 @@ pub async fn run_multi_round_debate(
             topic,
             models_config,
             debate_config,
+            bots,
+            bot_tokens,
             &pseudonym_map,
             &r0_responses,
             2,
@@ -466,6 +468,8 @@ pub async fn run_multi_round_debate(
         topic,
         models_config,
         debate_config,
+        bots,
+        bot_tokens,
         &pseudonym_map,
         &r0_responses,
         4,
@@ -475,13 +479,17 @@ pub async fn run_multi_round_debate(
     .await
 }
 
-/// Post-final-round: run divergence analysis per bot, then final synthesis.
+/// Post-final-round: run divergence analysis per bot, run peer scoring
+/// across participating bots, then run final synthesis.
+#[allow(clippy::too_many_arguments)]
 async fn run_divergence_and_synthesis(
     pool: &SqlitePool,
     debate_id: &str,
     topic: &str,
     models_config: &ModelsConfig,
     debate_config: &DebateConfig,
+    bots: &[BotRow],
+    bot_tokens: &HashMap<String, String>,
     pseudonym_map: &HashMap<String, String>,
     r0_responses: &[crate::db::models::ResponseRow],
     final_round_number: i64,
@@ -546,6 +554,29 @@ async fn run_divergence_and_synthesis(
             }
             Err(e) => tracing::warn!(bot_id = %bot_id, error = %e, "divergence analysis failed"),
         }
+    }
+
+    // === PEER SCORING ===
+    // Ask each bot to rate the others' final-round positions. Failures
+    // are logged and skipped so one unresponsive bot does not block the
+    // debate from reaching synthesis. Feature absence was the reason
+    // `results.rankings` always showed total_scores=0 on Phase 1 debates.
+    if let Err(e) = run_peer_scoring(
+        pool,
+        debate_id,
+        bots,
+        bot_tokens,
+        pseudonym_map,
+        &final_round_responses,
+        final_round_number,
+    )
+    .await
+    {
+        tracing::warn!(
+            debate_id,
+            error = %e,
+            "peer scoring failed; continuing to synthesis without rankings"
+        );
     }
 
     // === SYNTHESIS ===
@@ -725,5 +756,157 @@ async fn run_divergence_and_synthesis(
         .map_err(|e| format!("db: {e}"))?;
     emit(event_tx, DebateEvent::DebateCompleted);
     tracing::info!(debate_id = %debate_id, "multi-round debate completed successfully");
+    Ok(())
+}
+
+/// Dispatch the peer-scoring round: ask each bot to rate the others'
+/// final-round positions, then persist the returned scores into
+/// `peer_scores`. `results.rankings` then aggregates over those rows via
+/// `queries::get_peer_scores`.
+///
+/// Per-bot failures (timeout, bad JSON, HTTP error, abstention) are
+/// logged at warn and skipped — one unresponsive bot never blocks the
+/// rest from contributing their scores.
+///
+/// Mirrors the Phase 0 scoring pattern in `src/orchestrator/mod.rs` so a
+/// single source of truth for the wire contract stays with `bot_client`.
+#[allow(clippy::too_many_arguments)]
+async fn run_peer_scoring(
+    pool: &SqlitePool,
+    debate_id: &str,
+    bots: &[BotRow],
+    bot_tokens: &HashMap<String, String>,
+    pseudonym_map: &HashMap<String, String>,
+    final_round_responses: &[crate::db::models::ResponseRow],
+    final_round_number: i64,
+) -> Result<(), String> {
+    use crate::bot_client::{self, ScoringContext, ScoringRequest};
+    use reqwest_middleware::ClientBuilder as MwClientBuilder;
+    use std::time::Duration;
+
+    // Build anonymised contexts from final-round responses only (the
+    // bots' committed final positions are the right substance to score).
+    let mut anonymised: Vec<ScoringContext> = Vec::new();
+    for resp in final_round_responses {
+        if resp.abstained || !resp.valid {
+            continue;
+        }
+        if is_effective_abstention_response(&resp.response_json) {
+            continue;
+        }
+        let pseudonym = match pseudonym_map.get(&resp.bot_id) {
+            Some(p) => p.clone(),
+            None => continue,
+        };
+        anonymised.push(ScoringContext {
+            pseudonym,
+            response: resp.response_json.clone(),
+        });
+    }
+    if anonymised.len() < 2 {
+        tracing::info!(
+            debate_id,
+            substantive_finalists = anonymised.len(),
+            "peer scoring skipped: fewer than 2 substantive finalists"
+        );
+        return Ok(());
+    }
+
+    // Dedicated HTTP client for the scoring round — 5min per-bot budget
+    // matches the per-round timeout elsewhere.
+    let base_client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(300))
+        .build()
+        .map_err(|e| format!("build scoring client: {e}"))?;
+    let client = MwClientBuilder::new(base_client).build();
+
+    let scoring_futures: Vec<_> = bots
+        .iter()
+        .map(|bot| {
+            let client = client.clone();
+            let endpoint = bot.endpoint_url.clone();
+            let token = bot_tokens.get(&bot.id).cloned().unwrap_or_default();
+            let session_id = debate_id.to_string();
+            let own_pseudonym = pseudonym_map.get(&bot.id).cloned().unwrap_or_default();
+            let context: Vec<ScoringContext> = anonymised
+                .iter()
+                .filter(|c| c.pseudonym != own_pseudonym)
+                .cloned()
+                .collect();
+            let bot_id = bot.id.clone();
+            async move {
+                if context.is_empty() {
+                    return (bot_id, None);
+                }
+                let req = ScoringRequest {
+                    session_id,
+                    round: "scoring".to_string(),
+                    context,
+                    prompt: format!(
+                        "You are rating the OTHER participants' round-{final_round_number} positions shown in `context`. For each one, return a JSON object under `scores` with fields {{\"pseudonym\": string, \"reasoning_quality\": 0-10 int, \"factual_grounding\": 0-10 int, \"overall\": 0-10 int, \"reasoning\": short string}}. Do not score yourself. Return exactly {{\"scores\": [...]}} — no prose outside that JSON object."
+                    ),
+                };
+                match tokio::time::timeout(
+                    Duration::from_secs(300),
+                    bot_client::send_scoring_request(&client, &endpoint, &token, &req),
+                )
+                .await
+                {
+                    Ok(Ok(resp)) => (bot_id, Some(resp.scores)),
+                    Ok(Err(e)) => {
+                        tracing::warn!(bot_id = %bot_id, error = %e, "peer scoring request failed");
+                        (bot_id, None)
+                    }
+                    Err(_) => {
+                        tracing::warn!(bot_id = %bot_id, "peer scoring request timed out");
+                        (bot_id, None)
+                    }
+                }
+            }
+        })
+        .collect();
+
+    let scoring_results = futures::future::join_all(scoring_futures).await;
+
+    let mut inserted = 0usize;
+    for (scorer_bot_id, scores_opt) in &scoring_results {
+        let Some(scores) = scores_opt else { continue };
+        for score in scores {
+            // Clamp scores to the 0-10 range so an out-of-bounds bot
+            // response can't pollute aggregation downstream.
+            let rq = score.reasoning_quality.clamp(0, 10);
+            let fg = score.factual_grounding.clamp(0, 10);
+            let ov = score.overall.clamp(0, 10);
+            let score_id = uuid::Uuid::new_v4().to_string();
+            match crate::db::queries::insert_peer_score(
+                pool,
+                &score_id,
+                debate_id,
+                scorer_bot_id,
+                &score.pseudonym,
+                rq,
+                fg,
+                ov,
+                &score.reasoning,
+            )
+            .await
+            {
+                Ok(_) => inserted += 1,
+                Err(e) => tracing::warn!(
+                    scorer = %scorer_bot_id,
+                    target = %score.pseudonym,
+                    error = %e,
+                    "peer_scores insert failed"
+                ),
+            }
+        }
+    }
+
+    tracing::info!(
+        debate_id,
+        scorers = scoring_results.len(),
+        scores_inserted = inserted,
+        "peer scoring completed"
+    );
     Ok(())
 }

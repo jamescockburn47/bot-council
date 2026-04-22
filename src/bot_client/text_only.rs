@@ -56,8 +56,8 @@ pub async fn send_text_only_request(
             MAX_RESPONSE_BYTES
         ));
     }
-    let parsed: TextOnlyResponse = serde_json::from_slice(&bytes)
-        .map_err(|e| format!("invalid response body: {e}"))?;
+    let parsed: TextOnlyResponse =
+        serde_json::from_slice(&bytes).map_err(|e| format!("invalid response body: {e}"))?;
     Ok(DebateRoundResponse {
         response: parsed.text,
         confidence: None,
@@ -94,7 +94,8 @@ mod tests {
             .mount(&server)
             .await;
         let client = build_http_client(&test_http_config());
-        let out = send_text_only_request(&client, &server.uri(), "secret", "sess-1", "Prompt").await;
+        let out =
+            send_text_only_request(&client, &server.uri(), "secret", "sess-1", "Prompt").await;
         let resp = out.unwrap();
         assert_eq!(resp.response, "My position is X.");
         assert!(resp.challenge.is_none());

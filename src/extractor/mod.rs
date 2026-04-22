@@ -170,11 +170,15 @@ mod tests {
         let server = MockServer::start().await;
         let bot_text = "A harmless, non-challenging sentence.";
         // MiniMax claims extraction succeeded but the quote is not in the text.
-        mock_minimax(&server, r#"{"extracted": true, "fields": {
+        mock_minimax(
+            &server,
+            r#"{"extracted": true, "fields": {
             "claim_targeted": {"value": "X", "quote": "this quote does not appear"},
             "counter_evidence": {"value": "Y", "quote": "neither does this"},
             "type": {"value": "factual", "quote": "nor this"}
-        }}"#).await;
+        }}"#,
+        )
+        .await;
         let models = test_models_config(&server.uri());
         let out = extract_structured_field(&models, ExtractTarget::Challenge, bot_text).await;
         assert_eq!(out, ExtractionOutcome::Absent);

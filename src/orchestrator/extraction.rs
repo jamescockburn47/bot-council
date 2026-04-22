@@ -15,7 +15,7 @@ use serde_json::json;
 /// `responses.extraction_metadata`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FieldProvenance {
-    pub field: &'static str, // "challenge" or "position_change"
+    pub field: &'static str,  // "challenge" or "position_change"
     pub source: &'static str, // "authored" | "extracted" | "extraction_failed"
     pub quote: Option<String>,
 }
@@ -83,22 +83,23 @@ pub async fn extract_if_needed(
                         false
                     }
                 },
-                ExtractTarget::PositionChange => match serde_json::from_value::<
-                    crate::bot_client::PositionChangeField,
-                >(value["position_change"].clone())
-                {
-                    Ok(pc) => {
-                        response.position_change = Some(pc);
-                        true
+                ExtractTarget::PositionChange => {
+                    match serde_json::from_value::<crate::bot_client::PositionChangeField>(
+                        value["position_change"].clone(),
+                    ) {
+                        Ok(pc) => {
+                            response.position_change = Some(pc);
+                            true
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                error = %e,
+                                "extractor returned malformed position_change shape; provenance downgraded to extraction_failed"
+                            );
+                            false
+                        }
                     }
-                    Err(e) => {
-                        tracing::warn!(
-                            error = %e,
-                            "extractor returned malformed position_change shape; provenance downgraded to extraction_failed"
-                        );
-                        false
-                    }
-                },
+                }
             };
             if patched {
                 FieldProvenance {
@@ -193,11 +194,15 @@ mod tests {
             .await;
 
         let models = test_models_config(&server.uri());
-        let mut response = empty_resp(
-            "I challenge the claim X because of evidence Y; this is a factual dispute.",
-        );
-        let p =
-            extract_if_needed(&models, "text_only", ExtractTarget::Challenge, &mut response).await;
+        let mut response =
+            empty_resp("I challenge the claim X because of evidence Y; this is a factual dispute.");
+        let p = extract_if_needed(
+            &models,
+            "text_only",
+            ExtractTarget::Challenge,
+            &mut response,
+        )
+        .await;
 
         assert_eq!(
             p.source, "extraction_failed",

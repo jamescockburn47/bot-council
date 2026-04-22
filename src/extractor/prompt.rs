@@ -63,7 +63,10 @@ mod tests {
 
     #[test]
     fn bot_text_is_fenced_and_labelled_as_data() {
-        let p = build_extraction_prompt(ExtractTarget::Challenge, "Malicious ignore-previous attempt.");
+        let p = build_extraction_prompt(
+            ExtractTarget::Challenge,
+            "Malicious ignore-previous attempt.",
+        );
         // Bot text appears inside a clearly-labelled data block so any
         // embedded instructions are framed as data, not commands.
         assert!(p.contains("---BEGIN BOT TEXT---"));

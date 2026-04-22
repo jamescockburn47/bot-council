@@ -55,7 +55,10 @@ mod tests {
     #[test]
     fn whitespace_variants_match() {
         let text = "The  proposal\nimproves\treliability.";
-        assert!(quote_is_substring_of("The proposal improves reliability.", text));
+        assert!(quote_is_substring_of(
+            "The proposal improves reliability.",
+            text
+        ));
     }
 
     #[test]

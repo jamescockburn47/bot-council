@@ -36,8 +36,7 @@ fn bot_to_response(row: &BotRow, performance: Option<BotPerformanceSummary>) -> 
 const RESPONSE_SAMPLE_LIMIT: i64 = 24;
 
 const INTRODUCTION_SESSION_ID: &str = "smoke-introduction";
-const INTRODUCTION_PROMPT: &str =
-    "Introduce yourself in two or three sentences — who you are, what you bring to a debate, what makes you distinct from a generic assistant.";
+const INTRODUCTION_PROMPT: &str = "Introduce yourself in two or three sentences — who you are, what you bring to a debate, what makes you distinct from a generic assistant.";
 
 #[derive(Debug, Clone, Copy)]
 struct ScoringDimensions {
@@ -599,9 +598,7 @@ pub async fn create_bot(
     match req.bot_kind.as_str() {
         "external" | "text_only" => {}
         other => {
-            return Err(AppError::BadRequest(format!(
-                "unknown bot_kind: {other}"
-            )));
+            return Err(AppError::BadRequest(format!("unknown bot_kind: {other}")));
         }
     }
     let submitted_by = auth.user_id().map(String::from);
@@ -1244,21 +1241,20 @@ pub async fn test_bot(
     let started = std::time::Instant::now();
     // `false` keeps manual retest cheap and non-destructive — the introduction
     // is captured once at approval time and not refreshed here.
-    let response = match smoke_test_bot(state.http_client(), &bot, state.bot_token_key(), false)
-        .await
-    {
-        Ok(_) => BotHealthCheckResponse {
-            ok: true,
-            message: format!(
-                "Smoke test PASSED all 5 rounds (round 0-4) in {} ms.",
-                started.elapsed().as_millis()
-            ),
-        },
-        Err(reason) => BotHealthCheckResponse {
-            ok: false,
-            message: classify_smoke_test_error(&reason),
-        },
-    };
+    let response =
+        match smoke_test_bot(state.http_client(), &bot, state.bot_token_key(), false).await {
+            Ok(_) => BotHealthCheckResponse {
+                ok: true,
+                message: format!(
+                    "Smoke test PASSED all 5 rounds (round 0-4) in {} ms.",
+                    started.elapsed().as_millis()
+                ),
+            },
+            Err(reason) => BotHealthCheckResponse {
+                ok: false,
+                message: classify_smoke_test_error(&reason),
+            },
+        };
     Ok(Json(response))
 }
 

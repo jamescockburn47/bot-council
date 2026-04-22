@@ -49,9 +49,7 @@ pub async fn run_round4(
                 };
                 let result = tokio::time::timeout(
                     std::time::Duration::from_secs(timeout_secs),
-                    bot_client::dispatch_round_request(
-                        &client, &bot_kind, &endpoint, &token, &req,
-                    ),
+                    bot_client::dispatch_round_request(&client, &bot_kind, &endpoint, &token, &req),
                 )
                 .await;
                 match result {

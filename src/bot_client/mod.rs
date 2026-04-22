@@ -207,17 +207,18 @@ mod dispatch_tests {
             .mount(&server)
             .await;
         let client = build_http_client(&cfg());
-        let resp = dispatch_round_request(&client, "text_only", &server.uri(), "", &round_request())
-            .await
-            .unwrap();
+        let resp =
+            dispatch_round_request(&client, "text_only", &server.uri(), "", &round_request())
+                .await
+                .unwrap();
         assert_eq!(resp.response, "answer");
     }
 
     #[tokio::test]
     async fn unknown_kind_errors() {
         let client = build_http_client(&cfg());
-        let out = dispatch_round_request(&client, "wizard", "http://unused", "", &round_request())
-            .await;
+        let out =
+            dispatch_round_request(&client, "wizard", "http://unused", "", &round_request()).await;
         assert!(out.unwrap_err().contains("unknown bot_kind"));
     }
 }

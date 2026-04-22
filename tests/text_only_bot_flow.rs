@@ -128,6 +128,11 @@ async fn mock_minimax_server() -> MockServer {
         .await;
 
     // R4 extractor — identified by the position_change schema spec.
+    // The `from_summary` field name alone is ambiguous: it also appears in
+    // the synthesis prompt (PrecomputedData.position_changes serialises
+    // `from_summary` into <structural-data>), so a bare body_string_contains
+    // would shadow the synthesis mock below. Anchor on the extractor-only
+    // opener "structured-extraction assistant" to disambiguate.
     let position_extraction = json!({
         "choices": [{"message": {"content": r#"{
             "extracted": true,
@@ -141,6 +146,7 @@ async fn mock_minimax_server() -> MockServer {
     });
     Mock::given(method("POST"))
         .and(path("/v1/chat/completions"))
+        .and(body_string_contains("structured-extraction assistant"))
         .and(body_string_contains("from_summary"))
         .respond_with(ResponseTemplate::new(200).set_body_json(position_extraction))
         .mount(&server)
@@ -198,7 +204,16 @@ async fn mock_minimax_server() -> MockServer {
         .mount(&server)
         .await;
 
-    // Final synthesis — matched by the synthesis output schema marker.
+    // Final synthesis — matched by a phrase unique to build_synthesis_prompt.
+    // We previously matched on "consensus_points" and (before that) shared
+    // "from_summary" with the R4 extractor prompt. The R4 extractor prompt
+    // ALSO contains "from_summary" (it's a required field in the
+    // PositionChange schema spec), and wiremock's insertion-order fallback
+    // was letting the R4 extractor mock capture synthesis calls — synthesis
+    // then silently fell through to salvage_loose_output because the
+    // extractor's JSON shape doesn't fit SynthesisOutput. `minority_positions`
+    // appears only in the synthesis prompt's OUTPUT SCHEMA block and nowhere
+    // in any extractor / validator / divergence / pairing prompt.
     let synthesis_output = json!({
         "choices": [{"message": {"content": json!({
             "topic": "preflight checks",
@@ -212,8 +227,9 @@ async fn mock_minimax_server() -> MockServer {
     });
     Mock::given(method("POST"))
         .and(path("/v1/chat/completions"))
-        .and(body_string_contains("consensus_points"))
+        .and(body_string_contains("minority_positions"))
         .respond_with(ResponseTemplate::new(200).set_body_json(synthesis_output))
+        .expect(1)
         .mount(&server)
         .await;
 

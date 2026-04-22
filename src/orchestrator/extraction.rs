@@ -145,7 +145,7 @@ mod tests {
 
     #[tokio::test]
     async fn external_bot_is_never_extracted() {
-        let models = test_models_config();
+        let models = test_models_config("http://localhost:0");
         let mut r = empty_resp("some prose");
         let p = extract_if_needed(&models, "external", ExtractTarget::Challenge, &mut r).await;
         assert_eq!(p.source, "authored");
@@ -154,7 +154,7 @@ mod tests {
 
     #[tokio::test]
     async fn text_only_bot_with_existing_field_is_not_extracted() {
-        let models = test_models_config();
+        let models = test_models_config("http://localhost:0");
         let mut r = empty_resp("some prose");
         r.challenge = Some(ChallengeField {
             claim_targeted: "X".into(),
@@ -165,44 +165,66 @@ mod tests {
         assert_eq!(p.source, "authored");
     }
 
-    // The real extractor path is exercised in `tests/text_only_bot_flow.rs` (Task 14)
-    // where a wiremock MiniMax server can be stood up.
+    // End-to-end extractor coverage also lives in `tests/text_only_bot_flow.rs`.
 
     #[tokio::test]
     async fn malformed_extracted_shape_is_downgraded_to_extraction_failed() {
-        // We can't easily trigger this without stubbing the extractor, so the
-        // test asserts behaviour via a direct construction of the code path.
-        // Specifically: with a text_only bot + empty response, the real extractor
-        // won't fire (empty text short-circuits to Absent), but the branch we
-        // really want to guard is the serde_json::from_value failure path.
-        //
-        // Rather than stubbing the whole extractor, assert the invariant via
-        // FieldProvenance equality: extraction_failed provenance carries no quote.
-        let p = FieldProvenance {
-            field: "challenge",
-            source: "extraction_failed",
-            quote: None,
-        };
-        assert_eq!(p.source, "extraction_failed");
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+        // claim_targeted is a number, not a string — passes the extractor's schema
+        // (value: serde_json::Value, quote: String) and passes quote verification,
+        // but fails deserialisation into the typed ChallengeField.
+        let minimax_body = r#"{
+            "extracted": true,
+            "fields": {
+                "claim_targeted": {"value": 123, "quote": "the claim X"},
+                "counter_evidence": {"value": "Y", "quote": "evidence Y"},
+                "type": {"value": "factual", "quote": "factual dispute"}
+            }
+        }"#;
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "choices": [{"message": {"content": minimax_body}}]
+            })))
+            .mount(&server)
+            .await;
+
+        let models = test_models_config(&server.uri());
+        let mut response = empty_resp(
+            "I challenge the claim X because of evidence Y; this is a factual dispute.",
+        );
+        let p =
+            extract_if_needed(&models, "text_only", ExtractTarget::Challenge, &mut response).await;
+
+        assert_eq!(
+            p.source, "extraction_failed",
+            "must not lie — serde failure is not 'extracted'"
+        );
         assert!(p.quote.is_none());
-        // The malformed-shape branch is also exercised end-to-end in
-        // tests/text_only_bot_flow.rs (Task 14) via a wiremock MiniMax that
-        // returns valid JSON with wrong field types.
+        assert!(
+            response.challenge.is_none(),
+            "response must remain unpatched on serde failure"
+        );
     }
 
-    /// Minimal ModelsConfig for tests that short-circuit before any MiniMax call.
-    /// Every field set explicitly because ModelsConfig has no Default impl.
-    /// Mirrors the pattern in `src/extractor/mod.rs` tests. The URL/key
-    /// values don't matter because these tests return before any network
-    /// call fires, but every field must be set to construct the struct.
-    fn test_models_config() -> ModelsConfig {
+    /// Minimal ModelsConfig for tests. Every field set explicitly because
+    /// `ModelsConfig` has no `Default` impl. Mirrors the pattern in
+    /// `src/extractor/mod.rs` tests — `analysis_base_url` is the only field
+    /// that matters (it routes `call_minimax` at the mock server); the rest
+    /// must still be valid strings so the struct is constructable. Pass
+    /// `"http://localhost:0"` (or any dummy) for tests that short-circuit
+    /// before a network call.
+    fn test_models_config(base_url: &str) -> ModelsConfig {
         ModelsConfig {
             minimax_api_key: "unused".into(),
             minimax_model: "unused".into(),
             minimax_base_url: "http://unused.invalid".into(),
             opus_api_key: "".into(),
             opus_model: "".into(),
-            analysis_base_url: "http://unused.invalid".into(),
+            analysis_base_url: base_url.to_string(),
             analysis_model: "test-model".into(),
             analysis_connect_timeout_secs: 2,
             analysis_request_timeout_secs: 10,

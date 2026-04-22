@@ -837,6 +837,49 @@ fn validate_smoke_json_for_round(json: &serde_json::Value, round: i64) -> Result
     Ok(())
 }
 
+/// Smoke probe for text-only bots. Sends a `/hook`-shape body and validates
+/// only that `text` is a non-empty string.
+async fn send_text_only_smoke_probe(
+    client: &reqwest::Client,
+    endpoint_url: &str,
+    token: Option<&str>,
+    prompt: &str,
+    label: &str,
+) -> Result<(), String> {
+    let body = serde_json::json!({
+        "session_id": format!("smoke-{label}"),
+        "prompt": prompt,
+    });
+    let mut request = client
+        .post(endpoint_url)
+        .timeout(std::time::Duration::from_secs(60));
+    if let Some(t) = token {
+        if !t.is_empty() {
+            request = request.header("authorization", format!("Bearer {t}"));
+        }
+    }
+    let response = request
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("{label} request failed: {e}"))?;
+    if !response.status().is_success() {
+        return Err(format!("{label} bot returned HTTP {}", response.status()));
+    }
+    let json: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("{label} response is not valid JSON: {e}"))?;
+    let text = json
+        .get("text")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| format!("{label} response missing 'text' string field"))?;
+    if text.trim().is_empty() {
+        return Err(format!("{label} response 'text' is empty"));
+    }
+    Ok(())
+}
+
 /// Introduction probe for text-only bots. Dispatches a `/hook`-shape request
 /// with the introduction prompt and returns the bot's answer for storage.
 async fn send_introduction_probe(
@@ -1000,58 +1043,98 @@ pub(crate) async fn smoke_test_bot(
     // Probes are sequential: some bot servers are single-threaded and
     // would serialise concurrent requests anyway, and sequential keeps
     // per-round error messages clean for `rejection_reason`.
-    let stub_peer_r0 = serde_json::json!([
-        {"pseudonym": "Argon", "round": 0, "response": "The proposal improves reliability by introducing preflight checks. Absent those checks, failures cascade through the whole pipeline.", "confidence": null},
-        {"pseudonym": "Beryl", "round": 0, "response": "Preflight checks are premature optimisation; the real cost is in deploy complexity, not runtime reliability.", "confidence": null}
-    ]);
-    let stub_peer_r1 = serde_json::json!([
-        {"pseudonym": "Argon", "round": 1, "response": "Preflight checks reduce incident volume by 60% in our data. The cost is negligible.", "confidence": 72},
-        {"pseudonym": "Beryl", "round": 1, "response": "The 60% figure comes from a biased sample; unbiased data shows closer to 15%.", "confidence": 65}
-    ]);
+    //
+    // Branch on bot_kind: text_only bots use the `/hook` contract
+    // (body = {session_id, prompt}, validation = non-empty text), while
+    // external bots use the round-shaped probes with round-specific
+    // schema validation.
+    if bot.bot_kind == "text_only" {
+        let prompts = [
+            (
+                "round0",
+                "Round 0: state a clear initial position on whether runtime preflight checks reduce production incidents.",
+            ),
+            (
+                "round1",
+                "Round 1: identify the single strongest opposing argument to your round 0 position, and what evidence would change your mind.",
+            ),
+            (
+                "round2",
+                "Round 2: pose at least one specific challenge against a peer argument. Name the claim, give counter-evidence, and say whether the challenge is factual, logical, or about a premise.",
+            ),
+            (
+                "round3",
+                "Round 3: pose one pointed question surfacing a hidden assumption in an opposing argument.",
+            ),
+            (
+                "round4",
+                "Round 4: state your final position. If your view has shifted since round 0, describe what changed and why.",
+            ),
+        ];
+        for (label, prompt) in prompts {
+            send_text_only_smoke_probe(
+                &direct_client,
+                &bot.endpoint_url,
+                token.as_deref(),
+                prompt,
+                label,
+            )
+            .await?;
+        }
+    } else {
+        let stub_peer_r0 = serde_json::json!([
+            {"pseudonym": "Argon", "round": 0, "response": "The proposal improves reliability by introducing preflight checks. Absent those checks, failures cascade through the whole pipeline.", "confidence": null},
+            {"pseudonym": "Beryl", "round": 0, "response": "Preflight checks are premature optimisation; the real cost is in deploy complexity, not runtime reliability.", "confidence": null}
+        ]);
+        let stub_peer_r1 = serde_json::json!([
+            {"pseudonym": "Argon", "round": 1, "response": "Preflight checks reduce incident volume by 60% in our data. The cost is negligible.", "confidence": 72},
+            {"pseudonym": "Beryl", "round": 1, "response": "The 60% figure comes from a biased sample; unbiased data shows closer to 15%.", "confidence": 65}
+        ]);
 
-    let round0 = serde_json::json!({
-        "session_id": "smoke-test", "round": 0, "role": "proponent",
-        "context": [],
-        "prompt": "Smoke test round 0 — blind formation. Topic: whether runtime preflight checks reduce production incidents. State a clear initial position. Return JSON with a non-empty 'response' string."
-    });
-    let round1 = serde_json::json!({
-        "session_id": "smoke-test", "round": 1, "role": "skeptic",
-        "context": stub_peer_r0,
-        "prompt": "Smoke test round 1 — anonymous distribution. Identify the single strongest opposing argument and what evidence would change your mind. Return JSON with a non-empty 'response' string."
-    });
-    let round2 = serde_json::json!({
-        "session_id": "smoke-test", "round": 2, "role": "empiricist",
-        "context": stub_peer_r1,
-        "prompt": "Smoke test round 2 — structured rebuttal. Pose at least one specific challenge against another participant. Return JSON with 'response' (string) AND a 'challenge' object with fields {claim_targeted, counter_evidence, type ∈ factual|logical|premise}. The challenge is MANDATORY this round."
-    });
-    let round3 = serde_json::json!({
-        "session_id": "smoke-test", "round": 3, "role": "devils_advocate",
-        "context": stub_peer_r1,
-        "prompt": "Smoke test round 3 — cross-examination. Pose one pointed question surfacing a hidden assumption in Argon's argument. Return JSON with 'response' (string)."
-    });
-    let round4 = serde_json::json!({
-        "session_id": "smoke-test", "round": 4, "role": "steelman",
-        "context": stub_peer_r1,
-        "prompt": "Smoke test round 4 — final position. State your final position in 'response' (string). ALSO return a 'position_change' object with {changed: boolean, from_summary: string, to_summary: string, reason: string}. The position_change is MANDATORY this round."
-    });
+        let round0 = serde_json::json!({
+            "session_id": "smoke-test", "round": 0, "role": "proponent",
+            "context": [],
+            "prompt": "Smoke test round 0 — blind formation. Topic: whether runtime preflight checks reduce production incidents. State a clear initial position. Return JSON with a non-empty 'response' string."
+        });
+        let round1 = serde_json::json!({
+            "session_id": "smoke-test", "round": 1, "role": "skeptic",
+            "context": stub_peer_r0,
+            "prompt": "Smoke test round 1 — anonymous distribution. Identify the single strongest opposing argument and what evidence would change your mind. Return JSON with a non-empty 'response' string."
+        });
+        let round2 = serde_json::json!({
+            "session_id": "smoke-test", "round": 2, "role": "empiricist",
+            "context": stub_peer_r1,
+            "prompt": "Smoke test round 2 — structured rebuttal. Pose at least one specific challenge against another participant. Return JSON with 'response' (string) AND a 'challenge' object with fields {claim_targeted, counter_evidence, type ∈ factual|logical|premise}. The challenge is MANDATORY this round."
+        });
+        let round3 = serde_json::json!({
+            "session_id": "smoke-test", "round": 3, "role": "devils_advocate",
+            "context": stub_peer_r1,
+            "prompt": "Smoke test round 3 — cross-examination. Pose one pointed question surfacing a hidden assumption in Argon's argument. Return JSON with 'response' (string)."
+        });
+        let round4 = serde_json::json!({
+            "session_id": "smoke-test", "round": 4, "role": "steelman",
+            "context": stub_peer_r1,
+            "prompt": "Smoke test round 4 — final position. State your final position in 'response' (string). ALSO return a 'position_change' object with {changed: boolean, from_summary: string, to_summary: string, reason: string}. The position_change is MANDATORY this round."
+        });
 
-    let probes = [
-        (round0, "round0", 0i64),
-        (round1, "round1", 1),
-        (round2, "round2", 2),
-        (round3, "round3", 3),
-        (round4, "round4", 4),
-    ];
-    for (body, label, round) in probes {
-        send_smoke_probe(
-            &direct_client,
-            &bot.endpoint_url,
-            token.as_deref(),
-            body,
-            label,
-            round,
-        )
-        .await?;
+        let probes = [
+            (round0, "round0", 0i64),
+            (round1, "round1", 1),
+            (round2, "round2", 2),
+            (round3, "round3", 3),
+            (round4, "round4", 4),
+        ];
+        for (body, label, round) in probes {
+            send_smoke_probe(
+                &direct_client,
+                &bot.endpoint_url,
+                token.as_deref(),
+                body,
+                label,
+                round,
+            )
+            .await?;
+        }
     }
     Ok(introduction)
 }

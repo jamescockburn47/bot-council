@@ -218,8 +218,8 @@
       <div class="space-y-4">
         {#each pending as bot (bot.id)}
           <div class="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-5">
-            <div class="flex items-start justify-between gap-4">
-              <div class="flex-1">
+            <div class="flex items-start justify-between gap-4 flex-wrap">
+              <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-3 mb-2 flex-wrap">
                   <h3 class="text-sm font-medium text-[var(--text-primary)]">{bot.name}</h3>
                   <StatusBadge status={bot.status} />
@@ -249,7 +249,7 @@
                 {/if}
 
                 <div class="space-y-1 text-xs text-[var(--text-muted)]">
-                  <p>
+                  <p class="break-all">
                     <span class="mono">Endpoint:</span>
                     <span class="text-[var(--text-secondary)]">{bot.endpoint_url}</span>
                   </p>

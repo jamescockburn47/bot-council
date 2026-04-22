@@ -69,7 +69,7 @@
     <div class="space-y-3">
       {#each submissions as bot (bot.id)}
         <div class="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-5">
-          <div class="flex items-center justify-between">
+          <div class="flex items-center justify-between flex-wrap gap-2">
             <div class="flex items-center gap-3 flex-wrap">
               <span class="text-sm font-medium text-[var(--text-primary)]">{bot.name}</span>
               <StatusBadge status={bot.status} />
@@ -86,7 +86,7 @@
             </div>
             <span class="text-xs text-[var(--text-muted)]">{formatDate(bot.created_at)}</span>
           </div>
-          <p class="text-xs mono text-[var(--text-muted)] mt-1.5">{bot.endpoint_url}</p>
+          <p class="text-xs mono text-[var(--text-muted)] mt-1.5 break-all">{bot.endpoint_url}</p>
           {#if bot.introduction}
             <div class="mt-3 bg-[var(--bg)] border border-[var(--border)] rounded-md p-3">
               <div class="mono text-xs text-[var(--text-muted)] uppercase tracking-wider mb-1.5">

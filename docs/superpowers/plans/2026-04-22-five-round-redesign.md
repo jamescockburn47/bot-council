@@ -152,18 +152,30 @@ Delete the three lines:
 test_mode_simple = false
 ```
 
-- [ ] **Step 5: Run the config test**
+- [ ] **Step 5: Update `tests/common/mod.rs`**
+
+`tests/common/mod.rs` has three `DebateConfig { … test_mode_simple: bool, … }` initialisers (inside `test_app`, `test_app_simple_mode`, and `test_app_with_minimax_url`). Removing the field from the struct breaks all three at compile time. Fix by:
+
+1. In `test_app` and `test_app_with_minimax_url`: delete the `test_mode_simple: …` line from each `DebateConfig { … }` struct-init block.
+2. Delete the entire `test_app_simple_mode` function (lines ~81–148). It exists solely to exercise a mode that no longer exists.
+
+Dangling callers of `test_app_simple_mode` in test files are handled in Task 27.
+
+- [ ] **Step 6: Run the config test + full suite**
 
 ```bash
 ./scripts/sync-evo.sh test -- debate_config_does_not_expose_simple_mode
+./scripts/sync-evo.sh check
 ```
 
-Expected: PASS.
+Expected: config test PASS; `cargo check --tests` green (apart from dangling callers of `test_app_simple_mode`, which will become compile errors that Task 27 resolves — this is acceptable because subsequent tasks keep the break open only as long as needed).
 
-- [ ] **Step 6: Commit**
+If breaking the build for subsequent tasks is unacceptable in your execution order, run Task 27 immediately after Task 2 before moving on.
+
+- [ ] **Step 7: Commit**
 
 ```bash
-git add config/default.toml src/config.rs
+git add config/default.toml src/config.rs tests/common/mod.rs
 git commit -m "chore(config): drop test_mode_simple — 5-round protocol only"
 ```
 
@@ -178,12 +190,18 @@ git commit -m "chore(config): drop test_mode_simple — 5-round protocol only"
 
 Create or extend `tests/api_debates_test.rs`:
 
+Add to `tests/api_debates_test.rs` — uses the real `common::test_app()` helper ([tests/common/mod.rs:10](../../../tests/common/mod.rs:10)) which returns `(Router, SqlitePool)`:
+
 ```rust
+mod common;
+
+use axum::body::Body;
+use axum::http::Request;
+
 #[tokio::test]
 async fn debate_creation_rejects_null_token_bot_always() {
-    use crate::common::{admin_auth, test_pool, test_router};
-    let pool = test_pool().await;
-    // Seed a bot with token_ciphertext = NULL.
+    let (app, pool) = common::test_app().await;
+    // Seed a bot with token_ciphertext = NULL plus two bots with real ciphertext so quorum is otherwise met.
     sqlx::query(
         "INSERT INTO bots (id, name, endpoint_url, status, token_ciphertext, bot_kind) \
          VALUES ('nulltok', 'NoToken', 'http://example.invalid/debate', 'active', NULL, 'external')",
@@ -194,17 +212,16 @@ async fn debate_creation_rejects_null_token_bot_always() {
              VALUES ('real{i}', 'Real{i}', 'http://example.invalid/debate', 'active', x'DEADBEEF', 'external')"
         )).execute(&pool).await.unwrap();
     }
-    let app = test_router(pool).await;
     let body = serde_json::json!({
         "topic": "smoke",
         "bot_ids": ["nulltok", "real0", "real1"]
     });
-    let req = admin_auth(
-        axum::http::Request::builder()
+    let req = common::admin_auth(
+        Request::builder()
             .method("POST")
             .uri("/debates")
             .header("content-type", "application/json"),
-    ).body(axum::body::Body::from(body.to_string())).unwrap();
+    ).body(Body::from(body.to_string())).unwrap();
     let resp = tower::ServiceExt::oneshot(app, req).await.unwrap();
     assert_eq!(resp.status(), 400);
     let body = axum::body::to_bytes(resp.into_body(), 4096).await.unwrap();
@@ -409,7 +426,7 @@ mod tests {
     async fn assign_roles_produces_uniform_distribution() {
         // With 5 bots × 5 roles, over 1000 shuffles each bot gets each role
         // approximately 200 times. Allow ±30% tolerance for statistical noise.
-        let pool = crate::db::connect_in_memory().await.unwrap();
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
         sqlx::migrate!("./migrations").run(&pool).await.unwrap();
         let bot_ids: Vec<String> = (0..5).map(|i| format!("bot_{i}")).collect();
         let mut counts: HashMap<(String, Role), u32> = HashMap::new();
@@ -433,7 +450,7 @@ mod tests {
 
     #[tokio::test]
     async fn assign_roles_rejects_more_than_five_bots() {
-        let pool = crate::db::connect_in_memory().await.unwrap();
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
         let ids: Vec<String> = (0..6).map(|i| format!("b{i}")).collect();
         let err = assign_roles(&pool, &ids).await.unwrap_err();
         assert!(err.contains("maximum 5"));
@@ -708,6 +725,8 @@ pub fn round2_prompt(topic: &str) -> String {
 ```
 
 Also delete the function and its tests at `src/orchestrator/prompts.rs`.
+
+**Note on `round2_reprompt`:** the separate `round2_reprompt` function at [src/orchestrator/prompts.rs:51-58](../../../src/orchestrator/prompts.rs:51) is used by the existing round 2 rejection-reprompt loop. Task 15 replaces that loop with the shared `dispatch_with_retry_and_fallback` helper (which uses `simplified_retry_prompt` instead), after which `round2_reprompt` becomes dead code. **Delete `round2_reprompt` as part of Task 15, not here** — Task 9 only touches `round2_prompt` and `round2_prompt_simple`.
 
 - [ ] **Step 4: Run — PASS**
 
@@ -1078,6 +1097,39 @@ Wherever `responses` rows are read (search: `FROM responses`), add `fallback_fro
 
 In `src/db/queries_phase1.rs`, add a single new parameter at the end:
 
+**Current real signature** at [src/db/queries_phase1.rs:239-276](../../../src/db/queries_phase1.rs:239) — memorise the parameter order and the SQL column list before editing:
+
+```rust
+pub async fn insert_response_full(
+    pool: &SqlitePool,
+    id: &str,
+    debate_id: &str,
+    round_number: i64,
+    bot_id: &str,
+    response_json: &str,
+    confidence: Option<i64>,
+    challenge_json: Option<&str>,
+    position_change_json: Option<&str>,
+    valid: bool,
+    retry_count: i64,
+    abstained: bool,
+    extraction_metadata: Option<&str>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO responses \
+         (id, debate_id, round_number, bot_id, response_json, confidence, \
+          challenge_json, position_change_json, valid, retry_count, abstained, \
+          extraction_metadata) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+    /* .bind(...) in the order above */
+    .execute(pool).await?;
+    Ok(())
+}
+```
+
+**Target signature** — add exactly one new parameter at the end and one new SQL column:
+
 ```rust
 #[allow(clippy::too_many_arguments)]
 pub async fn insert_response_full(
@@ -1091,30 +1143,26 @@ pub async fn insert_response_full(
     challenge_json: Option<&str>,
     position_change_json: Option<&str>,
     valid: bool,
-    repromptings: i64,
+    retry_count: i64,
     abstained: bool,
-    extraction_metadata_json: Option<&str>,
-    retry_count: i64,       // UNCHANGED — already present in current signature
-    fallback_from_round: Option<i64>,  // NEW
+    extraction_metadata: Option<&str>,
+    fallback_from_round: Option<i64>,  // NEW — last param
 ) -> Result<(), sqlx::Error> {
-    // Extend the INSERT SQL to include fallback_from_round:
     sqlx::query(
-        "INSERT INTO responses (id, debate_id, round_number, bot_id, \
-         response_json, confidence, challenge_json, position_change_json, \
-         valid, repromptings, abstained, extraction_metadata, \
-         retry_count, fallback_from_round) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO responses \
+         (id, debate_id, round_number, bot_id, response_json, confidence, \
+          challenge_json, position_change_json, valid, retry_count, abstained, \
+          extraction_metadata, fallback_from_round) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
-    // ... bind existing params ...
-    .bind(retry_count)
+    // existing binds unchanged, plus one new at the end:
     .bind(fallback_from_round)
-    .execute(pool)
-    .await?;
+    .execute(pool).await?;
     Ok(())
 }
 ```
 
-Only one new `.bind()` is added. Everything else is unchanged.
+Do NOT rename `extraction_metadata` to `extraction_metadata_json`, do NOT introduce a `repromptings` parameter (no such column or field exists), do NOT reorder the existing parameters.
 
 - [ ] **Step 4: Update every call site**
 
@@ -1124,7 +1172,7 @@ Search `insert_response_full` callers:
 grep -rn "insert_response_full" src/
 ```
 
-Update each to pass `None` for `fallback_from_round` (rounds will override with real values in Tasks 14, 15, 19). The `retry_count` argument stays exactly as today.
+Each current call passes 13 positional args (not counting `pool`). Add `None` as a 14th arg for `fallback_from_round`. Rounds will override with real values in Tasks 14, 15, 19. Everything before the final `None` is unchanged.
 
 - [ ] **Step 5: `cargo check`**
 
@@ -1508,7 +1556,7 @@ pub async fn select_crux(
         } else {
             format!("{base_prompt}\n\nYour previous attempt failed: source_quote was not a verbatim substring. Use exact text from the named bot's R1 response.")
         };
-        let raw = call_minimax(models_config, &prompt).await
+        let raw = crate::analyser::call_minimax(models_config, &prompt).await
             .map_err(CruxError::MinimaxFailed)?;
         let parsed: CruxSelection = match serde_json::from_str(&raw) {
             Ok(v) => v,
@@ -1526,17 +1574,9 @@ pub async fn select_crux(
     }
     Err(CruxError::NoValidCandidate)
 }
-
-async fn call_minimax(models_config: &ModelsConfig, prompt: &str) -> Result<String, String> {
-    // Reuse the existing analysis-model pipeline. The analyser/divergence.rs
-    // file uses the same pattern — copy the HTTP-call structure from there,
-    // swapping the prompt and schema. Keep temperature low (0.1).
-    // ...
-    todo!("copy HTTP-call structure from src/analyser/divergence.rs::analyse_divergence")
-}
 ```
 
-(Replace the `todo!()` with the actual HTTP call. Pattern mirrors `analyse_divergence` in `src/analyser/divergence.rs` — same endpoint, same auth, differ only in prompt and response parsing.)
+`call_minimax` already exists as a pub helper at [src/analyser/mod.rs:62](../../../src/analyser/mod.rs:62) with signature `pub async fn call_minimax(config: &ModelsConfig, system_prompt: &str) -> Result<String, String>`. Call it directly — do NOT declare a local helper.
 
 - [ ] **Step 4: Run — PASS**
 
@@ -1659,15 +1699,29 @@ async fn run_round3_crux(/* ... */) -> Result<(), String> {
 }
 ```
 
-Keep the existing cross-examination function renamed with `_legacy` suffix.
+Keep the existing cross-examination function renamed with `_legacy` suffix (and drop the leading underscore from its `_pseudonym_map` parameter since it's now actually used by the legacy path).
 
-- [ ] **Step 5: Run — PASS**
+- [ ] **Step 5: Update the call site in `src/orchestrator/multi_round.rs`**
+
+The current call to `rounds::round3::run_round3(...)` in [src/orchestrator/multi_round.rs](../../../src/orchestrator/multi_round.rs) (search for `rounds::round3::run_round3`) passes 12 arguments. Add a 13th positional argument `crux.as_ref().ok()` after `models_config`:
+
+```rust
+rounds::round3::run_round3(
+    pool, client, id, topic, bots, bot_tokens,
+    &role_assignments, &pseudonym_map, &reverse_pseudonym_map,
+    &round2_responses, models_config,
+    crux.as_ref().ok(),   // NEW — passes Some(&CruxSelection) or None
+    timeout,
+).await?;
+```
+
+- [ ] **Step 6: Run — PASS**
 
 ```bash
 ./scripts/sync-evo.sh test -- crux_round
 ```
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add src/orchestrator/rounds/round3.rs src/orchestrator/multi_round.rs tests/crux_round_test.rs
@@ -1880,28 +1934,50 @@ git commit -m "feat(synthesis): include crux outcome in synthesis prompt"
 ### Task 23: Transcript shows crux at R3 header
 
 **Files:**
-- Modify: `frontend/src/routes/debates/[id]/+page.svelte`
-- Modify: API response for `/api/debates/{id}/transcript` if needed to surface the `crux_selection` analysis row.
+- Modify: [src/api/transcript.rs](../../../src/api/transcript.rs) — transcript response shape lives here, not `debates.rs`.
+- Modify: [src/api/dto.rs](../../../src/api/dto.rs) — wire-format DTOs.
+- Modify: [frontend/src/lib/types.ts](../../../frontend/src/lib/types.ts) — mirror the new field on the client type.
+- Modify: [frontend/src/lib/components/RoundAccordion.svelte](../../../frontend/src/lib/components/RoundAccordion.svelte) — actual round rendering. (`frontend/src/routes/debates/[id]/+page.svelte` delegates to `DebateTranscriptView` → `RoundAccordion`.)
 
 - [ ] **Step 1: Extend transcript API**
 
-`GET /api/debates/{id}/transcript` response gains an optional `crux` field:
+In [src/api/dto.rs](../../../src/api/dto.rs), add an optional `CruxDto` and attach it to the `TranscriptResponse` struct:
 
-```json
-{
-  "rounds": [...],
-  "crux": { "claim": "...", "source_pseudonym": "...", "source_quote": "..." }
+```rust
+#[derive(Serialize)]
+pub struct CruxDto {
+    pub claim: String,
+    pub source_pseudonym: String,
+    pub source_quote: String,
+}
+
+// In TranscriptResponse:
+pub struct TranscriptResponse {
+    pub rounds: Vec<TranscriptRound>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub crux: Option<CruxDto>,
 }
 ```
 
-Populate it by reading the latest `crux_selection` analysis row for the debate.
+In [src/api/transcript.rs](../../../src/api/transcript.rs), populate it by reading the most-recent `analyses` row with `kind = 'crux_selection'` for the debate and parsing its `result` JSON.
 
-- [ ] **Step 2: Frontend — render crux above R3**
+- [ ] **Step 2: Frontend type mirror**
 
-In the transcript component, before rendering R3 responses, insert a card showing the crux claim with a visual emphasis. Pattern matches the existing outcome-tab card styling.
+In [frontend/src/lib/types.ts](../../../frontend/src/lib/types.ts), extend the transcript type:
+
+```ts
+export interface Transcript {
+  rounds: TranscriptRound[];
+  crux?: { claim: string; source_pseudonym: string; source_quote: string };
+}
+```
+
+- [ ] **Step 3: Render crux above R3 in `RoundAccordion.svelte`**
+
+The existing `TranscriptRound` type uses `round_number` (not `number`). Guard on it:
 
 ```svelte
-{#if transcript.crux && round.number === 3}
+{#if transcript.crux && round.round_number === 3}
   <div class="mb-4 bg-[#8b5cf615] border border-[#8b5cf630] rounded-lg p-4">
     <h3 class="text-xs mono uppercase tracking-wider text-[var(--text-muted)] mb-1">
       Crux
@@ -1914,16 +1990,21 @@ In the transcript component, before rendering R3 responses, insert a card showin
 {/if}
 ```
 
-- [ ] **Step 3: `npm run build` + manual check**
+The `transcript` prop needs to be threaded into `RoundAccordion` if it isn't already — check the existing prop list in that file before assuming it's there. If it isn't, add it to the props and pass it from `DebateTranscriptView.svelte`.
+
+- [ ] **Step 4: `npm run build` + manual check**
 
 ```bash
 cd frontend && npm run build
 ```
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add src/api/debates.rs frontend/src/routes/debates/[id]/+page.svelte
+git add src/api/transcript.rs src/api/dto.rs \
+  frontend/src/lib/types.ts \
+  frontend/src/lib/components/RoundAccordion.svelte \
+  frontend/src/lib/components/DebateTranscriptView.svelte
 git commit -m "feat(frontend): render crux claim above R3 in transcript"
 ```
 
@@ -1952,16 +2033,57 @@ git commit -m "feat(frontend): render steelman extraction in R4 responses"
 ### Task 25: Carry-forward badge
 
 **Files:**
-- Modify: `frontend/src/routes/debates/[id]/+page.svelte`
+- Modify: [src/api/dto.rs](../../../src/api/dto.rs) — expose `fallback_from_round` in `TranscriptEntry`.
+- Modify: [src/api/transcript.rs](../../../src/api/transcript.rs) — populate the new field from the existing `responses.fallback_from_round` column (added in Task 1).
+- Modify: [frontend/src/lib/types.ts](../../../frontend/src/lib/types.ts) — mirror the new field on the client type.
+- Modify: [frontend/src/lib/components/ResponseCard.svelte](../../../frontend/src/lib/components/ResponseCard.svelte) — where each bot's response is rendered. (Not `+page.svelte` — the routing page delegates to `DebateTranscriptView` → `RoundAccordion` → `ResponseCard`.)
 
-- [ ] **Step 1: Render badge on fallback responses**
+- [ ] **Step 1: Extend DTO**
 
-Check `response.fallback_from_round != null`. If so, render a muted badge: `↻ carried from R0` with a tooltip explaining "this bot did not respond in this round; its R0 position is shown".
+In [src/api/dto.rs](../../../src/api/dto.rs), `TranscriptEntry`:
 
-- [ ] **Step 2: Build + commit**
+```rust
+#[derive(Serialize)]
+pub struct TranscriptEntry {
+    // ... existing fields ...
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fallback_from_round: Option<i64>,
+}
+```
+
+- [ ] **Step 2: Populate in transcript API**
+
+In [src/api/transcript.rs](../../../src/api/transcript.rs), where `TranscriptEntry` values are constructed from response rows, copy the new column across. `ResponseRow::fallback_from_round` is already populated by Task 13.
+
+- [ ] **Step 3: Mirror on the frontend type**
+
+In [frontend/src/lib/types.ts](../../../frontend/src/lib/types.ts), `TranscriptEntry`:
+
+```ts
+export interface TranscriptEntry {
+  // ... existing fields ...
+  fallback_from_round?: number | null;
+}
+```
+
+- [ ] **Step 4: Render badge on fallback responses**
+
+In [frontend/src/lib/components/ResponseCard.svelte](../../../frontend/src/lib/components/ResponseCard.svelte), when `response.fallback_from_round != null`, render a muted badge near the pseudonym: `↻ carried from R0` with a `title` attribute explaining "this bot did not respond in this round; its R0 position is shown so the voice is not lost".
+
+Tailwind classes matching existing subtle badges in the project: `text-xs mono text-[var(--text-muted)] border border-[var(--border)] rounded px-1.5 py-0.5 ml-2`.
+
+- [ ] **Step 5: Build**
 
 ```bash
-git add frontend/src/routes/debates/[id]/+page.svelte
+cd frontend && npm run build
+```
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add src/api/dto.rs src/api/transcript.rs \
+  frontend/src/lib/types.ts \
+  frontend/src/lib/components/ResponseCard.svelte
 git commit -m "feat(frontend): carry-forward badge on R0-fallback responses"
 ```
 
@@ -1995,22 +2117,35 @@ git commit -m "test: end-to-end 5-round flow with abstention + crux + steelman"
 
 ---
 
-### Task 27: Clean up dead references to `test_mode_simple` in existing tests
+### Task 27: Delete simple_mode-specific tests + residual references
 
 **Files:**
-- Modify: any file found by `grep -rn "test_mode_simple" src/ tests/`.
+- Delete: every test function whose purpose is to exercise `test_mode_simple=true` (search for fn names matching `simple_mode`).
+- Delete: any remaining `test_app_simple_mode` call sites (Task 2 already removed the helper itself).
+- Modify: any other file found by `grep -rn "test_mode_simple\|simple_mode" src/ tests/`.
 
-- [ ] **Step 1: Find and update**
+- [ ] **Step 1: Find the dead references**
 
 ```bash
-grep -rn "test_mode_simple\|simple_mode" src/ tests/
+grep -rn "test_mode_simple\|simple_mode\|test_app_simple_mode" src/ tests/
 ```
 
-For each hit:
-- If it's setting the flag in a test config: remove the line.
-- If it's branching on it: remove the branch (keep the non-simple path).
+- [ ] **Step 2: Delete simple-mode-specific test functions outright**
 
-- [ ] **Step 2: Full test suite**
+These tests exist only to exercise the removed mode — they have no counterpart in the new 5-round-only world, and "adapting" them would be contrived:
+
+- Any `#[tokio::test]` or `#[test]` whose body calls `common::test_app_simple_mode()`.
+- Any `#[tokio::test]` or `#[test]` whose name or assertion references "simple mode" / "3 rounds" / "two-round truncation".
+
+Cross-reference: before Task 27 runs, Task 2 removes the helper, so any lingering caller is already a compile error. Use `./scripts/sync-evo.sh check` output to identify them.
+
+- [ ] **Step 3: Strip residual branches**
+
+For the remaining hits (non-test-deletion):
+- If it's setting the flag in a test config: remove the line.
+- If it's branching on it in production code: remove the branch (keep the non-simple path) — Tasks 3/4/5 should already have handled the production paths; this step is a safety net.
+
+- [ ] **Step 4: Full test suite**
 
 ```bash
 ./scripts/sync-evo.sh test
@@ -2018,11 +2153,11 @@ For each hit:
 
 Expected: all green.
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add src/ tests/
-git commit -m "chore: remove remaining simple_mode references from tests"
+git commit -m "chore: delete simple_mode-specific tests; strip residual refs"
 ```
 
 ---

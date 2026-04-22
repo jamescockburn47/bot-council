@@ -726,14 +726,105 @@ pub(crate) fn classify_smoke_test_error(raw: &str) -> String {
 }
 
 fn validate_smoke_json(json: serde_json::Value) -> Result<(), String> {
-    match json.get("response") {
+    validate_smoke_json_for_round(&json, 0)
+}
+
+/// Round-aware smoke validator.
+///
+/// Round 0: only `response: string` required.
+/// Rounds 1-4: add `confidence: integer 0-100`.
+/// Round 2:    add `challenge: {claim_targeted, counter_evidence, type ∈
+///             factual|logical|premise}` (mandatory per orchestrator spec).
+/// Round 4:    add `position_change: {changed:bool, from_summary,
+///             to_summary, reason}` (mandatory per orchestrator spec).
+///
+/// If a bot cannot populate the round 2 / round 4 required fields at
+/// approval time it would abstain in every real debate — the whole
+/// reason bots have been silently abstaining after approval. Enforcing
+/// here catches it before they go live.
+fn validate_smoke_json_for_round(json: &serde_json::Value, round: i64) -> Result<(), String> {
+    let response_ok = match json.get("response") {
         Some(serde_json::Value::String(text)) if !text.trim().is_empty() => Ok(()),
-        Some(serde_json::Value::String(_)) => Err("'response' field is empty".into()),
+        Some(serde_json::Value::String(_)) => Err("'response' field is empty".to_string()),
         Some(other) => Err(format!(
             "'response' field has wrong type: expected string, got {other}"
         )),
-        None => Err("response JSON missing 'response' field".into()),
+        None => Err("response JSON missing 'response' field".to_string()),
+    };
+    response_ok?;
+
+    if round >= 1 {
+        match json.get("confidence") {
+            Some(serde_json::Value::Number(n)) if n.is_i64() => {
+                let v = n.as_i64().unwrap();
+                if !(0..=100).contains(&v) {
+                    return Err(format!(
+                        "'confidence' out of 0-100 range (got {v}) — schema_invalid_value"
+                    ));
+                }
+            }
+            Some(serde_json::Value::Number(n)) => {
+                return Err(format!(
+                    "'confidence' must be an INTEGER 0-100, not float (got {n}) — common mistake: return 70 not 0.7"
+                ));
+            }
+            Some(other) => {
+                return Err(format!(
+                    "'confidence' wrong type: expected integer 0-100, got {other}"
+                ));
+            }
+            None => {
+                return Err(format!(
+                    "round {round} requires an integer 'confidence' field 0-100"
+                ));
+            }
+        }
     }
+
+    if round == 2 {
+        let ch = json.get("challenge").ok_or_else(|| {
+            "round 2 requires a 'challenge' object with fields {claim_targeted, counter_evidence, type}".to_string()
+        })?;
+        let obj = ch
+            .as_object()
+            .ok_or_else(|| "'challenge' must be a JSON object".to_string())?;
+        for k in ["claim_targeted", "counter_evidence"] {
+            match obj.get(k) {
+                Some(serde_json::Value::String(_)) => {}
+                _ => return Err(format!("'challenge.{k}' must be a non-empty string")),
+            }
+        }
+        let t = obj
+            .get("type")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| "'challenge.type' must be a string".to_string())?;
+        if !matches!(t, "factual" | "logical" | "premise") {
+            return Err(format!(
+                "'challenge.type' must be factual|logical|premise (got {t:?})"
+            ));
+        }
+    }
+
+    if round == 4 {
+        let pc = json.get("position_change").ok_or_else(|| {
+            "round 4 requires a 'position_change' object with fields {changed, from_summary, to_summary, reason}".to_string()
+        })?;
+        let obj = pc
+            .as_object()
+            .ok_or_else(|| "'position_change' must be a JSON object".to_string())?;
+        match obj.get("changed") {
+            Some(serde_json::Value::Bool(_)) => {}
+            _ => return Err("'position_change.changed' must be a boolean".to_string()),
+        }
+        for k in ["from_summary", "to_summary", "reason"] {
+            match obj.get(k) {
+                Some(serde_json::Value::String(_)) => {}
+                _ => return Err(format!("'position_change.{k}' must be a string")),
+            }
+        }
+    }
+
+    Ok(())
 }
 
 async fn send_smoke_probe(
@@ -742,6 +833,7 @@ async fn send_smoke_probe(
     token: Option<&str>,
     body: serde_json::Value,
     label: &str,
+    round: i64,
 ) -> Result<(), String> {
     let mut last_transport_error: Option<String> = None;
     let mut response = None;
@@ -782,7 +874,7 @@ async fn send_smoke_probe(
         .json()
         .await
         .map_err(|e| format!("{label} response is not valid JSON: {e}"))?;
-    validate_smoke_json(json).map_err(|e| format!("{label} {e}"))
+    validate_smoke_json_for_round(&json, round).map_err(|e| format!("{label} {e}"))
 }
 
 /// Send a multi-step smoke test to a bot endpoint.
@@ -813,43 +905,73 @@ pub(crate) async fn smoke_test_bot(
         None
     };
 
+    // Full 5-round gauntlet with round-specific schema validation.
+    //
+    // Background: the previous smoke test only probed rounds 0 and 1,
+    // which meant bots that couldn't handle the round 2 `challenge`
+    // requirement or the round 4 `position_change` requirement were
+    // silently passing approval, getting marked `active`, then
+    // abstaining in every real debate. This sequence exercises each
+    // round's actual schema contract so broken bots are caught at
+    // approval time rather than surfacing as silent abstentions weeks
+    // later.
+    //
+    // Probes are sequential: some bot servers are single-threaded and
+    // would serialise concurrent requests anyway, and sequential keeps
+    // per-round error messages clean for `rejection_reason`.
+    let stub_peer_r0 = serde_json::json!([
+        {"pseudonym": "Argon", "round": 0, "response": "The proposal improves reliability by introducing preflight checks. Absent those checks, failures cascade through the whole pipeline.", "confidence": null},
+        {"pseudonym": "Beryl", "round": 0, "response": "Preflight checks are premature optimisation; the real cost is in deploy complexity, not runtime reliability.", "confidence": null}
+    ]);
+    let stub_peer_r1 = serde_json::json!([
+        {"pseudonym": "Argon", "round": 1, "response": "Preflight checks reduce incident volume by 60% in our data. The cost is negligible.", "confidence": 72},
+        {"pseudonym": "Beryl", "round": 1, "response": "The 60% figure comes from a biased sample; unbiased data shows closer to 15%.", "confidence": 65}
+    ]);
+
     let round0 = serde_json::json!({
         "session_id": "smoke-test", "round": 0, "role": "proponent",
         "context": [],
-        "prompt": "Smoke test round 0: return valid JSON with a non-empty 'response' string."
+        "prompt": "Smoke test round 0 — blind formation. Topic: whether runtime preflight checks reduce production incidents. State a clear initial position. Return JSON with a non-empty 'response' string."
     });
     let round1 = serde_json::json!({
-        "session_id": "smoke-test",
-        "round": 1,
-        "role": "skeptic",
-        "context": [
-            {
-                "pseudonym": "Argon",
-                "round": 0,
-                "response": "The proposal improves reliability by introducing preflight checks.",
-                "confidence": 72
-            }
-        ],
-        "prompt": "Smoke test round 1: engage with the context and return valid JSON with a non-empty 'response' string."
+        "session_id": "smoke-test", "round": 1, "role": "skeptic",
+        "context": stub_peer_r0,
+        "prompt": "Smoke test round 1 — anonymous distribution. Identify the single strongest opposing argument and what evidence would change your mind. Return JSON with a non-empty 'response' string AND an integer 'confidence' 0-100."
     });
-    // Probe sequentially to avoid overloading single-threaded bot servers that
-    // cannot safely process two smoke requests at once.
-    send_smoke_probe(
-        &direct_client,
-        &bot.endpoint_url,
-        token.as_deref(),
-        round0,
-        "round0",
-    )
-    .await?;
-    send_smoke_probe(
-        &direct_client,
-        &bot.endpoint_url,
-        token.as_deref(),
-        round1,
-        "round1",
-    )
-    .await?;
+    let round2 = serde_json::json!({
+        "session_id": "smoke-test", "round": 2, "role": "empiricist",
+        "context": stub_peer_r1,
+        "prompt": "Smoke test round 2 — structured rebuttal. Pose at least one specific challenge against another participant. Return JSON with 'response' (string), integer 'confidence' 0-100, AND a 'challenge' object with fields {claim_targeted, counter_evidence, type ∈ factual|logical|premise}. The challenge is MANDATORY this round."
+    });
+    let round3 = serde_json::json!({
+        "session_id": "smoke-test", "round": 3, "role": "devils_advocate",
+        "context": stub_peer_r1,
+        "prompt": "Smoke test round 3 — cross-examination. Pose one pointed question surfacing a hidden assumption in Argon's argument. Return JSON with 'response' (string) and integer 'confidence' 0-100."
+    });
+    let round4 = serde_json::json!({
+        "session_id": "smoke-test", "round": 4, "role": "steelman",
+        "context": stub_peer_r1,
+        "prompt": "Smoke test round 4 — final position. State your final position with an integer 'confidence' 0-100. ALSO return a 'position_change' object with {changed: boolean, from_summary: string, to_summary: string, reason: string}. The position_change is MANDATORY this round."
+    });
+
+    let probes = [
+        (round0, "round0", 0i64),
+        (round1, "round1", 1),
+        (round2, "round2", 2),
+        (round3, "round3", 3),
+        (round4, "round4", 4),
+    ];
+    for (body, label, round) in probes {
+        send_smoke_probe(
+            &direct_client,
+            &bot.endpoint_url,
+            token.as_deref(),
+            body,
+            label,
+            round,
+        )
+        .await?;
+    }
     Ok(())
 }
 

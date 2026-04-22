@@ -149,13 +149,46 @@ async fn test_bot_submission_and_approval_flow() {
     // Spin up a mock bot server so the smoke-test that runs during approval
     // has something to hit and can return a well-formed DebateRoundResponse.
     let bot_server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/debate"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "response": "ack from smoke test",
-        })))
-        .mount(&bot_server)
-        .await;
+    // 5-round smoke gauntlet — approval now runs round 0 through 4 with
+    // round-specific schema validation (challenge in round 2,
+    // position_change in round 4, integer confidence in rounds 1-4).
+    for (round_label, body) in [
+        ("round 0", json!({"response": "ack r0"})),
+        ("round 1", json!({"response": "ack r1", "confidence": 70})),
+        (
+            "round 2",
+            json!({
+                "response": "ack r2",
+                "confidence": 65,
+                "challenge": {
+                    "claim_targeted": "stub",
+                    "counter_evidence": "stub",
+                    "type": "factual"
+                }
+            }),
+        ),
+        ("round 3", json!({"response": "ack r3", "confidence": 60})),
+        (
+            "round 4",
+            json!({
+                "response": "ack r4",
+                "confidence": 75,
+                "position_change": {
+                    "changed": false,
+                    "from_summary": "stub",
+                    "to_summary": "stub",
+                    "reason": "stub"
+                }
+            }),
+        ),
+    ] {
+        Mock::given(method("POST"))
+            .and(path("/debate"))
+            .and(wiremock::matchers::body_string_contains(round_label))
+            .respond_with(ResponseTemplate::new(200).set_body_json(body))
+            .mount(&bot_server)
+            .await;
+    }
     let bot_url = format!("{}/debate", bot_server.uri());
 
     let (app, _pool) = common::test_app().await;

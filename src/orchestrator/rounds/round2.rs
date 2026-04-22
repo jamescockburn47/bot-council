@@ -119,6 +119,7 @@ pub async fn run_round2(
                     true,
                     0,
                     true,
+                    None,
                 )
                 .await
                 .map_err(|e| format!("db error: {e}"))?;
@@ -145,6 +146,7 @@ pub async fn run_round2(
                         true,
                         0,
                         false,
+                        None,
                     )
                     .await
                     .map_err(|e| format!("db error: {e}"))?;
@@ -256,6 +258,22 @@ pub async fn run_round2(
                     }
                 }
 
+                // Post-round extraction for text_only bots whose response
+                // lacks a structured challenge field. No-op for external bots
+                // (short-circuits on bot_kind check). Runs AFTER the retry
+                // loop's final accepted response, BEFORE persist.
+                let provenance = crate::orchestrator::extraction::extract_if_needed(
+                    models_config,
+                    &bot_kind,
+                    crate::extractor::ExtractTarget::Challenge,
+                    &mut resp,
+                )
+                .await;
+                let extraction_metadata_json = serde_json::to_string(&serde_json::json!({
+                    "challenge": provenance.to_json()
+                }))
+                .ok();
+
                 let challenge_json = resp
                     .challenge
                     .as_ref()
@@ -274,6 +292,7 @@ pub async fn run_round2(
                     valid,
                     retry_count as i64,
                     false,
+                    extraction_metadata_json.as_deref(),
                 )
                 .await
                 .map_err(|e| format!("db error: {e}"))?;

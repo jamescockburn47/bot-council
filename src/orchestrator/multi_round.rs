@@ -449,6 +449,7 @@ pub async fn run_multi_round_debate(
             bot_tokens,
             &role_assignments,
             full_context,
+            models_config,
             timeout,
         )
         .await?;

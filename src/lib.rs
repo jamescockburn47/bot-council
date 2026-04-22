@@ -5,6 +5,7 @@ pub mod cleanup;
 pub mod config;
 pub mod db;
 pub mod error;
+pub mod extractor;
 pub mod observability;
 pub mod orchestrator;
 pub mod resynth;

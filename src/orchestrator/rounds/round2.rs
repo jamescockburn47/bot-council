@@ -11,6 +11,7 @@ use std::collections::HashMap;
 
 async fn send_round2_request_with_timeout(
     client: &ClientWithMiddleware,
+    bot_kind: &str,
     endpoint: &str,
     token: &str,
     req: &DebateRoundRequest,
@@ -18,7 +19,7 @@ async fn send_round2_request_with_timeout(
 ) -> Result<DebateRoundResponse, String> {
     match tokio::time::timeout(
         std::time::Duration::from_secs(timeout_secs),
-        bot_client::send_debate_request(client, endpoint, token, req),
+        bot_client::dispatch_round_request(client, bot_kind, endpoint, token, req),
     )
     .await
     {
@@ -54,6 +55,7 @@ pub async fn run_round2(
         .map(|bot| {
             let client = client.clone();
             let endpoint = bot.endpoint_url.clone();
+            let bot_kind = bot.bot_kind.clone();
             let token = bot_tokens.get(&bot.id).cloned().unwrap_or_default();
             let session_id = debate_id.to_string();
             let role = role_assignments
@@ -77,7 +79,9 @@ pub async fn run_round2(
                 };
                 let result = tokio::time::timeout(
                     std::time::Duration::from_secs(timeout_secs),
-                    bot_client::send_debate_request(&client, &endpoint, &token, &req),
+                    bot_client::dispatch_round_request(
+                        &client, &bot_kind, &endpoint, &token, &req,
+                    ),
                 )
                 .await;
                 match result {
@@ -153,6 +157,10 @@ pub async fn run_round2(
                     .map(|b| b.endpoint_url.as_str())
                     .unwrap_or("")
                     .to_string();
+                let bot_kind = bot
+                    .map(|b| b.bot_kind.as_str())
+                    .unwrap_or("external")
+                    .to_string();
                 let token = bot_tokens.get(&bot_id).cloned().unwrap_or_default();
                 let role = role_assignments
                     .get(&bot_id)
@@ -186,6 +194,7 @@ pub async fn run_round2(
                                 };
                                 match send_round2_request_with_timeout(
                                     client,
+                                    &bot_kind,
                                     &endpoint,
                                     &token,
                                     &req,
@@ -227,6 +236,7 @@ pub async fn run_round2(
                         };
                         match send_round2_request_with_timeout(
                             client,
+                            &bot_kind,
                             &endpoint,
                             &token,
                             &req,
@@ -334,6 +344,7 @@ mod tests {
         let start = std::time::Instant::now();
         let result = send_round2_request_with_timeout(
             &client,
+            "external",
             &format!("{}/debate", server.uri()),
             "",
             &req,

@@ -1066,7 +1066,7 @@ pub async fn test_bot(
         Ok(()) => BotHealthCheckResponse {
             ok: true,
             message: format!(
-                "Smoke test passed (round0+round1) in {} ms.",
+                "Smoke test PASSED all 5 rounds (round 0-4) in {} ms.",
                 started.elapsed().as_millis()
             ),
         },

@@ -6,7 +6,12 @@ use reqwest_retry::{RetryTransientMiddleware, policies::ExponentialBackoff};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
+pub mod position_scoring;
 pub mod text_only;
+pub use position_scoring::{
+    PositionRequest, PositionResponse, ScoreEntry, ScoringContext, ScoringRequest, ScoringResponse,
+    send_position_request, send_scoring_request,
+};
 pub use text_only::send_text_only_request;
 
 /// Build the HTTP client with retry middleware.
@@ -25,100 +30,6 @@ pub fn build_http_client(config: &HttpClientConfig) -> ClientWithMiddleware {
     ClientBuilder::new(base)
         .with(RetryTransientMiddleware::new_with_policy(retry_policy))
         .build()
-}
-
-/// Request payload sent to a bot's position endpoint.
-#[derive(Debug, Serialize)]
-pub struct PositionRequest {
-    pub session_id: String,
-    pub round: i64,
-    pub prompt: String,
-}
-
-/// Request payload sent to a bot's scoring endpoint.
-#[derive(Debug, Clone, Serialize)]
-pub struct ScoringRequest {
-    pub session_id: String,
-    pub round: String,
-    pub context: Vec<ScoringContext>,
-    pub prompt: String,
-}
-
-/// One entry in the scoring context (a pseudonymised response to evaluate).
-#[derive(Debug, Clone, Serialize)]
-pub struct ScoringContext {
-    pub pseudonym: String,
-    pub response: String,
-}
-
-/// Response body from a bot's position endpoint.
-#[derive(Debug, Deserialize)]
-pub struct PositionResponse {
-    pub response: String,
-}
-
-/// Response body from a bot's scoring endpoint.
-#[derive(Debug, Deserialize)]
-pub struct ScoringResponse {
-    pub scores: Vec<ScoreEntry>,
-}
-
-/// A single score entry within a ScoringResponse.
-#[derive(Debug, Deserialize)]
-pub struct ScoreEntry {
-    pub pseudonym: String,
-    pub reasoning_quality: i64,
-    pub factual_grounding: i64,
-    pub overall: i64,
-    pub reasoning: String,
-}
-
-/// Send a position request to a bot.
-pub async fn send_position_request(
-    client: &ClientWithMiddleware,
-    endpoint_url: &str,
-    token: &str,
-    request: &PositionRequest,
-) -> Result<PositionResponse, String> {
-    let mut req = client.post(endpoint_url);
-    if !token.is_empty() {
-        req = req.bearer_auth(token);
-    }
-    let resp = req
-        .json(request)
-        .send()
-        .await
-        .map_err(|e| format!("connection failed: {e}"))?;
-    if !resp.status().is_success() {
-        return Err(format!("bot returned HTTP {}", resp.status()));
-    }
-    resp.json::<PositionResponse>()
-        .await
-        .map_err(|e| format!("invalid response body: {e}"))
-}
-
-/// Send a scoring request to a bot.
-pub async fn send_scoring_request(
-    client: &ClientWithMiddleware,
-    endpoint_url: &str,
-    token: &str,
-    request: &ScoringRequest,
-) -> Result<ScoringResponse, String> {
-    let mut req = client.post(endpoint_url);
-    if !token.is_empty() {
-        req = req.bearer_auth(token);
-    }
-    let resp = req
-        .json(request)
-        .send()
-        .await
-        .map_err(|e| format!("connection failed: {e}"))?;
-    if !resp.status().is_success() {
-        return Err(format!("bot returned HTTP {}", resp.status()));
-    }
-    resp.json::<ScoringResponse>()
-        .await
-        .map_err(|e| format!("invalid response body: {e}"))
 }
 
 /// Context entry sent to bots in Rounds 1+. Contains anonymised prior responses.

@@ -60,27 +60,28 @@
 ```sql
 -- 20260423000001_crux_and_resilience.sql
 --
--- Adds per-response metadata to support abstention retry + R0 carry-forward.
+-- Adds per-response metadata for R0 carry-forward resilience.
 --
--- retry_count        — 0 on first-attempt success; 1 when the orchestrator
---                       re-dispatched with a simplified prompt after an initial
---                       failure. Never exceeds 1.
 -- fallback_from_round — NULL for normal responses. 0 when the response text is
 --                       a carry-forward from the bot's round-0 response after
---                       two failed dispatch attempts in a later round.
+--                       failed dispatch attempts in a later round.
+--
+-- The retry_count column already exists (added in 20260415000002_phase1.sql for
+-- round 2's rejection-reprompt counter); it is reused here by the unified
+-- dispatch-with-retry helper introduced in the five-round redesign.
 
-ALTER TABLE responses ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE responses ADD COLUMN fallback_from_round INTEGER NULL;
 ```
 
-- [ ] **Step 2: Apply migration on EVO and verify schema**
+**Important:** `retry_count` is already present in `responses` (migration `20260415000002_phase1.sql`, `ResponseRow::retry_count` in [src/db/models.rs](../../../src/db/models.rs), and round 2 already writes to it). Do NOT re-add it — a second `ALTER TABLE ADD COLUMN retry_count` fails at runtime with `duplicate column name`. Task 13 below treats `retry_count` as pre-existing; only `fallback_from_round` needs to be threaded through the read/write helpers.
+
+- [ ] **Step 2: Verify migration compiles**
 
 ```bash
 ./scripts/sync-evo.sh check
-ssh -i ~/.ssh/id_ed25519 james@100.90.66.54 "sqlite3 /home/james/bot-council/data/council.db '.schema responses'"
 ```
 
-Expected: schema includes `retry_count INTEGER NOT NULL DEFAULT 0` and `fallback_from_round INTEGER`.
+Expected: `cargo check` succeeds with no errors related to the new migration. (The migration applies against the live DB automatically on service startup after deploy; this step only verifies that sqlx's compile-time checksum accepts the new file.)
 
 - [ ] **Step 3: Commit**
 
@@ -1049,32 +1050,33 @@ git commit -m "feat(orchestrator): shared retry + R0-carry-forward dispatch help
 
 ---
 
-### Task 13: Update `ResponseRow` + insertion helpers for new columns
+### Task 13: Update `ResponseRow` + insertion helpers for `fallback_from_round`
 
 **Files:**
 - Modify: `src/db/models.rs::ResponseRow`
 - Modify: `src/db/queries_phase1.rs::insert_response_full`
-- Modify: `src/db/BOT_COLUMNS` equivalent for response reads.
+- Modify: any read helpers that `SELECT` from `responses`.
 
-- [ ] **Step 1: Add fields to `ResponseRow`**
+**Context:** `retry_count` is already a field on `ResponseRow` and already a parameter on `insert_response_full` (see Phase 1 migration + [src/db/queries_phase1.rs:239-270](../../../src/db/queries_phase1.rs:239)). This task only adds `fallback_from_round`.
+
+- [ ] **Step 1: Add field to `ResponseRow`**
 
 In `src/db/models.rs`:
 
 ```rust
 pub struct ResponseRow {
-    // ... existing fields ...
-    pub retry_count: i64,
+    // ... existing fields including retry_count ...
     pub fallback_from_round: Option<i64>,
 }
 ```
 
 - [ ] **Step 2: Extend SELECT column list**
 
-Wherever `responses` rows are read (search: `FROM responses`), add `retry_count` and `fallback_from_round` to the column list and to the `sqlx::query_as!` / manual row-mapping code.
+Wherever `responses` rows are read (search: `FROM responses`), add `fallback_from_round` to the column list and to the `sqlx::query_as!` / manual row-mapping code. `retry_count` is already in those lists — do not duplicate it.
 
-- [ ] **Step 3: Extend `insert_response_full` signature**
+- [ ] **Step 3: Extend `insert_response_full` signature with `fallback_from_round`**
 
-In `src/db/queries_phase1.rs`:
+In `src/db/queries_phase1.rs`, add a single new parameter at the end:
 
 ```rust
 #[allow(clippy::too_many_arguments)]
@@ -1092,9 +1094,10 @@ pub async fn insert_response_full(
     repromptings: i64,
     abstained: bool,
     extraction_metadata_json: Option<&str>,
-    retry_count: i64,
-    fallback_from_round: Option<i64>,
+    retry_count: i64,       // UNCHANGED — already present in current signature
+    fallback_from_round: Option<i64>,  // NEW
 ) -> Result<(), sqlx::Error> {
+    // Extend the INSERT SQL to include fallback_from_round:
     sqlx::query(
         "INSERT INTO responses (id, debate_id, round_number, bot_id, \
          response_json, confidence, challenge_json, position_change_json, \
@@ -1102,18 +1105,7 @@ pub async fn insert_response_full(
          retry_count, fallback_from_round) \
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
-    .bind(id)
-    .bind(debate_id)
-    .bind(round_number)
-    .bind(bot_id)
-    .bind(response_json)
-    .bind(confidence)
-    .bind(challenge_json)
-    .bind(position_change_json)
-    .bind(valid)
-    .bind(repromptings)
-    .bind(abstained)
-    .bind(extraction_metadata_json)
+    // ... bind existing params ...
     .bind(retry_count)
     .bind(fallback_from_round)
     .execute(pool)
@@ -1121,6 +1113,8 @@ pub async fn insert_response_full(
     Ok(())
 }
 ```
+
+Only one new `.bind()` is added. Everything else is unchanged.
 
 - [ ] **Step 4: Update every call site**
 
@@ -1130,7 +1124,7 @@ Search `insert_response_full` callers:
 grep -rn "insert_response_full" src/
 ```
 
-Update each to pass `0` for `retry_count` and `None` for `fallback_from_round` (rounds will override with real values in subsequent tasks).
+Update each to pass `None` for `fallback_from_round` (rounds will override with real values in Tasks 14, 15, 19). The `retry_count` argument stays exactly as today.
 
 - [ ] **Step 5: `cargo check`**
 

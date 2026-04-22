@@ -123,7 +123,7 @@ Three-layer fallback on R1+ dispatch failure. Applies whenever the bot returns:
 
 ### Layer 1 — Retry with simplified prompt
 
-One retry, using the same per-round timeout budget (`debate.default_timeout_secs`, 300s by default). Retry prompt:
+One retry, using the same per-round timeout budget (`debate.default_timeout_secs`, 300s by default). This unifies round 2's pre-existing rejection-reprompt loop (which could reprompt up to `max_retries = 2` times) into the same single-retry discipline used by rounds 1, 3, and 4 — the deliberate behaviour change is that structural failures (missing challenge on R2) now get one retry instead of two before the carry-forward kicks in. Retry prompt:
 
 > *"Answer this round in one paragraph using your prior-round position as a starting point. If you genuinely cannot, reply with one sentence explaining why. Topic: {topic}. Current round: {N}."*
 
@@ -203,13 +203,12 @@ Inserted into the existing `analyses` table with `kind='crux_selection'`. `input
 Single new migration `migrations/20260423000001_crux_and_resilience.sql`:
 
 ```sql
--- Retry count for abstention resilience. 0 = first-attempt success or true abstention.
-ALTER TABLE responses ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0;
-
 -- If non-NULL, this response is a carry-forward from the named earlier round
 -- (only 0 is used today; schema allows future variants).
 ALTER TABLE responses ADD COLUMN fallback_from_round INTEGER NULL;
 ```
+
+The `responses.retry_count` column already exists (added in `20260415000002_phase1.sql` for round 2's rejection-reprompt counter). The five-round redesign reuses it — the unified dispatch-with-retry helper writes 0 for first-attempt success and 1 for retry-with-simpler-prompt success. Historical rows produced by round 2 may carry `retry_count = 2` from the pre-unification behaviour, which is compatible but no longer generated after Task 15.
 
 No new tables. No changes to `bots`, `debates`, `analyses`, or `role_history`. No `natural_role` column.
 

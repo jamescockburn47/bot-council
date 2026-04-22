@@ -6,7 +6,7 @@ use std::collections::HashMap;
 /// touch one spot instead of six.
 const BOT_COLUMNS: &str = "id, name, endpoint_url, token_ciphertext, \
     model_family, created_at, status, submitted_by, description, \
-    rejection_reason, reviewed_at, reviewed_by";
+    rejection_reason, reviewed_at, reviewed_by, bot_kind, introduction";
 
 /// Marker phrases used to exclude operator/test debates from public listings,
 /// bot performance scoring, and to drive the scheduled test-debate cleanup.

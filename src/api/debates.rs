@@ -82,7 +82,9 @@ pub async fn create_debate(
         let failure =
             match bot_checks::smoke_test_bot(state.http_client(), bot, state.bot_token_key()).await
             {
-                Ok(()) => None,
+                // Introduction (if any) is discarded — debate preflight is a
+                // reachability check, not a re-approval.
+                Ok(_) => None,
                 Err(reason) => Some(format!(
                     "{} ({}): {}",
                     bot.name,

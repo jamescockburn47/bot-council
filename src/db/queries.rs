@@ -694,6 +694,22 @@ pub async fn transition_bot_status(
     q.fetch_optional(pool).await
 }
 
+/// Persist the introduction text captured from a text-only bot's smoke probe
+/// onto its row. Used by the approval handler so the admin UI can surface
+/// "agent vs. wrapper" signal in Task 15's approval view.
+pub async fn set_bot_introduction(
+    pool: &SqlitePool,
+    bot_id: &str,
+    introduction: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE bots SET introduction = ?1 WHERE id = ?2")
+        .bind(introduction)
+        .bind(bot_id)
+        .execute(pool)
+        .await
+        .map(|_| ())
+}
+
 // ─── Admin registry ────────────────────────────────────────────────────────
 
 /// Admin row returned by list_admins.

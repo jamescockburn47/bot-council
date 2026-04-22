@@ -833,6 +833,48 @@ fn validate_smoke_json_for_round(json: &serde_json::Value, round: i64) -> Result
     Ok(())
 }
 
+/// Introduction probe for text-only bots. Dispatches a `/hook`-shape request
+/// with the introduction prompt and returns the bot's answer for storage.
+async fn send_introduction_probe(
+    client: &reqwest::Client,
+    endpoint_url: &str,
+    token: Option<&str>,
+) -> Result<String, String> {
+    let body = serde_json::json!({
+        "session_id": "smoke-introduction",
+        "prompt": "Introduce yourself in two or three sentences — who you are, what you bring to a debate, what makes you distinct from a generic assistant."
+    });
+    let mut request = client
+        .post(endpoint_url)
+        .timeout(std::time::Duration::from_secs(60));
+    if let Some(t) = token {
+        if !t.is_empty() {
+            request = request.header("authorization", format!("Bearer {t}"));
+        }
+    }
+    let response = request
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("introduction request failed: {e}"))?;
+    let status = response.status();
+    if !status.is_success() {
+        return Err(format!("introduction bot returned HTTP {status}"));
+    }
+    let json: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("introduction response is not valid JSON: {e}"))?;
+    let text = json
+        .get("text")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "introduction response missing 'text' string field".to_string())?;
+    if text.trim().is_empty() {
+        return Err("introduction response 'text' is empty".to_string());
+    }
+    Ok(text.to_string())
+}
+
 async fn send_smoke_probe(
     client: &reqwest::Client,
     endpoint_url: &str,
@@ -891,7 +933,7 @@ pub(crate) async fn smoke_test_bot(
     _client: &reqwest_middleware::ClientWithMiddleware,
     bot: &BotRow,
     key: &crate::api::bot_token_crypto::BotTokenKey,
-) -> Result<(), String> {
+) -> Result<Option<String>, String> {
     let direct_client = reqwest::Client::builder()
         // Debate endpoint probes should always connect directly so local
         // addresses (for co-hosted bots) are not routed via any proxy env.
@@ -907,6 +949,15 @@ pub(crate) async fn smoke_test_bot(
                 "could not decrypt stored token (wrong key or corruption)".to_string()
             })?,
         )
+    } else {
+        None
+    };
+
+    // For text_only bots, run the introduction probe first and capture the
+    // answer so the admin approval UI can show "agent vs. wrapper" signal.
+    // External bots keep the existing 5-round-only contract.
+    let introduction = if bot.bot_kind == "text_only" {
+        Some(send_introduction_probe(&direct_client, &bot.endpoint_url, token.as_deref()).await?)
     } else {
         None
     };
@@ -978,7 +1029,7 @@ pub(crate) async fn smoke_test_bot(
         )
         .await?;
     }
-    Ok(())
+    Ok(introduction)
 }
 
 /// Shared transition helper: maps `transition_bot_status` results to either the
@@ -1030,7 +1081,12 @@ pub async fn approve_bot(
         )));
     }
     match smoke_test_bot(state.http_client(), &bot, state.bot_token_key()).await {
-        Ok(()) => {
+        Ok(introduction) => {
+            // text_only bots return Some(intro); persist before flipping to
+            // active so the approval UI sees the captured introduction.
+            if let Some(intro) = introduction {
+                queries::set_bot_introduction(state.db(), &bot.id, &intro).await?;
+            }
             let row = do_transition(
                 &state,
                 &admin,
@@ -1069,7 +1125,9 @@ pub async fn test_bot(
         .ok_or_else(|| AppError::NotFound("bot not found".into()))?;
     let started = std::time::Instant::now();
     let response = match smoke_test_bot(state.http_client(), &bot, state.bot_token_key()).await {
-        Ok(()) => BotHealthCheckResponse {
+        // Introduction result is intentionally discarded on manual retest —
+        // persistence is approval-time only (see `approve_bot`).
+        Ok(_) => BotHealthCheckResponse {
             ok: true,
             message: format!(
                 "Smoke test PASSED all 5 rounds (round 0-4) in {} ms.",

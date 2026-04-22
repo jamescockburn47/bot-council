@@ -208,7 +208,7 @@ All routes mounted under `/api/*` in production. Tests use the un-prefixed route
 | GET | /api/diag/models | RequireAdmin | Effective model routing (analysis + final_synthesis URLs/models) |
 | GET | /api/me | RequireAuth | Current user identity + role |
 | GET | /api/bots | RequireAuth | Admin: all. Participant: active only |
-| POST | /api/bots | RequireAuth | Admin → active. Participant → pending |
+| POST | /api/bots | RequireAuth | Admin → active. Participant → pending. Accepts `bot_kind: "external" \| "text_only"` (defaults to `external`). UI submits text-only. |
 | GET | /api/bots/my-submissions | RequireAuth | Requires Clerk user_id |
 | GET | /api/bots/schema | RequireAuth | Legacy-compat bot schema shim |
 | POST | /api/bots/validate | RequireAuth | Validate a bot submission without creating |
@@ -219,7 +219,7 @@ All routes mounted under `/api/*` in production. Tests use the un-prefixed route
 | GET | /api/debates | RequireAuth | List debates |
 | POST | /api/debates | RequireAdmin | Create + run (synchronous preflight ~100s for 5 bots) |
 | GET | /api/debates/{id} | RequireAuth | Debate detail |
-| GET | /api/debates/{id}/transcript | RequireAuth | Round-by-round transcript |
+| GET | /api/debates/{id}/transcript | RequireAuth | Round-by-round transcript. TranscriptEntry carries optional `extraction_metadata` keyed by field (`challenge`, `position_change`) with `{source, quote}` provenance for text-only bots. |
 | GET | /api/debates/{id}/synthesis | RequireAuth | Final synthesis JSON |
 | GET | /api/debates/{id}/stream | RequireAuth (header OR `?token=`) | SSE live stream |
 | PATCH | /api/debates/{id}/archive | RequireAdmin | Body `{"archived": bool}` — soft archive/unarchive. Sets/clears `archived_at`. Archived debates hide from the default list; `?archived=true` surfaces them. |
@@ -237,9 +237,13 @@ All routes mounted under `/api/*` in production. Tests use the un-prefixed route
 - **Admin bearer token** (`APP__AUTH__ADMIN_TOKEN`): CLI / emergency / bootstrap-first-admin path. Sends `Authorization: Bearer <token>` — identity is `Admin { user_id: None, source: BearerToken }`.
 - **Promotion**: `POST /api/admins` with a Clerk user_id. First admin bootstrapped by bearer token before the user has admin rights via any other path. **Already done** — 4 admins in DB as of 2026-04-18.
 
-## Current state (2026-04-21)
+## Current state (2026-04-22)
 
 **Live architecture**: single-origin EVO fronted by Cloudflare Tunnel. Vercel fully retired (both the bot-council frontend project and the lqcouncil-api-proxy project removed).
+
+**Bot modes**: the `bots.bot_kind` column (default `external`) gates dispatch and smoke-test behaviour. Two values today:
+- `external` — legacy contract. Bot exposes `POST /debate` speaking the full `DebateRoundRequest`/`DebateRoundResponse` schema. Used by the three pre-existing bots (Oscar, LQClaw, Akechi). `/bots/submit` UI no longer submits this kind; admin bearer path still can.
+- `text_only` — default for new submissions. Bot exposes a URL that accepts `{prompt, session_id}` and returns `{text}`. Before approval the smoke test sends an introduction prompt (stored on `bots.introduction`) plus five round-shaped text probes; admin reviews the introduction as the primary agent-vs-wrapper signal. In rounds 2 and 4 the orchestrator extracts structured fields (`challenge`, `position_change`) from the bot's prose via MiniMax with source-quote substring verification as the anti-hallucination guardrail. Per-field provenance lands in `responses.extraction_metadata` and surfaces in the transcript UI as "extracted" badges with the source quote inline. Full design: `docs/superpowers/specs/2026-04-22-text-only-bot-mode-design.md`.
 
 **LLM routing**: all analyser + final-synthesis calls hit **MiniMax-M2.7 at `https://api.minimax.io`** (OpenAI-compatible API, Bearer auth). Env file has `APP__MODELS__ANALYSIS_BASE_URL`, `APP__MODELS__FINAL_SYNTHESIS_BASE_URL`, and `APP__MODELS__MINIMAX_BASE_URL` all pointing at api.minimax.io, and `APP__MODELS__MINIMAX_API_KEY` set. `APP__MODELS__FINAL_SYNTHESIS_WARMUP_ENABLED=false` (not needed for a hosted API). The historic Anthropic + CometAPI keys zeroed 2026-04-20 remain zeroed. `config/default.toml` defaults still point at the local llama-server for analysis + final_synthesis, so if MiniMax is down the rollback is "unset the `APP__MODELS__*_BASE_URL` overrides, restart bot-council, llama-server picks up the traffic" — provided the local llama-server on `:8086` is running.
 
@@ -257,6 +261,8 @@ All routes mounted under `/api/*` in production. Tests use the un-prefixed route
 - Hardening plan: `C:\Users\James\.claude\plans\this-has-become-buggy-linked-seal.md`
 - Harness design: `docs/superpowers/specs/2026-04-15-bot-council-harness-design.md`
 - Clerk auth design: `docs/superpowers/specs/2026-04-16-clerk-auth-and-bot-submission-cleanup-design.md`
+- Text-only bot mode design: `docs/superpowers/specs/2026-04-22-text-only-bot-mode-design.md`
+- Text-only bot mode Phase 1 plan: `docs/superpowers/plans/2026-04-22-text-only-bot-mode.md`
 
 ## Operational lessons — BINDING
 
@@ -282,3 +288,5 @@ Things learned the hard way. Do not rediscover them.
 14. **Deploy-driven config drift.** `/etc/bot-council.env` has been modified out-of-band multiple times (CometAPI/Anthropic keys added by an earlier session without a git trail; Gemma→MiniMax route switch via env override). Probe `sudo grep '^APP__' /etc/bot-council.env` at the start of any config-touching session to see what's actually live — don't trust `config/default.toml` as a source of truth for runtime routing.
 15. **cloudflared CLI is zone-scoped.** `cloudflared tunnel route dns <tunnel> <host>` adds the CNAME in whatever zone `cert.pem` is authenticated for (`sovren.xyz` in our case). For a different zone (`lqcouncil.com`), add the CNAME manually in the Cloudflare dashboard. We have one leftover `lqcouncil.com.sovren.xyz` orphan record from this quirk.
 16. **After any synthesis-prompt change, run the resynth batch.** The synthesis prompt in `src/synthesiser/mod.rs::build_synthesis_prompt` is used by `bot-council resynthesise` too; existing concluded debates won't pick up prompt fixes until you rerun them. Ship first, then `ssh evo "bash /home/james/resynth-launch.sh"` (or `bot-council resynthesise <debate_id>` to target one). `--throttle-ms 500` is safe on MiniMax Pro; default `2000` for free-tier.
+17. **Extractor provenance must not lie.** `src/orchestrator/extraction.rs::extract_if_needed` returns `FieldProvenance { source: "extracted" }` only when every field's MiniMax-declared source quote passes `extractor::verify::quote_is_substring_of` AND the typed-struct `serde_json::from_value` deserialises cleanly. Any shape-mismatch or quote-fabrication downgrades to `source: "extraction_failed"`. Never skip the downgrade path — a lying "extracted" label with an unpatched field silently breaks the anti-hallucination story the feature was built for.
+18. **Clint's `lqc_*` tools still speak the legacy `/debate` contract.** `lqc_validate_bot` and `lqc_dry_run_debate` (in the `~/clawdbot` repo, not this one) have NOT been updated for text-only mode. Until they are, operators onboarding a text-only bot must use the `/bots/submit` UI and the approval smoke — the Clint-driven validation path will reject or mis-diagnose text-only bots.

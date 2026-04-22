@@ -84,9 +84,18 @@ bot-council/                       (repo root)
 │   ├── auth/ (within api/)        Clerk JWKS + bearer auth
 │   ├── db/                        sqlx pool + queries + models
 │   ├── orchestrator/              debate round loop, state machine
-│   ├── bot_client/                HTTP client to bot /debate endpoints
+│   │   └── extraction.rs          post-round structured-field extraction (text-only bots)
+│   ├── extractor/                 MiniMax-backed extractor for challenge/position_change
+│   │                              (prompt builder, serde types, quote-substring verifier)
+│   ├── bot_client/                HTTP client to bot endpoints
+│   │   ├── mod.rs                 DebateRoundRequest/Response types, dispatch_round_request
+│   │   ├── text_only.rs           POST {prompt,session_id} → {text} dispatch
+│   │   └── position_scoring.rs    legacy pre-Phase-1 position + scoring dispatch
 │   └── config.rs                  Settings struct + validation
 ├── frontend/                      SvelteKit SPA (details §4)
+├── reference/                     author-facing reference hooks
+│   ├── text-only-hook/            Python + Node snippets for the default contract
+│   └── debate-endpoint-*.{js,py}  legacy /debate reference implementations
 │   ├── svelte.config.js           adapter-static, SPA fallback
 │   ├── src/lib/auth/clerk.ts      Clerk singleton, 12 s timeout (PR #29)
 │   ├── src/lib/api/client.ts      fetch wrapper + SSE URL builder
@@ -190,21 +199,40 @@ Event types defined in [`src/api/events.rs:6-65`](src/api/events.rs:6):
 
 File: [`src/api/bots.rs`](src/api/bots.rs).
 
-- `POST /bots` ([`bots.rs:31-68`](src/api/bots.rs:31)) validates name,
-  endpoint URL (`https://` in release builds; `http://localhost|127.0.0.1`
-  also allowed in debug), and token; encrypts the token with AES-256-GCM
-  using `BotTokenKey`; status = `active` for admins, `pending` for others.
+- `POST /bots` validates name, endpoint URL (`https://` in release builds;
+  `http://localhost|127.0.0.1` also allowed in debug), and token; encrypts
+  the token with AES-256-GCM using `BotTokenKey`; accepts an optional
+  `bot_kind` (`"external" | "text_only"`, default `external`); status =
+  `active` for admins, `pending` for others.
 - Token ciphertext layout: `nonce(12) || ciphertext || tag(16)` as a BLOB
   ([`src/api/bot_token_crypto.rs:66-76`](src/api/bot_token_crypto.rs:66)).
-- `PATCH /bots/{id}/approve` ([`bots.rs:176-207`](src/api/bots.rs:176))
-  runs `smoke_test_bot()`: decrypt token, POST a dummy
-  `DebateRoundRequest` with a 30 s timeout, verify HTTP 2xx and JSON with
-  a `response: string` field. Errors are run through
-  `classify_smoke_test_error()` ([`bots.rs:88-108`](src/api/bots.rs:88)) to
-  produce a human-readable `rejection_reason` (DNS, connection, TLS, 401/403,
-  HTTP status, JSON/missing field).
+- `PATCH /bots/{id}/approve` runs `smoke_test_bot(capture_introduction=true)`.
+  Flow differs by `bot_kind`:
+  - **Text-only bots** — first a single introduction probe: POST
+    `{session_id: "smoke-introduction", prompt: "Introduce yourself in
+    two or three sentences — who you are, what you bring to a debate, what
+    makes you distinct from a generic assistant."}`. The non-empty `text`
+    is persisted to `bots.introduction` via `queries::set_bot_introduction`
+    BEFORE the status transition (so a DB failure doesn't leave a live bot
+    without its introduction). Then five hook-shape round probes, each
+    validated only for non-empty `text`.
+  - **External bots** — no introduction probe. Five probes use the legacy
+    `DebateRoundRequest` body and are validated against the round-specific
+    schema in `validate_smoke_json_for_round`.
+- `PATCH /bots/{id}/test` and the `POST /debates` preflight call
+  `smoke_test_bot(capture_introduction=false)` so the intro probe fires
+  only at approval time — never on every debate creation.
+- Errors are run through `classify_smoke_test_error()` to produce a
+  human-readable `rejection_reason` (DNS, connection, TLS, 401/403, HTTP
+  status, JSON/missing field, empty text for text-only).
 - State machine: `pending → active | smoke_test_failed | rejected`;
   `active ↔ inactive`.
+- Dispatch at runtime goes through `bot_client::dispatch_round_request`
+  which branches on `bot_kind`: `external` → `send_debate_request` (full
+  contract), `text_only` → `send_text_only_request` (returns
+  `DebateRoundResponse` with only the `response` field populated; all
+  structured fields come back `None` and get populated by the extractor
+  post-round if needed).
 - The legacy `token_hash` and `active` columns were dropped in migration
   `20260416000003_drop_legacy_bot_columns.sql` (PR #25). The repository layer
   does not touch them.
@@ -219,6 +247,23 @@ File: [`src/orchestrator/multi_round.rs`](src/orchestrator/multi_round.rs).
 - Five rounds: `round_0` Blind Formation → `round_1` Anonymous Distribution →
   `round_2` Structured Rebuttal → `round_3` Cross-Examination → `round_4`
   Final Position → Synthesis.
+- **Post-round extraction** (rounds 2 and 4): after bot responses are
+  collected but before the analyser runs, each response from a
+  `text_only` bot whose required structured field is `None` flows through
+  `orchestrator::extraction::extract_if_needed(models, bot_kind, target,
+  &mut response)`. The extractor builds a constrained prompt (forbidding
+  inference, requiring verbatim source quotes, fencing bot text as data
+  against prompt injection), calls MiniMax, parses the `RawExtraction`
+  schema, verifies every field's declared quote against the bot's raw
+  text via `extractor::verify::quote_is_substring_of` (whitespace-
+  normalised, case-sensitive substring), and if every check passes
+  populates the typed field on the response. Any failure — MiniMax
+  unreachable, unparseable body, fabricated quote, `serde_json::from_value`
+  shape mismatch — downgrades provenance to `source: "extraction_failed"`
+  with `quote: None`. Provenance is persisted as
+  `responses.extraction_metadata = {"challenge": {source, quote}, ...}`
+  and surfaced to the frontend via the transcript endpoint. External
+  bots short-circuit at `bot_kind != "text_only"` (no extraction call).
 - Per-bot HTTP call: [`src/bot_client/mod.rs:167-193`](src/bot_client/mod.rs:167).
   Per-bot `tokio::time::timeout(default 300 s)`. Bearer auth with the decrypted
   token. Up to `debate.max_retries` (default 2) on 5xx.
@@ -243,6 +288,7 @@ File: [`src/orchestrator/multi_round.rs`](src/orchestrator/multi_round.rs).
   8. `20260418000004_seen_user_identity_metadata.sql` — adds `seen_users.email` and `seen_users.display_name`.
   9. `20260419000001_responses_error_detail.sql` — adds `responses.error_detail` for post-mortem error capture.
   10. `20260421000001_debate_archived_at.sql` — adds nullable `debates.archived_at` for soft archival (Phase D3).
+  11. `20260422000001_text_only_bot_mode.sql` — adds `bots.bot_kind TEXT NOT NULL DEFAULT 'external'`, nullable `bots.introduction`, and nullable `responses.extraction_metadata` for the text-only bot mode.
 - Pool: max 5 connections; WAL, `synchronous=NORMAL`, `busy_timeout=5000`,
   `foreign_keys=ON`.
 
@@ -360,8 +406,8 @@ All under `frontend/src/routes/`.
 | `/bots` | auth | Bot list (different views for admin vs participant) |
 | `/bots/submit` | auth | Submit a bot |
 | `/bots/my-submissions` | auth | Own submissions |
-| `/bots/criteria` | auth | Submission criteria — confidence `0-100` (fixed PR #32) |
-| `/bots/guide` | auth | Integration guide — HTTPS endpoints (fixed PR #32) |
+| `/bots/criteria` | auth | Approval criteria — leads with introduction-as-primary-signal and coherence across rounds |
+| `/bots/guide` | auth | Integration guide — text-only contract (`{prompt,session_id}` → `{text}`), super-prompt for Claude Code, Python + Node snippets |
 | `/admins` | admin | Admin roster management |
 | `/settings` | admin | User settings |
 

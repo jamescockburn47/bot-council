@@ -159,6 +159,7 @@
           <thead>
             <tr class="border-b border-[var(--border)]">
               <th class="text-left py-3 px-4 text-xs mono text-[var(--text-muted)] font-normal">Name</th>
+              <th class="text-left py-3 px-4 text-xs mono text-[var(--text-muted)] font-normal">Kind</th>
               <th class="text-left py-3 px-4 text-xs mono text-[var(--text-muted)] font-normal">Endpoint</th>
               <th class="text-left py-3 px-4 text-xs mono text-[var(--text-muted)] font-normal">Model</th>
               <th class="text-left py-3 px-4 text-xs mono text-[var(--text-muted)] font-normal">Added</th>
@@ -169,6 +170,17 @@
             {#each active as bot (bot.id)}
               <tr class="border-b border-[var(--border)] last:border-0 hover:bg-[rgba(255,255,255,0.02)]">
                 <td class="py-3 px-4 text-[var(--text-primary)]">{bot.name}</td>
+                <td class="py-3 px-4">
+                  {#if bot.bot_kind === 'text_only'}
+                    <span class="text-[10px] mono text-[#8b5cf6] px-1.5 py-0.5 bg-[#8b5cf6]/10 border border-[#8b5cf6]/30 rounded">
+                      text-only
+                    </span>
+                  {:else}
+                    <span class="text-[10px] mono text-[var(--text-muted)] px-1.5 py-0.5 bg-[var(--border)] rounded">
+                      external
+                    </span>
+                  {/if}
+                </td>
                 <td class="py-3 px-4 mono text-xs text-[var(--text-muted)] max-w-48 truncate">{bot.endpoint_url}</td>
                 <td class="py-3 px-4">
                   {#if bot.model_family}
@@ -208,15 +220,34 @@
           <div class="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-5">
             <div class="flex items-start justify-between gap-4">
               <div class="flex-1">
-                <div class="flex items-center gap-3 mb-2">
+                <div class="flex items-center gap-3 mb-2 flex-wrap">
                   <h3 class="text-sm font-medium text-[var(--text-primary)]">{bot.name}</h3>
                   <StatusBadge status={bot.status} />
+                  {#if bot.bot_kind === 'text_only'}
+                    <span class="text-[10px] mono text-[#8b5cf6] px-1.5 py-0.5 bg-[#8b5cf6]/10 border border-[#8b5cf6]/30 rounded">
+                      text-only
+                    </span>
+                  {:else}
+                    <span class="text-[10px] mono text-[var(--text-muted)] px-1.5 py-0.5 bg-[var(--border)] rounded">
+                      external
+                    </span>
+                  {/if}
                   {#if bot.model_family}
                     <span class="text-[10px] mono text-[var(--text-muted)] px-1.5 py-0.5 bg-[var(--border)] rounded">
                       {bot.model_family}
                     </span>
                   {/if}
                 </div>
+
+                {#if bot.introduction}
+                  <div class="mb-3 bg-[#8b5cf615] border border-[#8b5cf630] rounded-md p-3">
+                    <div class="mono text-xs text-[#8b5cf6] uppercase tracking-wider mb-1.5">
+                      Introduction &mdash; primary signal
+                    </div>
+                    <p class="text-sm text-[var(--text-secondary)] leading-relaxed italic">&ldquo;{bot.introduction}&rdquo;</p>
+                  </div>
+                {/if}
+
                 <div class="space-y-1 text-xs text-[var(--text-muted)]">
                   <p>
                     <span class="mono">Endpoint:</span>
@@ -284,6 +315,7 @@
           <thead>
             <tr class="border-b border-[var(--border)]">
               <th class="text-left py-3 px-4 text-xs mono text-[var(--text-muted)] font-normal">Name</th>
+              <th class="text-left py-3 px-4 text-xs mono text-[var(--text-muted)] font-normal">Kind</th>
               <th class="text-left py-3 px-4 text-xs mono text-[var(--text-muted)] font-normal">Endpoint</th>
               <th class="text-left py-3 px-4 text-xs mono text-[var(--text-muted)] font-normal">Model</th>
               <th class="text-left py-3 px-4 text-xs mono text-[var(--text-muted)] font-normal">Status</th>
@@ -294,6 +326,17 @@
             {#each inactive as bot (bot.id)}
               <tr class="border-b border-[var(--border)] last:border-0 hover:bg-[rgba(255,255,255,0.02)]">
                 <td class="py-3 px-4 text-[var(--text-primary)]">{bot.name}</td>
+                <td class="py-3 px-4">
+                  {#if bot.bot_kind === 'text_only'}
+                    <span class="text-[10px] mono text-[#8b5cf6] px-1.5 py-0.5 bg-[#8b5cf6]/10 border border-[#8b5cf6]/30 rounded">
+                      text-only
+                    </span>
+                  {:else}
+                    <span class="text-[10px] mono text-[var(--text-muted)] px-1.5 py-0.5 bg-[var(--border)] rounded">
+                      external
+                    </span>
+                  {/if}
+                </td>
                 <td class="py-3 px-4 mono text-xs text-[var(--text-muted)] max-w-48 truncate">{bot.endpoint_url}</td>
                 <td class="py-3 px-4">
                   {#if bot.model_family}

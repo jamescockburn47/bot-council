@@ -207,6 +207,10 @@ pub struct TranscriptEntry {
     pub valid: bool,
     pub abstained: bool,
     pub validation_reasoning: Option<String>,
+    /// Per-field extraction provenance for text-only bots.
+    /// JSON shape: { "challenge"?: { source, quote }, "position_change"?: { source, quote } }.
+    /// Null for bots that authored their structured fields directly.
+    pub extraction_metadata: Option<serde_json::Value>,
 }
 
 /// Anonymisation log entry mapping pseudonym to role.

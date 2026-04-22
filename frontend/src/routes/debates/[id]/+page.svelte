@@ -188,6 +188,7 @@
                 valid: d.valid,
                 abstained: d.abstained,
                 validation_reasoning: null,
+                extraction_metadata: d.extraction_metadata ?? null,
               },
             ];
             transcript = transcript;

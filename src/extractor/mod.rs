@@ -59,6 +59,9 @@ pub async fn extract_structured_field(
     if !parsed.extracted {
         return ExtractionOutcome::Absent;
     }
+    if parsed.fields.is_empty() {
+        return ExtractionOutcome::Absent;
+    }
     // Verify every field's quote is a substring of the bot's raw text.
     // Pick one representative quote for the outcome — the longest — so
     // the transcript UI has something meaningful to show. All quotes
@@ -189,9 +192,18 @@ mod tests {
     #[tokio::test]
     async fn unparseable_response_returns_failed() {
         let server = MockServer::start().await;
-        mock_minimax(&server, "this is not JSON at all").await;
+        mock_minimax(&server, r#"{"unexpected": "object"}"#).await;
         let models = test_models_config(&server.uri());
         let out = extract_structured_field(&models, ExtractTarget::Challenge, "text").await;
         assert!(matches!(out, ExtractionOutcome::Failed { .. }));
+    }
+
+    #[tokio::test]
+    async fn extracted_true_with_no_fields_is_absent() {
+        let server = MockServer::start().await;
+        mock_minimax(&server, r#"{"extracted": true}"#).await;
+        let models = test_models_config(&server.uri());
+        let out = extract_structured_field(&models, ExtractTarget::Challenge, "any text").await;
+        assert_eq!(out, ExtractionOutcome::Absent);
     }
 }

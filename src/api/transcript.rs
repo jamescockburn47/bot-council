@@ -63,6 +63,10 @@ pub async fn get_transcript(
                     .as_ref()
                     .and_then(|p| serde_json::from_str(p).ok());
                 let validation_reasoning = validation_map.get(&r.bot_id).cloned();
+                let extraction_metadata = r
+                    .extraction_metadata
+                    .as_ref()
+                    .and_then(|m| serde_json::from_str(m).ok());
                 TranscriptEntry {
                     pseudonym,
                     response: r.response_json.clone(),
@@ -72,6 +76,7 @@ pub async fn get_transcript(
                     valid: r.valid,
                     abstained: r.abstained,
                     validation_reasoning,
+                    extraction_metadata,
                 }
             })
             .collect();

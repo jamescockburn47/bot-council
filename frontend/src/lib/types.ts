@@ -1,6 +1,8 @@
 // Bot types
 export type BotStatus = 'pending' | 'smoke_test_failed' | 'active' | 'rejected' | 'inactive';
 
+export type BotKind = 'external' | 'text_only';
+
 export interface BotResponse {
   id: string;
   name: string;
@@ -13,6 +15,9 @@ export interface BotResponse {
   reviewed_at: string | null;
   reviewed_by: string | null;
   created_at: string;
+  bot_kind: BotKind;
+  /** Free-prose introduction captured during approval smoke (text-only bots only). */
+  introduction: string | null;
 }
 
 export interface RejectBotRequest {
@@ -25,6 +30,7 @@ export interface CreateBotRequest {
   token: string;
   model_family?: string;
   description?: string;
+  bot_kind?: BotKind;
 }
 
 // Debate types
@@ -96,6 +102,25 @@ export interface TranscriptEntry {
   valid: boolean;
   abstained: boolean;
   validation_reasoning: string | null;
+  /** Per-field extraction provenance for text-only bots.
+   *  Keyed by field name ("challenge" | "position_change").
+   *  Absent or null for bots that authored structured fields directly. */
+  extraction_metadata: ExtractionMetadata | null;
+}
+
+export interface ExtractionMetadata {
+  challenge?: ExtractionProvenance | null;
+  position_change?: ExtractionProvenance | null;
+}
+
+export interface ExtractionProvenance {
+  /** 'authored' = bot returned the field directly; 'extracted' = pulled from prose
+   *  by MiniMax with source-quote verification; 'extraction_failed' = attempted
+   *  but couldn't verify, field left empty. */
+  source: 'authored' | 'extracted' | 'extraction_failed';
+  /** Verbatim substring of the bot's raw response that supports the extracted value.
+   *  Non-null only when source = 'extracted'. */
+  quote: string | null;
 }
 
 export interface ChallengeData {

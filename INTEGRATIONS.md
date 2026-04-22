@@ -127,9 +127,12 @@ Route failures to the new-issue webhook when it lands; until then Sentry will em
 | Model name env | `APP__MODELS__MINIMAX_MODEL=MiniMax-M2.7` |
 | Analyser route | `APP__MODELS__ANALYSIS_BASE_URL=https://api.minimax.io`, `APP__MODELS__ANALYSIS_MODEL=MiniMax-M2.7` |
 | Synthesis route | `APP__MODELS__FINAL_SYNTHESIS_BASE_URL=https://api.minimax.io`, `APP__MODELS__FINAL_SYNTHESIS_MODEL=MiniMax-M2.7`, `APP__MODELS__FINAL_SYNTHESIS_WARMUP_ENABLED=false` |
+| Extractor route | Reuses `analysis_base_url` + `analysis_model`. The `src/extractor/` pipeline calls `analyser::call_minimax` directly; no separate env var. |
 | Plan | Pro-tier (high quota). Resynth batch safe at `--throttle-ms 500`. |
 
 No admin API — cost visibility is dashboard-only. For per-debate cost (future Phase 5) we extract the `usage` block from each response.
+
+**Three call paths now share the MiniMax endpoint** — analyser (per-round peer-score + challenge validation + pairing + divergence), final synthesis, and the structured-field extractor that turns text-only bot prose into `challenge`/`position_change` JSON in rounds 2 and 4. Extraction fires at most 5 bots × 2 rounds × 1 call = 10 extra MiniMax calls per debate when all participants are text-only; external bots short-circuit with no extractor call. Latency impact negligible on Pro tier.
 
 **Rollback to local Gemma**: blank the three `APP__MODELS__*_BASE_URL` overrides, confirm `llama-server` is running on EVO `:8086` (`ps aux | grep llama-server`), `sudo systemctl restart bot-council`. Defaults in `config/default.toml` route back to the local model.
 
@@ -163,6 +166,8 @@ Clint on EVO skips the Cloudflare Tunnel entirely and talks to `http://127.0.0.1
 
 Tool visibility: `lqc_*` tools are stripped from every group chat that isn't `LQC_DEV_GROUP_JID`. DMs always allow them. The filter lives in `src/group-tool-policy.js` and reads `LQC_DEV_GROUP_JID` directly from `process.env` (not via the frozen config singleton — the test suite relies on that).
 
+**Text-only bot mode drift gap (2026-04-22):** `lqc_validate_bot` and `lqc_dry_run_debate` in the clawdbot repo still speak the legacy `/debate` contract. They will reject or mis-diagnose any bot registered with `bot_kind: "text_only"`. Until those tools are rewired, operators onboarding text-only bots must use the `/bots/submit` web flow; the Clint-driven validation path is external-mode only. Clint's curated knowledge file (`data/lqcouncil-knowledge.json`) regenerates nightly from `BOT_AUTHORING.md` in this repo, so Clint's *answers* about text-only mode will be current even while the *tool handlers* remain legacy. Fix is scoped for a dedicated session in the `~/clawdbot` repo.
+
 ## 9. Rotation + backup
 
 | Secret | Where stored | Rotation triggers |
@@ -187,5 +192,6 @@ All paths under `https://lqcouncil.com`:
 - `POST /api/bots/validate` — auth, dry-run smoke test; no persistence.
 - `GET /api/bots/{id}/history?limit=N` — auth, owner-gated unless admin.
 - `GET /api/bots/{id}/analytics` — auth, per-bot performance metrics.
+- `GET /api/debates/{id}/transcript` — auth. For text-only bots, each `TranscriptEntry` carries `extraction_metadata` (`{challenge?: {source, quote}, position_change?: {source, quote}}`) so the frontend can render "extracted" badges and the verbatim source quote inline. External bots emit structured fields directly; `extraction_metadata` is `null` for their rows.
 
 First step when something feels off: `curl https://lqcouncil.com/api/diag/models -H "Authorization: Bearer $ADMIN_TOKEN"` to confirm the model routing matches expectation.

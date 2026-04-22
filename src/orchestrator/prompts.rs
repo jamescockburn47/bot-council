@@ -119,8 +119,7 @@ pub fn round4_prompt(topic: &str) -> String {
         "This is the final round. State your final position on: {topic}\n\n\
          You must include:\n\
          1. Your final position — clear, specific, and substantive.\n\
-         2. A confidence score (0-100) reflecting your genuine certainty.\n\
-         3. A position_change declaration: did your position change from Round 0? \
+         2. A position_change declaration: did your position change from Round 0? \
          If yes, state what changed, what it changed from, and the specific argument that caused the change. \
          If no, state why the opposing arguments were insufficient.\n\n\
          Do not soften your position for the sake of agreement. \

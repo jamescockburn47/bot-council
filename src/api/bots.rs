@@ -732,11 +732,18 @@ fn validate_smoke_json(json: serde_json::Value) -> Result<(), String> {
 /// Round-aware smoke validator.
 ///
 /// Round 0: only `response: string` required.
-/// Rounds 1-4: add `confidence: integer 0-100`.
-/// Round 2:    add `challenge: {claim_targeted, counter_evidence, type ∈
-///             factual|logical|premise}` (mandatory per orchestrator spec).
-/// Round 4:    add `position_change: {changed:bool, from_summary,
-///             to_summary, reason}` (mandatory per orchestrator spec).
+/// Round 2:    `challenge: {claim_targeted, counter_evidence, type ∈
+///             factual|logical|premise}` required (mandatory per
+///             orchestrator spec).
+/// Round 4:    `position_change: {changed:bool, from_summary,
+///             to_summary, reason}` required (mandatory per orchestrator
+///             spec).
+///
+/// `confidence` is OPTIONAL on all rounds — if present it must be an
+/// integer 0-100 (type-checked, no hard failure on absence). It was
+/// briefly required here but removed (2026-04-22) because the value
+/// does not drive any downstream decision; peer scoring uses a
+/// separate signal (see src/orchestrator/mod.rs::run_peer_scoring).
 ///
 /// If a bot cannot populate the round 2 / round 4 required fields at
 /// approval time it would abstain in every real debate — the whole
@@ -753,29 +760,28 @@ fn validate_smoke_json_for_round(json: &serde_json::Value, round: i64) -> Result
     };
     response_ok?;
 
-    if round >= 1 {
-        match json.get("confidence") {
-            Some(serde_json::Value::Number(n)) if n.is_i64() => {
-                let v = n.as_i64().unwrap();
-                if !(0..=100).contains(&v) {
+    // Confidence: optional. Type-check when present so an author who
+    // DID return the field gets a useful error if they used the wrong
+    // shape (e.g. 0.7 instead of 70). Missing is fine.
+    if let Some(v) = json.get("confidence") {
+        match v {
+            serde_json::Value::Null => {}
+            serde_json::Value::Number(n) if n.is_i64() => {
+                let x = n.as_i64().unwrap();
+                if !(0..=100).contains(&x) {
                     return Err(format!(
-                        "'confidence' out of 0-100 range (got {v}) — schema_invalid_value"
+                        "'confidence' out of 0-100 range (got {x}) — schema_invalid_value"
                     ));
                 }
             }
-            Some(serde_json::Value::Number(n)) => {
+            serde_json::Value::Number(n) => {
                 return Err(format!(
-                    "'confidence' must be an INTEGER 0-100, not float (got {n}) — common mistake: return 70 not 0.7"
+                    "'confidence' present but not an integer (got {n}) — use 70, not 0.7"
                 ));
             }
-            Some(other) => {
+            other => {
                 return Err(format!(
-                    "'confidence' wrong type: expected integer 0-100, got {other}"
-                ));
-            }
-            None => {
-                return Err(format!(
-                    "round {round} requires an integer 'confidence' field 0-100"
+                    "'confidence' wrong type: expected integer 0-100 or null, got {other}"
                 ));
             }
         }
@@ -936,22 +942,22 @@ pub(crate) async fn smoke_test_bot(
     let round1 = serde_json::json!({
         "session_id": "smoke-test", "round": 1, "role": "skeptic",
         "context": stub_peer_r0,
-        "prompt": "Smoke test round 1 — anonymous distribution. Identify the single strongest opposing argument and what evidence would change your mind. Return JSON with a non-empty 'response' string AND an integer 'confidence' 0-100."
+        "prompt": "Smoke test round 1 — anonymous distribution. Identify the single strongest opposing argument and what evidence would change your mind. Return JSON with a non-empty 'response' string."
     });
     let round2 = serde_json::json!({
         "session_id": "smoke-test", "round": 2, "role": "empiricist",
         "context": stub_peer_r1,
-        "prompt": "Smoke test round 2 — structured rebuttal. Pose at least one specific challenge against another participant. Return JSON with 'response' (string), integer 'confidence' 0-100, AND a 'challenge' object with fields {claim_targeted, counter_evidence, type ∈ factual|logical|premise}. The challenge is MANDATORY this round."
+        "prompt": "Smoke test round 2 — structured rebuttal. Pose at least one specific challenge against another participant. Return JSON with 'response' (string) AND a 'challenge' object with fields {claim_targeted, counter_evidence, type ∈ factual|logical|premise}. The challenge is MANDATORY this round."
     });
     let round3 = serde_json::json!({
         "session_id": "smoke-test", "round": 3, "role": "devils_advocate",
         "context": stub_peer_r1,
-        "prompt": "Smoke test round 3 — cross-examination. Pose one pointed question surfacing a hidden assumption in Argon's argument. Return JSON with 'response' (string) and integer 'confidence' 0-100."
+        "prompt": "Smoke test round 3 — cross-examination. Pose one pointed question surfacing a hidden assumption in Argon's argument. Return JSON with 'response' (string)."
     });
     let round4 = serde_json::json!({
         "session_id": "smoke-test", "round": 4, "role": "steelman",
         "context": stub_peer_r1,
-        "prompt": "Smoke test round 4 — final position. State your final position with an integer 'confidence' 0-100. ALSO return a 'position_change' object with {changed: boolean, from_summary: string, to_summary: string, reason: string}. The position_change is MANDATORY this round."
+        "prompt": "Smoke test round 4 — final position. State your final position in 'response' (string). ALSO return a 'position_change' object with {changed: boolean, from_summary: string, to_summary: string, reason: string}. The position_change is MANDATORY this round."
     });
 
     let probes = [

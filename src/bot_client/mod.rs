@@ -6,6 +6,9 @@ use reqwest_retry::{RetryTransientMiddleware, policies::ExponentialBackoff};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
+pub mod text_only;
+pub use text_only::send_text_only_request;
+
 /// Build the HTTP client with retry middleware.
 pub fn build_http_client(config: &HttpClientConfig) -> ClientWithMiddleware {
     let retry_policy = ExponentialBackoff::builder()

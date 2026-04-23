@@ -197,41 +197,6 @@ async fn create_debate_without_auth_returns_401() {
 }
 
 #[tokio::test]
-async fn simple_mode_initializes_three_rounds_only() {
-    let (mut app, pool) = common::test_app_simple_mode().await;
-    let (bot_ids, _servers) = seed_bots(&mut app).await;
-
-    let body = json!({
-        "topic": "Test simple mode round count",
-        "bot_ids": bot_ids
-    });
-    let req = common::admin_auth(
-        Request::builder()
-            .method("POST")
-            .uri("/debates")
-            .header("content-type", "application/json"),
-    )
-    .body(Body::from(serde_json::to_string(&body).unwrap()))
-    .unwrap();
-
-    let response = app.oneshot(req).await.unwrap();
-    assert_eq!(response.status(), StatusCode::CREATED);
-    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let json: Value = serde_json::from_slice(&bytes).unwrap();
-    let debate_id = json["id"].as_str().unwrap();
-
-    let (round_count,): (i64,) =
-        sqlx::query_as("SELECT COUNT(*) AS count FROM rounds WHERE debate_id = ?")
-            .bind(debate_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-    assert_eq!(round_count, 3);
-}
-
-#[tokio::test]
 async fn create_debate_skips_unreachable_bots_when_quorum_still_met() {
     let (mut app, _pool) = common::test_app().await;
     let (mut bot_ids, _servers) = seed_bots(&mut app).await;

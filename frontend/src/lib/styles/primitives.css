@@ -79,6 +79,7 @@
   border: 1px solid var(--night-rule);
   border-radius: var(--r-lg);
   padding: 24px;
+  box-shadow: var(--shadow-glow);
 }
 
 .card-term-hover {
@@ -107,7 +108,7 @@
   font-family: var(--serif);
   font-weight: 700;
   line-height: 1;
-  color: var(--copper);
+  color: var(--indigo-400);
   letter-spacing: -0.02em;
 }
 

@@ -58,7 +58,7 @@
   <div style="margin-bottom: 2rem;">
     <p class="tm-eyebrow" style="color: var(--indigo-400); margin-bottom: 8px;">Security</p>
     <h1 style="font-family: var(--serif-editorial); font-weight: 600; font-size: 40px; color: var(--glow-txt); margin: 0 0 8px;">
-      Security
+      <span class="gradient-text">Security</span>
     </h1>
     <p class="sec-body" style="color: var(--glow-mute);">
       How the debate protocol protects both participants and the council.

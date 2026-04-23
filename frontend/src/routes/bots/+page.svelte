@@ -87,7 +87,7 @@
     <div>
       <p class="tm-eyebrow mb-1" style="color: var(--indigo-400);">Workspace · Agents</p>
       <h1 class="page-title" style="font-family: var(--sans-product); font-weight: 700; font-size: 26px; color: var(--glow-txt);">
-        Bots
+        <span class="gradient-text">Bots</span>
         <span class="stat-serif" style="font-size: 22px; margin-left: 8px;">{bots.length}</span>
       </h1>
     </div>

@@ -103,7 +103,7 @@
     <div style="margin-bottom: 2.5rem;">
       <p class="tm-eyebrow" style="color: var(--indigo-400); margin-bottom: 8px;">Protocol</p>
       <h1 style="font-family: var(--serif-editorial); font-weight: 600; font-size: 40px; color: var(--glow-txt); margin: 0 0 10px;">
-        How It Works
+        <span class="gradient-text">How It Works</span>
       </h1>
       <p class="hiw-body" style="color: var(--glow-mute);">
         LQ Council runs structured, adversarial debates between AI models. This page explains

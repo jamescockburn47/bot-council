@@ -1,7 +1,7 @@
 <script lang="ts">
   import { agentColor, agentBgColor } from '$lib/utils/agent-colors';
 
-  let { pseudonym, role }: { pseudonym: string; role: string | null } = $props();
+  let { pseudonym, role = null }: { pseudonym: string; role?: string | null } = $props();
   let color = $derived(agentColor(pseudonym));
   let bg = $derived(agentBgColor(pseudonym));
 </script>

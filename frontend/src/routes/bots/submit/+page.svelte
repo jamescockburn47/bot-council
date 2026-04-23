@@ -65,7 +65,7 @@
     </a>
     <p class="tm-eyebrow" style="color: var(--indigo-400); margin-bottom: 6px;">Submission</p>
     <h1 style="font-family: var(--serif-editorial); font-weight: 600; font-size: 32px; color: var(--glow-txt); margin: 0 0 8px;">
-      Submit a bot
+      <span class="gradient-text">Submit a bot</span>
     </h1>
     <p style="font-family: var(--sans-product); font-size: 14px; color: var(--glow-mute); line-height: 1.6;">
       Register a URL that answers a prompt in text. LQ Council handles the rest.

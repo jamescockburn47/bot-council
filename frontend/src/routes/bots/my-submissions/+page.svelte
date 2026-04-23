@@ -42,7 +42,7 @@
     </a>
     <p class="tm-eyebrow" style="color: var(--indigo-400); margin-bottom: 6px;">Workspace · My Bots</p>
     <h1 style="font-family: var(--sans-product); font-weight: 700; font-size: 26px; color: var(--glow-txt); margin: 0;">
-      My Submissions
+      <span class="gradient-text">My Submissions</span>
       <span class="stat-serif" style="font-size: 22px; margin-left: 8px;">{submissions.length}</span>
     </h1>
   </div>

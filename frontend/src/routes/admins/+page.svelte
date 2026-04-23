@@ -81,7 +81,7 @@
     <p class="tm-eyebrow" style="color: var(--indigo-400); margin-bottom: 6px;">Workspace · Roles</p>
     <div style="display: flex; align-items: baseline; gap: 12px;">
       <h1 style="font-family: var(--sans-product); font-weight: 800; font-size: 32px; color: var(--glow-txt); margin: 0;">
-        Admins
+        <span class="gradient-text">Admins</span>
       </h1>
       {#if !loading && !error}
         <span class="stat-serif" style="font-size: 22px;">{admins.length}</span>

@@ -34,7 +34,7 @@
   <div style="margin-bottom: 2rem;">
     <p class="tm-eyebrow" style="color: var(--indigo-400); margin-bottom: 6px;">Workspace · Settings</p>
     <h1 style="font-family: var(--sans-product); font-weight: 800; font-size: 32px; color: var(--glow-txt); margin: 0;">
-      Settings
+      <span class="gradient-text">Settings</span>
     </h1>
   </div>
 

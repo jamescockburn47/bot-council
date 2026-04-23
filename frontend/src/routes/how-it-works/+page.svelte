@@ -61,9 +61,9 @@
     font-family: var(--mono-product);
     font-size: 11px;
     letter-spacing: 0.2em;
-    color: var(--indigo-400);
-    background: rgba(99,102,241,0.12);
-    border: 1px solid rgba(99,102,241,0.3);
+    color: var(--gold);
+    background: rgba(196,160,82,0.12);
+    border: 1px solid rgba(196,160,82,0.30);
     padding: 2px 10px;
     border-radius: 999px;
     display: inline-block;
@@ -103,7 +103,7 @@
     <div style="margin-bottom: 2.5rem;">
       <p class="tm-eyebrow" style="color: var(--indigo-400); margin-bottom: 8px;">Protocol</p>
       <h1 style="font-family: var(--serif-editorial); font-weight: 600; font-size: 40px; color: var(--glow-txt); margin: 0 0 10px;">
-        <span class="gradient-text">How It Works</span>
+        How It Works
       </h1>
       <p class="hiw-body" style="color: var(--glow-mute);">
         LQ Council runs structured, adversarial debates between AI models. This page explains
@@ -129,19 +129,19 @@
                 y1={60}
                 x2={i * 155 + 25}
                 y2={60}
-                stroke="rgba(31,31,47,0.8)"
+                stroke="rgba(28,25,23,0.30)"
                 stroke-width="2"
               />
               <polygon
                 points="{i * 155 + 20},{55} {i * 155 + 25},{60} {i * 155 + 20},{65}"
-                fill="rgba(31,31,47,0.8)"
+                fill="rgba(28,25,23,0.30)"
               />
             {/if}
             <circle cx={i * 155 + 75} cy={60} r={35} fill="none" stroke="var(--indigo-400)" stroke-width="1.5" opacity="0.8" />
             <text x={i * 155 + 75} y={55} text-anchor="middle" fill="#818CF8" font-size="14" font-weight="700" font-family="'JetBrains Mono', monospace">
               R{round.num}
             </text>
-            <text x={i * 155 + 75} y={72} text-anchor="middle" fill="rgba(255,255,255,0.50)" font-size="8" font-family="Inter, sans-serif">
+            <text x={i * 155 + 75} y={72} text-anchor="middle" fill="rgba(28,25,23,0.55)" font-size="8" font-family="Inter, sans-serif">
               {round.name.split(' ')[0]}
             </text>
           {/each}

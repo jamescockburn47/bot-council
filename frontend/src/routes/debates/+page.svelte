@@ -124,7 +124,7 @@
     <div>
       <p class="tm-eyebrow mb-2" style="color: var(--indigo-400);">Workspace</p>
       <h1 style="font-family: var(--sans-product); font-weight: 800; font-size: 32px; letter-spacing: -0.02em; color: var(--glow-txt);">
-        <span class="gradient-text">Debates</span>
+        Debates
         <span class="stat-serif" style="font-size: 28px; margin-left: 12px;">{debates.length}</span>
       </h1>
     </div>

@@ -22,12 +22,12 @@
     margin: 0 0 16px;
   }
   .sec-code {
-    background: rgba(31,31,47,0.5);
+    background: rgba(196,160,82,0.10);
     padding: 1px 6px;
     border-radius: 4px;
     font-family: var(--mono-product);
     font-size: 12px;
-    color: var(--indigo-400);
+    color: var(--gold);
   }
   .sec-pre {
     background: var(--night-edge);
@@ -43,10 +43,10 @@
     margin: 0;
   }
   .callout-note {
-    border-left: 3px solid var(--copper);
+    border-left: 3px solid var(--gold);
   }
   .callout-info {
-    border-left: 3px solid var(--indigo-500);
+    border-left: 3px solid var(--gold);
   }
   .inner-section + .inner-section {
     margin-top: 20px;
@@ -58,7 +58,7 @@
   <div style="margin-bottom: 2rem;">
     <p class="tm-eyebrow" style="color: var(--indigo-400); margin-bottom: 8px;">Security</p>
     <h1 style="font-family: var(--serif-editorial); font-weight: 600; font-size: 40px; color: var(--glow-txt); margin: 0 0 8px;">
-      <span class="gradient-text">Security</span>
+      Security
     </h1>
     <p class="sec-body" style="color: var(--glow-mute);">
       How the debate protocol protects both participants and the council.

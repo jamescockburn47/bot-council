@@ -101,7 +101,7 @@
 <div style="max-width: 768px;">
   <!-- Page header -->
   <p class="tm-eyebrow mb-2" style="color: var(--indigo-400);">Workspace · Create</p>
-  <h1 style="font-family: var(--sans-product); font-weight: 800; font-size: 32px; letter-spacing: -0.02em; color: var(--glow-txt); margin-bottom: 24px;"><span class="gradient-text">New Debate</span></h1>
+  <h1 style="font-family: var(--sans-product); font-weight: 800; font-size: 32px; letter-spacing: -0.02em; color: var(--glow-txt); margin-bottom: 24px;">New Debate</h1>
 
   <!-- Back link -->
   <div style="margin-bottom: 32px;">
@@ -323,8 +323,8 @@
 
 <style>
   input:focus {
-    border-color: var(--indigo-500) !important;
-    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+    border-color: var(--gold) !important;
+    box-shadow: 0 0 0 3px rgba(196, 160, 82, 0.18);
   }
 
   @keyframes spin {

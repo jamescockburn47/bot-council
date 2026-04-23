@@ -4,28 +4,68 @@
 @import "./lib/styles/primitives.css";
 
 :root {
-  /* Product-level agent palette; see lib/utils/agent-colors.ts */
-  --agent-a: var(--indigo-400);
-  --agent-b: #10B981;             /* --cat-llm-dark */
-  --agent-c: #06B6D4;             /* --cat-agent-dark */
-  --agent-d: #F59E0B;             /* --cat-vibe-dark */
-  --agent-e: var(--violet-400);
+  /* Gold accent (primary CTA + eyebrow colour, matching legalquants.com) */
+  --gold:        #C4A052;
+  --gold-dark:   #9A7A2A;
+  --gold-tint:   rgba(196, 160, 82, 0.10);
+  --gold-border: rgba(196, 160, 82, 0.28);
 
-  /* Synthesis / challenge semantic colours kept as raw hex for legacy
-     inline-style references in RoundAccordion, SynthesisCard, etc. */
-  --synthesis-consensus:     #10B981;
-  --synthesis-disagreement:  #EF4444;
-  --synthesis-capitulation:  #F59E0B;
-  --synthesis-minority:      var(--indigo-400);
+  /* === LIGHT THEME BRIDGE ===
+     Remap Terminal dark vars to Editorial light equivalents so every
+     component using var(--night) / var(--glow-*) / var(--night-rule*)
+     automatically picks up the light palette without file-by-file edits. */
+  --night:       #FAF6F0;  /* was near-black; now cream page bg */
+  --night-raise: #FFFFFF;  /* was dark card; now white card */
+  --night-edge:  #F3EDE4;  /* was deeper dark; now deeper cream */
+  --night-rule:  rgba(28, 25, 23, 0.09);   /* was dark border; now light border */
+  --night-rule2: rgba(28, 25, 23, 0.14);
+  --night-rule3: rgba(28, 25, 23, 0.20);
+
+  --glow-txt:   #1C1917;  /* was light text; now dark charcoal */
+  --glow-dim:   #44403C;
+  --glow-mute:  #78716C;
+  --glow-faint: #A8A29E;
+
+  /* Remap indigo accent vars → gold so inline style="color: var(--indigo-400)"
+     eyebrows and highlights automatically become gold. Agent/chart hex colours
+     in TypeScript (AGENT_COLORS) are unaffected — they use hardcoded hex strings. */
+  --indigo-400: var(--gold);
+  --indigo-500: var(--gold);
+  --indigo-600: var(--gold-dark);
+  --violet-400: var(--gold);
+
+  /* Shadow: replace indigo glow with gold glow + dark lift for light bg */
+  --shadow-glow: 0 0 60px rgba(196, 160, 82, 0.10), 0 0 120px rgba(196, 160, 82, 0.04);
+  --shadow-lift: 0 4px 20px rgba(28, 25, 23, 0.08), 0 1px 4px rgba(28, 25, 23, 0.05);
+
+  /* Product-level agent palette — unchanged */
+  --agent-a: #818CF8;
+  --agent-b: #10B981;
+  --agent-c: #06B6D4;
+  --agent-d: #F59E0B;
+  --agent-e: #A78BFA;
+
+  /* Synthesis / challenge semantic colours */
+  --synthesis-consensus:    #10B981;
+  --synthesis-disagreement: #EF4444;
+  --synthesis-capitulation: #F59E0B;
+  --synthesis-minority:     var(--gold);
   --challenge-factual: #EF4444;
   --challenge-logical: #F59E0B;
-  --challenge-premise: var(--violet-400);
+  --challenge-premise: #A78BFA;
 }
 
 body {
   background-color: var(--night);
   color: var(--glow-txt);
   font-family: var(--sans-product);
+}
+
+/* Global form focus rings: gold instead of indigo */
+input:focus, textarea:focus, select:focus {
+  border-color: var(--gold) !important;
+  box-shadow: 0 0 0 3px rgba(196, 160, 82, 0.18) !important;
+  outline: none;
 }
 
 .mono {

@@ -65,7 +65,7 @@
     </a>
     <p class="tm-eyebrow" style="color: var(--indigo-400); margin-bottom: 6px;">Submission</p>
     <h1 style="font-family: var(--serif-editorial); font-weight: 600; font-size: 32px; color: var(--glow-txt); margin: 0 0 8px;">
-      <span class="gradient-text">Submit a bot</span>
+      Submit a bot
     </h1>
     <p style="font-family: var(--sans-product); font-size: 14px; color: var(--glow-mute); line-height: 1.6;">
       Register a URL that answers a prompt in text. LQ Council handles the rest.
@@ -223,8 +223,8 @@
     color: var(--glow-faint);
   }
   .term-input:focus {
-    border-color: var(--indigo-500);
-    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+    border-color: var(--gold);
+    box-shadow: 0 0 0 3px rgba(196, 160, 82, 0.18);
     outline: none;
   }
   .btn-disabled {

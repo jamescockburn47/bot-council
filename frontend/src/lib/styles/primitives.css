@@ -1,85 +1,85 @@
 /* ===================================================================
-   Shared UI primitives for the Terminal surface.
-   Source patterns: preview/components-{buttons,terminal-cards}.html
-   in the brand kit. Do not redefine these per-component.
+   Shared UI primitives — Editorial light surface.
+   Matches legalquants.com: cream bg, dark text, gold accent.
    =================================================================== */
 
 /* --- Buttons --------------------------------------------------------- */
 
 .btn-indigo {
-  background: var(--indigo-600);
-  color: #fff;
+  background: var(--gold);
+  color: #1C1917;
   font-family: var(--sans-product);
   font-size: 14px;
   font-weight: 600;
   padding: 11px 22px;
   border: none;
-  border-radius: 8px;
+  border-radius: 999px;
   display: inline-flex;
   align-items: center;
   gap: 8px;
   cursor: pointer;
   transition: background-color var(--dur-fast) var(--ease-standard);
 }
-.btn-indigo:hover { background: var(--indigo-500); }
+.btn-indigo:hover { background: var(--gold-dark); color: #fff; }
 .btn-indigo:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .btn-dark-ghost {
-  background: var(--night-raise);
-  color: var(--glow-txt);
+  background: #fff;
+  color: #44403C;
   font-family: var(--sans-product);
   font-size: 13px;
   font-weight: 500;
   padding: 9px 18px;
-  border: 1px solid var(--night-rule3);
-  border-radius: 8px;
+  border: 1px solid rgba(28, 25, 23, 0.18);
+  border-radius: 999px;
   cursor: pointer;
-  transition: border-color var(--dur-fast) var(--ease-standard);
+  transition: border-color var(--dur-fast) var(--ease-standard), color var(--dur-fast);
 }
-.btn-dark-ghost:hover { border-color: var(--indigo-400); }
+.btn-dark-ghost:hover { border-color: var(--gold); color: #1C1917; }
 
-/* --- Pills (filter toggles, status badges) --------------------------- */
+/* --- Pills (filter toggles) ----------------------------------------- */
 
 .pill-on {
-  background: rgba(99, 102, 241, 0.20);
-  color: #C7CBFF;
+  background: rgba(196, 160, 82, 0.14);
+  color: #7A5C1E;
   font-family: var(--sans-product);
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 600;
   padding: 6px 14px;
-  border: 1px solid rgba(99, 102, 241, 0.40);
+  border: 1px solid rgba(196, 160, 82, 0.35);
   border-radius: 999px;
 }
 
 .pill-off {
-  background: var(--night-raise);
-  color: var(--glow-mute);
+  background: #fff;
+  color: #78716C;
   font-family: var(--sans-product);
   font-size: 12px;
   font-weight: 500;
   padding: 6px 14px;
-  border: 1px solid var(--night-rule);
+  border: 1px solid rgba(28, 25, 23, 0.14);
   border-radius: 999px;
   cursor: pointer;
   transition: color var(--dur-fast), border-color var(--dur-fast);
 }
-.pill-off:hover { color: var(--glow-txt); border-color: var(--night-rule3); }
+.pill-off:hover { color: #1C1917; border-color: rgba(28, 25, 23, 0.28); }
 
 /* --- Cards ----------------------------------------------------------- */
 
 .card-term {
-  background: var(--night-raise);
-  border: 1px solid var(--night-rule);
+  background: #fff;
+  border: 1px solid rgba(28, 25, 23, 0.10);
   border-radius: var(--r-lg);
   padding: 16px;
+  box-shadow: 0 1px 3px rgba(28, 25, 23, 0.06);
 }
 
 .card-term-lg {
-  background: var(--night-raise);
-  border: 1px solid var(--night-rule);
+  background: #fff;
+  border: 1px solid rgba(28, 25, 23, 0.10);
   border-radius: var(--r-lg);
   padding: 24px;
-  box-shadow: var(--shadow-glow);
+  box-shadow: 0 1px 3px rgba(28, 25, 23, 0.06);
 }
 
 .card-term-hover {
@@ -89,7 +89,7 @@
 }
 .card-term-hover:hover {
   transform: translateY(-2px);
-  border-color: var(--indigo-500);
+  border-color: var(--gold);
   box-shadow: var(--shadow-lift);
 }
 
@@ -101,20 +101,29 @@
   font-weight: 500;
   letter-spacing: 0.2em;
   text-transform: uppercase;
-  color: var(--glow-faint);
+  color: var(--glow-mute);
 }
 
 .stat-serif {
   font-family: var(--serif);
   font-weight: 700;
   line-height: 1;
-  color: var(--indigo-400);
+  color: var(--gold);
   letter-spacing: -0.02em;
 }
 
-.copper-accent { color: var(--copper); }
+.copper-accent { color: var(--gold); }
 
-/* --- Hero background orbs (landing page only) ----------------------- */
+.tm-eyebrow {
+  font-family: var(--mono-product);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+
+/* --- Hero background (landing page only) ----------------------------- */
 
 .hero-orbs {
   position: relative;
@@ -126,10 +135,10 @@
   position: absolute;
   width: 24rem; height: 24rem;
   border-radius: 9999px;
-  background: rgba(99, 102, 241, 0.10);
+  background: rgba(196, 160, 82, 0.07);
   filter: blur(120px);
   z-index: -1;
   pointer-events: none;
 }
 .hero-orbs::before { top: -8rem; left: -4rem; }
-.hero-orbs::after  { bottom: -8rem; right: -4rem; background: rgba(167, 139, 250, 0.08); }
+.hero-orbs::after  { bottom: -8rem; right: -4rem; background: rgba(196, 160, 82, 0.05); }

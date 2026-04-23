@@ -77,6 +77,7 @@ pub async fn get_transcript(
                     abstained: r.abstained,
                     validation_reasoning,
                     extraction_metadata,
+                    fallback_from_round: r.fallback_from_round,
                 }
             })
             .collect();

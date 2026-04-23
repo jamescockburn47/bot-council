@@ -117,6 +117,10 @@ export interface TranscriptEntry {
    *  Keyed by field name ("challenge" | "position_change" | "steelman").
    *  Absent or null for bots that authored structured fields directly. */
   extraction_metadata: ExtractionMetadata | null;
+  /** When populated, this response was carried forward from an earlier
+   *  round (typically R0) because the bot failed to respond in the current
+   *  round. Null when the bot responded directly. */
+  fallback_from_round?: number | null;
 }
 
 export interface ExtractionMetadata {

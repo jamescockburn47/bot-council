@@ -18,6 +18,9 @@
       steelmanMetadata != null &&
       steelmanMetadata.source !== 'extraction_failed',
   );
+  let carriedFromRound = $derived(
+    entry.fallback_from_round != null ? entry.fallback_from_round : null,
+  );
 </script>
 
 <div class="bg-[var(--bg)] border border-[var(--border)] rounded-lg p-4">
@@ -32,6 +35,15 @@
       {:else if entry.abstained}
         <span class="text-[10px] mono px-1.5 py-0.5 rounded bg-[var(--border)] text-[var(--text-muted)]">
           Abstained
+        </span>
+      {/if}
+
+      {#if carriedFromRound != null}
+        <span
+          class="text-[10px] mono px-1.5 py-0.5 rounded text-[var(--text-muted)] border border-[var(--border)]"
+          title="This bot did not respond in this round; its round-{carriedFromRound} position is shown so the voice is not lost."
+        >
+          &#x21bb; carried from R{carriedFromRound}
         </span>
       {/if}
     </div>

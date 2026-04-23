@@ -226,6 +226,12 @@ pub struct TranscriptEntry {
     /// JSON shape: { "challenge"?: { source, quote }, "position_change"?: { source, quote } }.
     /// Null for bots that authored their structured fields directly.
     pub extraction_metadata: Option<serde_json::Value>,
+    /// When populated, this response was carried forward from an earlier
+    /// round because the bot failed to respond in the current round. The
+    /// value is the source round number (typically `0`). Null when the bot
+    /// responded in this round directly.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fallback_from_round: Option<i64>,
 }
 
 /// Anonymisation log entry mapping pseudonym to role.

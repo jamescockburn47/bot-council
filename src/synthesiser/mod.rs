@@ -293,18 +293,18 @@ fn build_synthesis_prompt(
          - A `live_disagreement` needs at least two bots taking opposing positions — not all four. Side A can be one bot; side B can be one bot. Emit the disagreement anyway.\n\
          - Preserve minority positions with full dignity. A single bot holding a distinctive position is a `minority_position`, not a reason to return nothing.\n\
          - Never decline to synthesise because you judged the evidence \"too limited\". If the transcript contains substantive bot responses, the output MUST contain corresponding structured entries. The reader wants the argument map from what IS there, not a statement that the map couldn't be built.\n\
-         - Flag any position shift that lacks adequate justification.\n\
+         - Record every position shift observed in the transcript under `flagged_capitulations`. Use the `justification_adequate` boolean to distinguish shifts that were explicitly reasoned (true) from those that capitulated without adequate grounding (false). Do NOT filter by adequacy — the reader wants the full shift map, not just the bad ones.\n\
          - EXHAUSTIVE EXTRACTION — the reader needs the full argument graph, not a single umbrella summary. Extract every distinct node the transcript supports:\n\
            • If bots agree on multiple distinct points (mechanism vs evidence vs scope vs definitional framing), emit ONE `consensus_points` entry per agreement. Do NOT merge separate agreements into one umbrella point.\n\
            • If bots disagree on multiple axes (empirical weighting, methodology, definitional scope, evidentiary standard), emit ONE `live_disagreements` entry per axis. Err toward splitting a debate into its sub-disagreements rather than collapsing them.\n\
-           • `flagged_capitulations` should include every position shift observed, not just the most visible one — whether the shift was adequately justified or not. A debate can have multiple concurrent shifts.\n\
+           • `flagged_capitulations` should include every position shift observed, not just the most visible one. Classify each via `justification_adequate`. A debate can have multiple concurrent shifts.\n\
            • `minority_positions` should include every distinctive standalone position, including cases where one bot holds an idiosyncratic frame the others reject.\n\
          - TARGET COUNTS for a healthy multi-round debate (guidance, not a floor):\n\
            • consensus_points: typically 2–5 entries.\n\
            • live_disagreements: typically 2–4 entries (one per distinct axis).\n\
            • minority_positions: whatever the transcript genuinely holds.\n\
            • flagged_capitulations: whatever was actually observed.\n\
-           If a debate genuinely only has one consensus point or one axis of disagreement, emit one. But before collapsing, ask: are there really no other sub-points the bots converged or clashed on? A multi-round debate with four bots usually has more structure than that.\n\n\
+           If a debate genuinely only has one consensus point or one axis of disagreement, emit one. But before collapsing, ask: are there really no other sub-points the bots converged or clashed on? A multi-round debate with multiple participants usually has more structure than that.\n\n\
          STRICT OUTPUT CONTRACT:\n\
          - Return exactly one valid JSON object. No markdown, no code fences, no prose outside JSON.\n\
          - Use only pseudonyms from <participant-map> in supporting_bots/bots/bot fields.\n\

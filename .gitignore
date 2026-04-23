@@ -24,3 +24,6 @@ frontend/.env
 # Vercel extraction snapshot (contains real keys)
 frontend/.env.production.vercel-snapshot
 .proxy-vercel-link/
+
+# UI redesign brand-kit reference (extracted locally, not source)
+.ui-redesign-reference/

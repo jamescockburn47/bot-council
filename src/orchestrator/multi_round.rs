@@ -313,8 +313,6 @@ pub async fn run_multi_round_debate(
             round1_context.clone(),
             models_config,
             timeout,
-            debate_config.max_retries,
-            true,
         )
         .await?;
         state_machine::complete_round(pool, id, 2).await?;

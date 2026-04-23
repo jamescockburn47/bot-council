@@ -73,33 +73,6 @@ pub fn round2_prompt(topic: &str) -> String {
     )
 }
 
-/// Round 2: Re-prompt after failed challenge validation.
-pub fn round2_reprompt(topic: &str, reason: &str) -> String {
-    format!(
-        "Topic: {topic}\n\
-         Your response was rejected: {reason}\n\n\
-         You must raise at least one factual or logical objection to another participant's position. \
-         Include a `challenge` object with `claim_targeted`, `counter_evidence`, and `type` fields. Resubmit."
-    )
-}
-
-/// Simplified Round 2: final position in 3-round test mode.
-pub fn round2_prompt_simple(topic: &str, role: Role) -> String {
-    format!(
-        "This is the final round of a three-round debate.\n\
-         Topic: {topic}\n\
-         Your role remains {} — {}.\n\n\
-         Produce a final position that does all of the following:\n\
-         1. States your final stance clearly.\n\
-         2. Engages at least one specific opposing claim from prior rounds.\n\
-         3. Gives at least one concrete reason or piece of evidence for your stance.\n\
-         4. Explains briefly whether and why your position changed.\n\n\
-         Return valid JSON with at least a `response` string. Optional fields are allowed but not required.",
-        role.as_str(),
-        role.description()
-    )
-}
-
 /// Round 3: Cross-examination question prompt (Pass A).
 pub fn round3_question_prompt(
     topic: &str,
@@ -229,11 +202,9 @@ mod tests {
     }
 
     #[test]
-    fn round2_prompt_and_reprompt_include_topic() {
+    fn round2_prompt_includes_topic() {
         let prompt = round2_prompt("Topic Y");
-        let reprompt = round2_reprompt("Topic Y", "invalid challenge");
         assert!(prompt.contains("Topic: Topic Y"));
-        assert!(reprompt.contains("Topic: Topic Y"));
     }
 
     #[test]

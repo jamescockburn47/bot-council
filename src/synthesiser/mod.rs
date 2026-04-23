@@ -5,6 +5,7 @@ pub mod precompute;
 /// Output schema for the synthesis result.
 pub mod schema;
 
+use crate::analyser::crux::CruxSelection;
 use crate::config::ModelsConfig;
 use crate::sanitise::ANTI_INJECTION_PREAMBLE;
 use crate::synthesiser::schema::SynthesisOutput;
@@ -36,7 +37,10 @@ pub struct FinalSynthesisWarmupReport {
 /// * `transcript_text` — full anonymised transcript
 /// * `precomputed_json` — serialised [`precompute::PrecomputedData`]
 /// * `divergence_results_json` — serialised divergence analyses
+/// * `crux` — `Some` when crux selection succeeded between R2/R3; drives an
+///   extra "Crux outcome" section in the synthesis prompt.
 /// * `temperature` — requested sampling temperature (clamped to low range)
+#[allow(clippy::too_many_arguments)]
 pub async fn run_synthesis(
     config: &ModelsConfig,
     topic: &str,
@@ -45,6 +49,7 @@ pub async fn run_synthesis(
     precomputed_json: &str,
     divergence_results_json: &str,
     grounding_evidence_json: &str,
+    crux: Option<&CruxSelection>,
     temperature: f64,
 ) -> Result<(String, String), String> {
     let system_prompt = build_synthesis_prompt(
@@ -54,6 +59,7 @@ pub async fn run_synthesis(
         precomputed_json,
         divergence_results_json,
         grounding_evidence_json,
+        crux,
     );
 
     let prompt_hash = {
@@ -231,6 +237,16 @@ pub async fn wait_for_final_synthesis_ready(config: &ModelsConfig) -> FinalSynth
 }
 
 /// Build the full synthesis prompt from debate artifacts.
+///
+/// When `crux` is `Some`, a dedicated "Crux outcome" section is inserted
+/// describing the selected claim, its source, and the per-bot `crux_shift`
+/// classification vocabulary. The synthesiser is then asked (in prose) to
+/// fold a short crux_outcome narrative into `meta_observations` — the
+/// structured JSON schema is unchanged, so this is purely an input-side
+/// signal.
+///
+/// When `crux` is `None` (crux selection failed or the debate pre-dates
+/// crux selection) the section is omitted entirely — no empty header.
 fn build_synthesis_prompt(
     topic: &str,
     participant_map: &str,
@@ -238,7 +254,30 @@ fn build_synthesis_prompt(
     precomputed: &str,
     divergence: &str,
     grounding_evidence: &str,
+    crux: Option<&CruxSelection>,
 ) -> String {
+    let crux_section = match crux {
+        Some(c) => format!(
+            "## Crux outcome\n\n\
+             The debate's central disagreement (picked between R2 and R3) was:\n\n\
+             {claim}  — first stated by {source}\n\n\
+             For each participating bot, the divergence analysis classified their R3 engagement as one of:\n\
+             - resolved_toward_crux\n\
+             - resolved_against_crux\n\
+             - unchanged\n\
+             - frame_rejected\n\
+             - no_engagement\n\n\
+             Per-bot crux_shift classifications are in the divergence section above.\n\n\
+             In your synthesis, include a short `crux_outcome` summary that states whether:\n\
+             - The crux was resolved (most bots converged) — state which position prevailed.\n\
+             - The crux remained contested (positions held / hardened) — state the axes of continued disagreement.\n\
+             - The framing of the crux was rejected (enough bots declined to engage on it) — state what framing participants proposed instead.\n\n",
+            claim = c.claim,
+            source = c.source_pseudonym,
+        ),
+        None => String::new(),
+    };
+
     format!(
         "You are the synthesis engine for a structured adversarial debate. \
          Your role is analytical, not creative. You must produce a rigorous, citation-backed synthesis.\n\n\
@@ -278,6 +317,7 @@ fn build_synthesis_prompt(
          <debate-transcript>\n{transcript}\n</debate-transcript>\n\n\
          <structural-data>\n{precomputed}\n</structural-data>\n\n\
          <divergence-analyses>\n{divergence}\n</divergence-analyses>\n\n\
+         {crux_section}\
          OUTPUT SCHEMA (return valid JSON):\n\
          {{\n\
            \"topic\": \"string\",\n\
@@ -1246,6 +1286,7 @@ mod tests {
             "{}",
             "[]",
             "[]",
+            None,
             0.0,
         )
         .await;
@@ -1442,11 +1483,54 @@ mod tests {
 
     #[test]
     fn synthesis_prompt_contains_strict_output_contract() {
-        let prompt =
-            build_synthesis_prompt("topic", "Agent A = Alice", "transcript", "{}", "[]", "[]");
+        let prompt = build_synthesis_prompt(
+            "topic",
+            "Agent A = Alice",
+            "transcript",
+            "{}",
+            "[]",
+            "[]",
+            None,
+        );
         assert!(prompt.contains("STRICT OUTPUT CONTRACT"));
         assert!(prompt.contains("Return exactly one valid JSON object"));
         assert!(prompt.contains("meta_observations must start with \"Conclusion:\""));
+    }
+
+    #[test]
+    fn synthesis_prompt_includes_crux_section_when_present() {
+        let crux = crate::analyser::crux::CruxSelection {
+            claim: "SOC 2 costs are trivial".into(),
+            source_pseudonym: "Agent A".into(),
+            source_quote: "$30-80k for SOC 2 Type II".into(),
+        };
+        let p = build_synthesis_prompt(
+            "topic",
+            "Agent A = Alice",
+            "transcript",
+            "{}",
+            "[]",
+            "[]",
+            Some(&crux),
+        );
+        assert!(p.contains("Crux outcome"));
+        assert!(p.contains("SOC 2 costs are trivial"));
+        assert!(p.contains("Agent A"));
+        assert!(p.contains("crux_shift"));
+    }
+
+    #[test]
+    fn synthesis_prompt_omits_crux_section_when_absent() {
+        let p = build_synthesis_prompt(
+            "topic",
+            "Agent A = Alice",
+            "transcript",
+            "{}",
+            "[]",
+            "[]",
+            None,
+        );
+        assert!(!p.contains("Crux outcome"));
     }
 
     #[test]

@@ -502,6 +502,7 @@ pub async fn run_multi_round_debate(
         4,
         &participant_map_text,
         crux_claim_owned.as_deref(),
+        crux_result.as_ref().ok(),
         &r3_text_by_bot,
         &event_tx,
     )
@@ -514,6 +515,8 @@ pub async fn run_multi_round_debate(
 /// `crux_claim` is `Some` only when crux selection between R2 and R3
 /// succeeded; `r3_text_by_bot` is empty if R3 fully abstained. Both feed
 /// the per-bot `crux_shift` classification in `analyse_divergence`.
+/// `crux` (the full `CruxSelection`) is also threaded into the synthesis
+/// prompt so the synthesiser can emit a `crux_outcome` summary.
 #[allow(clippy::too_many_arguments)]
 async fn run_divergence_and_synthesis(
     pool: &SqlitePool,
@@ -528,6 +531,7 @@ async fn run_divergence_and_synthesis(
     final_round_number: i64,
     participant_map_text: &str,
     crux_claim: Option<&str>,
+    crux: Option<&crate::analyser::crux::CruxSelection>,
     r3_text_by_bot: &HashMap<String, String>,
     event_tx: &Option<broadcast::Sender<DebateEvent>>,
 ) -> Result<(), String> {
@@ -724,6 +728,7 @@ async fn run_divergence_and_synthesis(
         &precomputed_json,
         &divergence_json,
         &grounding_evidence_json,
+        crux,
         debate_config.synthesis_temperature,
     )
     .await

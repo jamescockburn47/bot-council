@@ -89,33 +89,33 @@ pub async fn run_round1(
     let results = futures::future::join_all(futures).await;
 
     for (bot_id, outcome) in results {
-        let (response_text, confidence, abstained, retry_count, fallback_from_round) =
-            match outcome {
-                DispatchOutcome::Success {
-                    mut response,
-                    retry_count,
-                } => {
-                    response_parser::normalise_response(&mut response);
-                    (
-                        response.response,
-                        response.confidence,
-                        false,
-                        retry_count as i64,
-                        None,
-                    )
-                }
-                DispatchOutcome::CarriedForward {
-                    r0_text,
-                    retry_count,
-                } => (r0_text, None, false, retry_count as i64, Some(0i64)),
-                DispatchOutcome::Abstained { retry_count } => (
-                    "(abstained)".to_string(),
-                    None,
-                    true,
+        let (response_text, confidence, abstained, retry_count, fallback_from_round) = match outcome
+        {
+            DispatchOutcome::Success {
+                mut response,
+                retry_count,
+            } => {
+                response_parser::normalise_response(&mut response);
+                (
+                    response.response,
+                    response.confidence,
+                    false,
                     retry_count as i64,
                     None,
-                ),
-            };
+                )
+            }
+            DispatchOutcome::CarriedForward {
+                r0_text,
+                retry_count,
+            } => (r0_text, None, false, retry_count as i64, Some(0i64)),
+            DispatchOutcome::Abstained { retry_count } => (
+                "(abstained)".to_string(),
+                None,
+                true,
+                retry_count as i64,
+                None,
+            ),
+        };
         let resp_id = uuid::Uuid::new_v4().to_string();
         queries_phase1::insert_response_full(
             pool,

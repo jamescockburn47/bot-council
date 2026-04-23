@@ -214,8 +214,7 @@ async fn resynth_one(
     // analysis row. Older debates pre-date crux selection and simply have
     // no such row — `None` flows through and the synthesis prompt omits
     // the crux-outcome section.
-    let crux_rows =
-        queries_phase1::get_analyses(pool, debate_id, Some("crux_selection")).await?;
+    let crux_rows = queries_phase1::get_analyses(pool, debate_id, Some("crux_selection")).await?;
     let crux: Option<crate::analyser::crux::CruxSelection> = crux_rows
         .iter()
         .find_map(|row| serde_json::from_str(&row.result_json).ok());

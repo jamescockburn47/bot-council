@@ -463,7 +463,9 @@ async fn debate_creation_rejects_null_token_bot_always() {
             .method("POST")
             .uri("/debates")
             .header("content-type", "application/json"),
-    ).body(axum::body::Body::from(body.to_string())).unwrap();
+    )
+    .body(axum::body::Body::from(body.to_string()))
+    .unwrap();
     let resp = tower::ServiceExt::oneshot(app, req).await.unwrap();
     assert_eq!(resp.status(), 400);
     let body = axum::body::to_bytes(resp.into_body(), 4096).await.unwrap();

@@ -248,12 +248,7 @@ async fn wait_for_terminal(app: &axum::Router, debate_id: &str, timeout_secs: u6
 }
 
 /// Register a bot through admin POST (auto-active, bypasses approval smoke).
-async fn register_bot(
-    app: &axum::Router,
-    name: &str,
-    endpoint: &str,
-    text_only: bool,
-) -> String {
+async fn register_bot(app: &axum::Router, name: &str, endpoint: &str, text_only: bool) -> String {
     let mut body = json!({
         "name": name,
         "endpoint_url": endpoint,

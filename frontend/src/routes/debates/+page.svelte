@@ -34,8 +34,30 @@
     return text.length > len ? text.slice(0, len) + '...' : text;
   }
 
+  // "Running" is a UX tab, not a backend status. Map it to every in-flight
+  // status so the tab actually matches debates between creation and
+  // completion. Backend DebateStatus values are: created, dispatching,
+  // scoring, round_0..round_4, analysing, synthesising (all considered
+  // running), plus terminal complete / cancelled / failed.
+  const RUNNING_STATUSES = new Set([
+    'created',
+    'dispatching',
+    'scoring',
+    'round_0',
+    'round_1',
+    'round_2',
+    'round_3',
+    'round_4',
+    'analysing',
+    'synthesising',
+  ]);
+
   let filtered = $derived(
-    filter === 'all' ? debates : debates.filter((d) => d.status === filter),
+    filter === 'all'
+      ? debates
+      : filter === 'running'
+        ? debates.filter((d) => RUNNING_STATUSES.has(d.status))
+        : debates.filter((d) => d.status === filter),
   );
 
   async function reload() {

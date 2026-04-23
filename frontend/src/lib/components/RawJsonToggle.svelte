@@ -13,7 +13,7 @@
   </button>
   {#if open}
     <pre
-      style="background: var(--night-edge); border: 1px solid var(--night-rule); border-radius: 8px; padding: 12px; font-family: var(--mono-product); font-size: 11px; color: var(--glow-dim); overflow-x: auto;"
+      style="background: var(--night-edge); border: 1px solid var(--night-rule); border-radius: 8px; padding: 12px; font-family: var(--mono-product); font-size: 11px; color: var(--glow-dim); overflow-x: auto; overflow-y: auto; max-height: 24rem; margin-top: 8px;"
     >{JSON.stringify(data, null, 2)}</pre>
   {/if}
 </div>

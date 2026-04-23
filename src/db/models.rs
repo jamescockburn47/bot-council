@@ -58,6 +58,7 @@ pub struct ResponseRow {
     pub abstained: bool,
     pub created_at: String,
     pub extraction_metadata: Option<String>,
+    pub fallback_from_round: Option<i64>,
 }
 
 /// Database row for a peer score issued by one bot against another's pseudonym.

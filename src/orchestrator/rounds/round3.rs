@@ -234,6 +234,7 @@ pub async fn run_round3(
             0,
             abstained,
             None,
+            None,
         )
         .await
         .map_err(|e| format!("db error storing Round 3 response: {e}"))?;

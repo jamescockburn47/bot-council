@@ -92,6 +92,7 @@ pub async fn run_round1(
             0,
             abstained,
             None,
+            None,
         )
         .await
         .map_err(|e| format!("db error storing Round 1 response: {e}"))?;

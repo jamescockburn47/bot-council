@@ -124,6 +124,7 @@ pub async fn run_round4(
             0,
             abstained,
             extraction_metadata_json.as_deref(),
+            None,
         )
         .await
         .map_err(|e| format!("db error storing Round 4 response: {e}"))?;

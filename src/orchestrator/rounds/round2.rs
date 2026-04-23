@@ -118,6 +118,7 @@ pub async fn run_round2(
                     0,
                     true,
                     None,
+                    None,
                 )
                 .await
                 .map_err(|e| format!("db error: {e}"))?;
@@ -144,6 +145,7 @@ pub async fn run_round2(
                         true,
                         0,
                         false,
+                        None,
                         None,
                     )
                     .await
@@ -291,6 +293,7 @@ pub async fn run_round2(
                     retry_count as i64,
                     false,
                     extraction_metadata_json.as_deref(),
+                    None,
                 )
                 .await
                 .map_err(|e| format!("db error: {e}"))?;

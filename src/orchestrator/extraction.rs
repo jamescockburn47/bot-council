@@ -179,6 +179,138 @@ pub async fn extract_crux_engagement(
     }
 }
 
+/// Result of the R4 steelman extraction. Returned alongside the
+/// `FieldProvenance` so callers can persist both the provenance and the
+/// extracted steelman text into `responses.extraction_metadata`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SteelmanExtraction {
+    pub steelman: Option<String>,
+    pub provenance: FieldProvenance,
+}
+
+impl SteelmanExtraction {
+    /// Serialise as the value stored under `extraction_metadata.steelman`.
+    /// Shape: `{source, quote, steelman?}` — steelman text is only present
+    /// when the extraction succeeded and the quote verified.
+    pub fn to_json(&self) -> serde_json::Value {
+        let mut obj = serde_json::Map::new();
+        obj.insert("source".into(), json!(self.provenance.source));
+        obj.insert("quote".into(), json!(self.provenance.quote));
+        if let Some(s) = &self.steelman {
+            obj.insert("steelman".into(), json!(s));
+        }
+        serde_json::Value::Object(obj)
+    }
+}
+
+/// Raw MiniMax output shape for the steelman extractor.
+#[derive(Debug, Deserialize)]
+struct RawSteelman {
+    steelman: String,
+    source_quote: String,
+}
+
+/// Extract the steelman a bot gave in its R4 prose.
+///
+/// MiniMax returns `{"steelman": <string>, "source_quote": <verbatim substring>}`.
+/// The source quote must be a verbatim substring of the bot's text; on
+/// failure the result downgrades to `source: "extraction_failed"`, matching
+/// the existing challenge/position_change quote-verification policy.
+///
+/// External bots (non-text_only) short-circuit to `authored`; no MiniMax
+/// call. MiniMax errors, malformed JSON, or quote-verify failure all
+/// downgrade to `extraction_failed` — never propagate an error upward.
+pub async fn extract_steelman(
+    models: &ModelsConfig,
+    bot_kind: &str,
+    bot_text: &str,
+) -> SteelmanExtraction {
+    let field_name = "steelman";
+    if bot_kind != "text_only" {
+        return SteelmanExtraction {
+            steelman: None,
+            provenance: FieldProvenance {
+                field: field_name,
+                source: "authored",
+                quote: None,
+            },
+        };
+    }
+    if bot_text.trim().is_empty() {
+        return SteelmanExtraction {
+            steelman: None,
+            provenance: FieldProvenance {
+                field: field_name,
+                source: "extraction_failed",
+                quote: None,
+            },
+        };
+    }
+    let prompt = format!(
+        "Extract the bot's steelman — the strongest version of the opposing argument\n\
+         articulated in 2-3 sentences. Return exactly:\n\
+         {{\"steelman\": \"<the 2-3 sentence opposing argument articulation>\",\n\
+          \"source_quote\": \"<verbatim substring from the bot's text that contains the steelman>\"}}\n\
+         \n\
+         Bot text:\n{bot_text}"
+    );
+    let raw = match crate::analyser::call_minimax(models, &prompt).await {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::warn!(
+                error = %e,
+                "steelman extraction MiniMax call failed; provenance downgraded"
+            );
+            return SteelmanExtraction {
+                steelman: None,
+                provenance: FieldProvenance {
+                    field: field_name,
+                    source: "extraction_failed",
+                    quote: None,
+                },
+            };
+        }
+    };
+    let parsed: RawSteelman = match serde_json::from_str(&raw) {
+        Ok(p) => p,
+        Err(e) => {
+            tracing::warn!(
+                error = %e,
+                "steelman extractor returned malformed JSON; provenance downgraded"
+            );
+            return SteelmanExtraction {
+                steelman: None,
+                provenance: FieldProvenance {
+                    field: field_name,
+                    source: "extraction_failed",
+                    quote: None,
+                },
+            };
+        }
+    };
+    if !extractor::verify::quote_is_substring_of(&parsed.source_quote, bot_text) {
+        tracing::warn!(
+            "steelman extractor quote not a verbatim substring; provenance downgraded"
+        );
+        return SteelmanExtraction {
+            steelman: None,
+            provenance: FieldProvenance {
+                field: field_name,
+                source: "extraction_failed",
+                quote: None,
+            },
+        };
+    }
+    SteelmanExtraction {
+        steelman: Some(parsed.steelman),
+        provenance: FieldProvenance {
+            field: field_name,
+            source: "extracted",
+            quote: Some(parsed.source_quote),
+        },
+    }
+}
+
 /// If the bot is text_only and `response` is missing the structured field
 /// required for `target`, run extraction and patch `response` in place.
 /// Returns the provenance record to be persisted.

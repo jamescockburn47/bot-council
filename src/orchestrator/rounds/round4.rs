@@ -23,11 +23,12 @@ use std::collections::HashMap;
 /// `responses.retry_count` and `responses.fallback_from_round` capture
 /// the outcome for analytics.
 ///
-/// Post-round extraction runs for text_only bots whose prose response
-/// lacks a structured `position_change` field; see
-/// `crate::orchestrator::extraction::extract_if_needed`. Extraction
-/// only runs on the Success arm — carried-forward R0 text is not a
-/// final-position answer, so running extraction against it would lie.
+/// Post-round extraction runs for text_only bots on the Success arm:
+///   - `position_change` via `extract_if_needed` (patches the response)
+///   - `steelman` via `extract_steelman` (classified and persisted into
+///     `extraction_metadata` alongside position_change)
+/// Extraction only runs on the Success arm — carried-forward R0 text is
+/// not a final-position answer, so running extraction against it would lie.
 #[allow(clippy::too_many_arguments)]
 pub async fn run_round4(
     pool: &SqlitePool,
@@ -123,8 +124,18 @@ pub async fn run_round4(
                     &mut response,
                 )
                 .await;
+                // Parallel steelman extraction for text_only bots. External
+                // bots short-circuit to source="authored". Stored alongside
+                // position_change under a single extraction_metadata blob.
+                let steelman_extraction = crate::orchestrator::extraction::extract_steelman(
+                    models_config,
+                    &bot_kind,
+                    &response.response,
+                )
+                .await;
                 let extraction_metadata_json = serde_json::to_string(&serde_json::json!({
-                    "position_change": provenance.to_json()
+                    "position_change": provenance.to_json(),
+                    "steelman": steelman_extraction.to_json()
                 }))
                 .ok();
                 let position_change_json = response

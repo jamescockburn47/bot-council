@@ -114,7 +114,7 @@ export interface TranscriptEntry {
   abstained: boolean;
   validation_reasoning: string | null;
   /** Per-field extraction provenance for text-only bots.
-   *  Keyed by field name ("challenge" | "position_change").
+   *  Keyed by field name ("challenge" | "position_change" | "steelman").
    *  Absent or null for bots that authored structured fields directly. */
   extraction_metadata: ExtractionMetadata | null;
 }
@@ -122,6 +122,15 @@ export interface TranscriptEntry {
 export interface ExtractionMetadata {
   challenge?: ExtractionProvenance | null;
   position_change?: ExtractionProvenance | null;
+  /** R4-only extraction of the steelman (strongest version of the opposing
+   *  argument). `steelman` text is present only when `source === 'extracted'`. */
+  steelman?: SteelmanProvenance | null;
+}
+
+export interface SteelmanProvenance extends ExtractionProvenance {
+  /** The extracted 2–3 sentence steelman text. Null when extraction failed
+   *  or was not attempted (e.g. external bot → source = 'authored'). */
+  steelman?: string | null;
 }
 
 export interface ExtractionProvenance {

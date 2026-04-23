@@ -2,6 +2,7 @@
   import AgentBadge from '$lib/components/AgentBadge.svelte';
   import ChallengeBlock from '$lib/components/ChallengeBlock.svelte';
   import PositionChangeBlock from '$lib/components/PositionChangeBlock.svelte';
+  import SteelmanBlock from '$lib/components/SteelmanBlock.svelte';
   import type { TranscriptEntry } from '$lib/types';
 
   let { entry, roleMap, roundNumber }: {
@@ -11,6 +12,12 @@
   } = $props();
 
   let role = $derived(roleMap[entry.pseudonym] ?? null);
+  let steelmanMetadata = $derived(entry.extraction_metadata?.steelman ?? null);
+  let showSteelman = $derived(
+    roundNumber === 4 &&
+      steelmanMetadata != null &&
+      steelmanMetadata.source !== 'extraction_failed',
+  );
 </script>
 
 <div class="bg-[var(--bg)] border border-[var(--border)] rounded-lg p-4">
@@ -62,5 +69,9 @@
       change={entry.position_change}
       provenance={entry.extraction_metadata?.position_change ?? null}
     />
+  {/if}
+
+  {#if showSteelman && steelmanMetadata}
+    <SteelmanBlock metadata={steelmanMetadata} />
   {/if}
 </div>

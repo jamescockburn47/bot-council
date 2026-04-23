@@ -339,7 +339,54 @@ pub async fn run_multi_round_debate(
         })
         .collect();
 
-    // === ROUND 3 — Cross-Examination ===
+    // === CRUX SELECTION (between R2 and R3) ===
+    // Pick the single most-divergent R1 claim. If MiniMax returns a
+    // valid + substring-verified selection, R3 runs the crux-engagement
+    // prompt; otherwise we fall back to legacy cross-examination so R3
+    // still produces adversarial engagement.
+    let r1_entries: Vec<crate::analyser::crux::R1Entry> = r1_responses
+        .iter()
+        .filter(|r| !r.abstained)
+        .filter_map(|r| {
+            let pseudonym = pseudonym_map.get(&r.bot_id).cloned()?;
+            let r0_text = r0_responses
+                .iter()
+                .find(|r0| r0.bot_id == r.bot_id && !r0.abstained)
+                .map(|r0| r0.response_json.clone())
+                .unwrap_or_default();
+            Some(crate::analyser::crux::R1Entry {
+                pseudonym,
+                r0: r0_text,
+                r1: r.response_json.clone(),
+            })
+        })
+        .collect();
+    let crux_result = crate::analyser::crux::select_crux(models_config, topic, &r1_entries).await;
+    if let Ok(ref c) = crux_result {
+        let aid = uuid::Uuid::new_v4().to_string();
+        let input = serde_json::to_string(&r1_entries).unwrap_or_default();
+        let result = serde_json::to_string(c).unwrap_or_default();
+        // intentional: log and continue if insert fails — R3 should
+        // still dispatch even if we can't persist the analysis row.
+        let _ = queries_phase1::insert_analysis(
+            pool,
+            &aid,
+            id,
+            None,
+            "crux_selection",
+            &input,
+            &result,
+            models_config.effective_analysis_model(),
+        )
+        .await;
+    } else if let Err(e) = &crux_result {
+        tracing::warn!(
+            error = ?e,
+            "crux selection failed; R3 will use cross-examination fallback"
+        );
+    }
+
+    // === ROUND 3 — Crux Engagement (legacy cross-exam if selection failed) ===
     if resume_round <= 3 {
         queries::update_debate_status(pool, id, "round_3")
             .await
@@ -364,6 +411,7 @@ pub async fn run_multi_round_debate(
             &reverse_pseudonym_map,
             &round2_responses,
             models_config,
+            crux_result.as_ref().ok(),
             timeout,
         )
         .await?;

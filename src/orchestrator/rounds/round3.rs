@@ -1,17 +1,22 @@
-use crate::analyser::pairing::compute_pairings;
-use crate::bot_client::{self, DebateRoundRequest, DebateRoundResponse};
+use crate::bot_client::{DebateRoundRequest, RoundContext};
 use crate::config::ModelsConfig;
 use crate::db::models::BotRow;
-use crate::db::queries_phase1;
-use crate::orchestrator::prompts;
+use crate::db::{queries, queries_phase1};
+use crate::orchestrator::dispatch::{
+    DispatchOutcome, dispatch_with_retry_and_fallback, simplified_retry_prompt,
+};
+use crate::orchestrator::rounds::round3_legacy::run_round3_cross_examination_legacy;
+use crate::orchestrator::{prompts, response_parser};
 use crate::types::Role;
 use reqwest_middleware::ClientWithMiddleware;
 use sqlx::SqlitePool;
 use std::collections::HashMap;
 
-/// Run Round 3: cross-examination in two passes.
-/// Pass A: each bot poses a question to its partner (concurrent).
-/// Pass B: each bot answers the question posed to it (concurrent).
+/// Run Round 3. Dispatches the crux-engagement variant if the crux
+/// selector produced a valid `CruxSelection` between R2 and R3; otherwise
+/// falls back to the legacy two-pass cross-examination format so R3 still
+/// runs when crux selection fails.
+#[allow(clippy::too_many_arguments)]
 pub async fn run_round3(
     pool: &SqlitePool,
     client: &ClientWithMiddleware,
@@ -20,226 +25,197 @@ pub async fn run_round3(
     bots: &[BotRow],
     bot_tokens: &HashMap<String, String>,
     role_assignments: &HashMap<String, Role>,
-    _pseudonym_map: &HashMap<String, String>,
+    pseudonym_map: &HashMap<String, String>,
     reverse_pseudonym_map: &HashMap<String, String>,
     round2_responses: &HashMap<String, String>,
     models_config: &ModelsConfig,
+    crux: Option<&crate::analyser::crux::CruxSelection>,
     timeout_secs: u64,
-) -> Result<Vec<(String, Option<DebateRoundResponse>)>, String> {
-    let topic = topic.to_string();
-    // Step 1: Compute pairings via MiniMax
-    let positions: Vec<(String, String)> = round2_responses
+) -> Result<(), String> {
+    match crux {
+        Some(c) => {
+            run_round3_crux(
+                pool,
+                client,
+                debate_id,
+                topic,
+                bots,
+                bot_tokens,
+                role_assignments,
+                pseudonym_map,
+                c,
+                timeout_secs,
+            )
+            .await
+        }
+        None => {
+            run_round3_cross_examination_legacy(
+                pool,
+                client,
+                debate_id,
+                topic,
+                bots,
+                bot_tokens,
+                role_assignments,
+                reverse_pseudonym_map,
+                round2_responses,
+                models_config,
+                timeout_secs,
+            )
+            .await?;
+            Ok(())
+        }
+    }
+}
+
+/// Crux-engagement R3: every bot receives the same claim + source quote
+/// and engages it directly, with R0+R1+R2 provided as prior context.
+///
+/// Mirrors `run_round1`'s resilient dispatch: one simplified retry on
+/// failure, R0-carry-forward if both attempts fail, genuine abstention
+/// only if R0 itself is unavailable. Task 18 will layer a structured
+/// `crux_engagement` extraction on top of this; for now we persist the
+/// raw response without extraction metadata.
+#[allow(clippy::too_many_arguments)]
+async fn run_round3_crux(
+    pool: &SqlitePool,
+    client: &ClientWithMiddleware,
+    debate_id: &str,
+    topic: &str,
+    bots: &[BotRow],
+    bot_tokens: &HashMap<String, String>,
+    role_assignments: &HashMap<String, Role>,
+    pseudonym_map: &HashMap<String, String>,
+    crux: &crate::analyser::crux::CruxSelection,
+    timeout_secs: u64,
+) -> Result<(), String> {
+    // Fetch each bot's non-abstained R0 text once for potential carry-forward.
+    let r0_rows = queries::get_responses(pool, debate_id, 0)
+        .await
+        .map_err(|e| format!("db: {e}"))?;
+    let r0_by_bot: HashMap<String, String> = r0_rows
         .iter()
-        .map(|(p, r)| (p.clone(), r.clone()))
+        .filter(|r| !r.abstained)
+        .map(|r| (r.bot_id.clone(), r.response_json.clone()))
         .collect();
-    let pairing = compute_pairings(models_config, &positions).await?;
 
-    // Resolve pseudonym -> bot_id
-    let resolve = |pseudo: &str| -> String {
-        reverse_pseudonym_map
-            .get(pseudo)
-            .cloned()
-            .unwrap_or_default()
-    };
-
-    // Store pairing
-    let pair1_a = resolve(&pairing.pair_1[0]);
-    let pair1_b = resolve(&pairing.pair_1[1]);
-    let pairing_json = serde_json::to_string(&pairing).unwrap_or_default();
-    let third_bot = resolve(&pairing.third);
-    queries_phase1::insert_pairing(
-        pool,
-        debate_id,
-        &pair1_a,
-        &pair1_b,
-        Some(&third_bot),
-        &pairing_json,
-    )
-    .await
-    .map_err(|e| format!("db error storing pairing: {e}"))?;
-
-    // Build directed question targets: (questioner_pseudo, target_pseudo)
-    let mut question_targets: Vec<(String, String)> = Vec::new();
-    question_targets.push((pairing.pair_1[0].clone(), pairing.pair_1[1].clone()));
-    question_targets.push((pairing.pair_1[1].clone(), pairing.pair_1[0].clone()));
-    question_targets.push((pairing.pair_2[0].clone(), pairing.pair_2[1].clone()));
-    question_targets.push((pairing.pair_2[1].clone(), pairing.pair_2[0].clone()));
-    // Third joins one pair — round-robin addition
-    let joined_pair = if pairing.third_joins == "pair_1" {
-        &pairing.pair_1
-    } else {
-        &pairing.pair_2
-    };
-    question_targets.push((pairing.third.clone(), joined_pair[0].clone()));
-    question_targets.push((joined_pair[0].clone(), pairing.third.clone()));
-
-    // Pass A: Each bot poses a question (concurrent)
-    let pass_a_futures: Vec<_> = question_targets
+    // Build prior-round context (R0 + R1 + R2) so the bot has full history
+    // when engaging the crux. Mirrors the `full_context` assembly used for
+    // R4 in multi_round.rs.
+    let prior = queries_phase1::get_all_responses(pool, debate_id)
+        .await
+        .map_err(|e| format!("db: {e}"))?;
+    let prior_context: Vec<RoundContext> = prior
         .iter()
-        .map(|(q_pseudo, t_pseudo)| {
-            let q_bot_id = resolve(q_pseudo);
-            let bot = bots.iter().find(|b| b.id == q_bot_id);
-            let endpoint = bot.map(|b| b.endpoint_url.clone()).unwrap_or_default();
-            let bot_kind = bot
-                .map(|b| b.bot_kind.clone())
-                .unwrap_or_else(|| "external".to_string());
-            let token = bot_tokens.get(&q_bot_id).cloned().unwrap_or_default();
+        .filter(|r| !r.abstained && r.round_number <= 2)
+        .map(|r| RoundContext {
+            pseudonym: pseudonym_map.get(&r.bot_id).cloned().unwrap_or_default(),
+            round: r.round_number,
+            response: r.response_json.clone(),
+            confidence: r.confidence,
+        })
+        .collect();
+
+    let prompt = prompts::round3_crux_prompt(
+        topic,
+        &crux.claim,
+        &crux.source_pseudonym,
+        &crux.source_quote,
+    );
+    let topic = topic.to_string();
+
+    let futures: Vec<_> = bots
+        .iter()
+        .map(|bot| {
+            let client = client.clone();
+            let endpoint = bot.endpoint_url.clone();
+            let bot_kind = bot.bot_kind.clone();
+            let token = bot_tokens.get(&bot.id).cloned().unwrap_or_default();
+            let session_id = debate_id.to_string();
             let role = role_assignments
-                .get(&q_bot_id)
+                .get(&bot.id)
                 .copied()
                 .unwrap_or(Role::Proponent);
-            let target_response = round2_responses
-                .get(t_pseudo.as_str())
-                .cloned()
-                .unwrap_or_default();
-            let prompt = prompts::round3_question_prompt(&topic, t_pseudo, &target_response);
-            let session_id = debate_id.to_string();
-            let client = client.clone();
-            let bot_id = q_bot_id.clone();
+            let prompt = prompt.clone();
+            let retry_prompt = simplified_retry_prompt(&topic, 3);
+            let context = prior_context.clone();
+            let r0_text = r0_by_bot.get(&bot.id).cloned();
+            let bot_id = bot.id.clone();
             async move {
                 let req = DebateRoundRequest {
                     session_id,
                     round: 3,
                     role: role.as_str().to_string(),
-                    context: vec![],
+                    context,
                     prompt,
                 };
-                let result = tokio::time::timeout(
-                    std::time::Duration::from_secs(timeout_secs),
-                    bot_client::dispatch_round_request(&client, &bot_kind, &endpoint, &token, &req),
+                let outcome = dispatch_with_retry_and_fallback(
+                    &client,
+                    &bot_kind,
+                    &endpoint,
+                    &token,
+                    &req,
+                    retry_prompt,
+                    r0_text,
+                    timeout_secs,
+                    |_| false, // no structural validation for R3 crux
                 )
                 .await;
-                match result {
-                    Ok(Ok(resp)) => (bot_id, Some(resp.response)),
-                    Ok(Err(e)) => {
-                        tracing::warn!(bot_id = %bot_id, error = %e, "Round 3 Pass A: failed");
-                        (bot_id, None)
-                    }
-                    Err(_) => {
-                        tracing::warn!(bot_id = %bot_id, "Round 3 Pass A: timed out");
-                        (bot_id, None)
-                    }
-                }
+                (bot_id, outcome)
             }
         })
         .collect();
 
-    let pass_a_results = futures::future::join_all(pass_a_futures).await;
+    let results = futures::future::join_all(futures).await;
 
-    // Build question map: target_bot_id -> Vec<(questioner_pseudo, question_text)>
-    let mut questions_for: HashMap<String, Vec<(String, String)>> = HashMap::new();
-    for ((q_pseudo, t_pseudo), (_, question_opt)) in
-        question_targets.iter().zip(pass_a_results.iter())
-    {
-        if let Some(question) = question_opt {
-            let target_bot_id = resolve(t_pseudo);
-            questions_for
-                .entry(target_bot_id)
-                .or_default()
-                .push((q_pseudo.clone(), question.clone()));
-        }
-    }
-
-    // Pass B: Each bot answers ALL questions posed to it (concurrent).
-    // With 5 bots, some bots receive 2 questions (the joined pair member).
-    // We combine all questions into one prompt so the bot addresses each.
-    let pass_b_futures: Vec<_> = bots.iter().filter_map(|bot| {
-        let questions = questions_for.get(&bot.id)?;
-        if questions.is_empty() { return None; }
-
-        // Build a combined prompt with all questions posed to this bot
-        let combined_prompt = if questions.len() == 1 {
-            let (q_pseudo, q_text) = &questions[0];
-            let partner_response = round2_responses.get(q_pseudo.as_str()).cloned().unwrap_or_default();
-            prompts::round3_answer_prompt(&topic, q_pseudo, &partner_response, q_text)
-        } else {
-            // Multiple questioners — format all questions
-            let mut parts = Vec::new();
-            for (q_pseudo, q_text) in questions {
-                let partner_response = round2_responses.get(q_pseudo.as_str()).cloned().unwrap_or_default();
-                parts.push(format!(
-                    "Question from {q_pseudo} (whose position was: {partner_response}):\n\"{q_text}\""
-                ));
-            }
-            format!(
-                "Topic: {topic}\n\
-                 You are being cross-examined by multiple participants.\n\n{}\n\n\
-                 Address each question directly and substantively.",
-                parts.join("\n\n")
-            )
-        };
-
-        let client = client.clone();
-        let endpoint = bot.endpoint_url.clone();
-        let bot_kind = bot.bot_kind.clone();
-        let token = bot_tokens.get(&bot.id).cloned().unwrap_or_default();
-        let role = role_assignments.get(&bot.id).copied().unwrap_or(Role::Proponent);
-        let session_id = debate_id.to_string();
-        let bot_id = bot.id.clone();
-        Some(async move {
-            let req = DebateRoundRequest {
-                session_id, round: 3, role: role.as_str().to_string(),
-                context: vec![], prompt: combined_prompt,
+    for (bot_id, outcome) in results {
+        let (response_text, confidence, abstained, retry_count, fallback_from_round) =
+            match outcome {
+                DispatchOutcome::Success {
+                    mut response,
+                    retry_count,
+                } => {
+                    response_parser::normalise_response(&mut response);
+                    (
+                        response.response,
+                        response.confidence,
+                        false,
+                        retry_count as i64,
+                        None,
+                    )
+                }
+                DispatchOutcome::CarriedForward {
+                    r0_text,
+                    retry_count,
+                } => (r0_text, None, false, retry_count as i64, Some(0i64)),
+                DispatchOutcome::Abstained { retry_count } => (
+                    "(abstained)".to_string(),
+                    None,
+                    true,
+                    retry_count as i64,
+                    None,
+                ),
             };
-            let result = tokio::time::timeout(
-                std::time::Duration::from_secs(timeout_secs),
-                bot_client::dispatch_round_request(&client, &bot_kind, &endpoint, &token, &req),
-            ).await;
-            match result {
-                Ok(Ok(resp)) => (bot_id, Some(resp)),
-                Ok(Err(e)) => {
-                    tracing::warn!(bot_id = %bot_id, error = %e, "Round 3 Pass B: failed");
-                    (bot_id, None)
-                }
-                Err(_) => {
-                    tracing::warn!(bot_id = %bot_id, "Round 3 Pass B: timed out");
-                    (bot_id, None)
-                }
-            }
-        })
-    }).collect();
-
-    let pass_b_results = futures::future::join_all(pass_b_futures).await;
-
-    // Store combined responses: question(s) posed TO this bot + their answer
-    let mut all_results: Vec<(String, Option<DebateRoundResponse>)> = Vec::new();
-    for (bot_id, answer_opt) in &pass_b_results {
-        // Get question(s) that were posed TO this bot
-        let questions = questions_for.get(bot_id.as_str());
-        let question_summary = questions.map(|qs| {
-            qs.iter()
-                .map(|(pseudo, text)| format!("[Question from {pseudo}]: {text}"))
-                .collect::<Vec<_>>()
-                .join("\n\n")
-        });
-        let combined = match (&question_summary, answer_opt) {
-            (Some(q), Some(a)) => format!("{q}\n\n[Answer given]: {}", a.response),
-            (Some(q), None) => format!("{q}\n\n[Answer]: (no answer)"),
-            (None, Some(a)) => format!("[Question]: (none)\n\n[Answer given]: {}", a.response),
-            (None, None) => "(abstained)".to_string(),
-        };
-        let abstained = answer_opt.is_none() && question_summary.is_none();
         let resp_id = uuid::Uuid::new_v4().to_string();
         queries_phase1::insert_response_full(
             pool,
             &resp_id,
             debate_id,
             3,
-            bot_id,
-            &combined,
-            answer_opt.as_ref().and_then(|r| r.confidence),
+            &bot_id,
+            &response_text,
+            confidence,
             None,
             None,
             true,
-            0,
+            retry_count,
             abstained,
             None,
-            None,
+            fallback_from_round,
         )
         .await
-        .map_err(|e| format!("db error storing Round 3 response: {e}"))?;
-        all_results.push((bot_id.clone(), answer_opt.clone()));
+        .map_err(|e| format!("db error storing Round 3 crux response: {e}"))?;
     }
 
-    Ok(all_results)
+    Ok(())
 }

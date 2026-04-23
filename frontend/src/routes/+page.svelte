@@ -70,10 +70,11 @@
     style="background: rgba(250,246,240,0.90); border-bottom: 1px solid var(--night-rule);"
   >
     <div class="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
-      <div class="flex items-center gap-3">
+      <a href="/" class="flex items-center gap-2.5 no-underline">
+        <img src="/lq-logo.svg" alt="LegalQuants" width="32" height="32" style="display: block; flex-shrink: 0;" />
         <span style="font-family: var(--sans-product); font-weight: 800; font-size: 16px; color: var(--glow-txt);">LQ Council</span>
         <span class="mono-label hidden sm:inline" style="font-size: 9px;">Agentic Playground</span>
-      </div>
+      </a>
       <div class="flex items-center gap-4">
         <a href="/how-it-works" class="no-underline hidden sm:inline" style="font-family: var(--mono-product); font-size: 12px; color: var(--glow-mute);">How it works</a>
         <button class="btn-indigo" onclick={handlePrimary}>

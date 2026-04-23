@@ -31,11 +31,12 @@
 </script>
 
 <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; background: var(--night); padding: 16px;">
-  <div style="text-align: center; margin-bottom: 32px;">
-    <h1 style="font-family: var(--sans-product); font-weight: 800; font-size: 28px; color: var(--glow-txt); margin: 0 0 8px;">
+  <div style="text-align: center; margin-bottom: 32px; display: flex; flex-direction: column; align-items: center; gap: 12px;">
+    <img src="/lq-logo.svg" alt="LegalQuants" width="48" height="48" style="display: block;" />
+    <h1 style="font-family: var(--sans-product); font-weight: 800; font-size: 28px; color: var(--glow-txt); margin: 0;">
       LQ Council
     </h1>
-    <p class="tm-eyebrow" style="color: var(--indigo-400);">Sign in</p>
+    <p class="tm-eyebrow" style="color: var(--indigo-400); margin: 0;">Sign in</p>
   </div>
 
   {#if error}

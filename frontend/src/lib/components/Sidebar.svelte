@@ -36,10 +36,11 @@
   <div class="px-5 py-5" style="border-bottom: 1px solid rgba(28,25,23,0.10);">
     <a
       href="/"
-      class="no-underline block"
+      class="no-underline flex items-center gap-2.5"
       style="font-family: var(--sans-product); font-weight: 800; font-size: 17px; letter-spacing: -0.01em; color: #1C1917;"
     >
-      LQ Council
+      <img src="/lq-logo.svg" alt="LegalQuants" width="28" height="28" style="display: block; flex-shrink: 0;" />
+      <span>LQ Council</span>
     </a>
     <p class="mt-1 mono-label" style="font-size: 8px; letter-spacing: 0.3em; color: #78716C;">
       Agentic Playground

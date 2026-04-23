@@ -68,68 +68,85 @@
   $effect(() => { load(); });
 </script>
 
-<div class="max-w-4xl">
-  <h1 class="mono text-2xl font-bold mb-8">Admin Management</h1>
+<style>
+  .btn-demote:hover {
+    border-color: rgba(239, 68, 68, 0.5) !important;
+    color: #FCA5A5 !important;
+  }
+</style>
+
+<div style="max-width: 56rem;">
+  <!-- Header -->
+  <div style="margin-bottom: 2rem;">
+    <p class="tm-eyebrow" style="color: var(--indigo-400); margin-bottom: 6px;">Workspace · Roles</p>
+    <div style="display: flex; align-items: baseline; gap: 12px;">
+      <h1 style="font-family: var(--sans-product); font-weight: 800; font-size: 32px; color: var(--glow-txt); margin: 0;">
+        Admins
+      </h1>
+      {#if !loading && !error}
+        <span class="stat-serif" style="font-size: 22px;">{admins.length}</span>
+      {/if}
+    </div>
+  </div>
 
   {#if loading}
-    <div class="space-y-3">
+    <div style="display: flex; flex-direction: column; gap: 12px;">
       {#each Array(3) as _}
-        <div class="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-4 animate-pulse">
-          <div class="h-4 bg-[var(--border)] rounded w-1/3"></div>
+        <div class="card-term" style="padding: 16px; animation: pulse 1.5s ease-in-out infinite;">
+          <div style="height: 16px; background: var(--night-edge); border-radius: 4px; width: 33%;"></div>
         </div>
       {/each}
     </div>
   {:else if error}
-    <div class="bg-red-500/10 border border-red-500/30 rounded-lg p-6">
-      <p class="text-red-400 mono text-sm">{error}</p>
+    <div class="card-term" style="padding: 24px; border-color: rgba(239,68,68,0.3);">
+      <p style="font-family: var(--mono-product); font-size: 13px; color: #FCA5A5; margin: 0 0 12px;">{error}</p>
       <button
         onclick={load}
-        class="mt-3 px-4 py-1.5 text-xs mono text-red-400 border border-red-500/30 rounded hover:bg-red-500/10 transition-colors"
+        class="btn-dark-ghost"
+        style="font-size: 12px; color: #FCA5A5;"
       >
         Retry
       </button>
     </div>
   {:else}
     <!-- Current admins -->
-    <section class="mb-8">
-      <h2 class="mono text-sm text-[var(--text-secondary)] uppercase tracking-wider mb-3">
-        Current admins ({admins.length})
-      </h2>
+    <section style="margin-bottom: 2rem;">
+      <p class="mono-label" style="margin-bottom: 12px;">Current admins ({admins.length})</p>
       {#if admins.length === 0}
-        <div class="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-6 text-center text-sm text-[var(--text-muted)]">
-          No admins yet. Use the admin bearer token to promote your first admin —
-          see the deploy runbook.
+        <div class="card-term" style="padding: 24px; text-align: center; font-family: var(--sans-product); font-size: 14px; color: var(--glow-mute);">
+          No admins yet. Use the admin bearer token to promote your first admin — see the deploy runbook.
         </div>
       {:else}
-        <div class="bg-[var(--surface)] border border-[var(--border)] rounded-lg overflow-hidden">
-          <table class="w-full text-sm">
+        <div class="card-term" style="overflow: hidden; padding: 0;">
+          <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
             <thead>
-              <tr class="border-b border-[var(--border)]">
-                <th class="text-left py-2 px-4 text-xs mono text-[var(--text-muted)] font-normal">User ID</th>
-                <th class="text-left py-2 px-4 text-xs mono text-[var(--text-muted)] font-normal">Granted</th>
-                <th class="text-left py-2 px-4 text-xs mono text-[var(--text-muted)] font-normal">By</th>
-                <th class="text-right py-2 px-4 text-xs mono text-[var(--text-muted)] font-normal">Action</th>
+              <tr style="border-bottom: 1px solid var(--night-rule2);">
+                <th class="mono-label" style="text-align: left; padding: 10px 16px;">User ID</th>
+                <th class="mono-label" style="text-align: left; padding: 10px 16px;">Granted</th>
+                <th class="mono-label" style="text-align: left; padding: 10px 16px;">By</th>
+                <th class="mono-label" style="text-align: right; padding: 10px 16px;">Action</th>
               </tr>
             </thead>
             <tbody>
               {#each admins as a (a.user_id)}
-                <tr class="border-b border-[var(--border)] last:border-0">
-                  <td class="py-2 px-4 mono text-xs text-[var(--text-primary)]">
+                <tr style="border-bottom: 1px solid var(--night-rule2);" class="card-term-hover">
+                  <td style="padding: 10px 16px; font-family: var(--mono-product); font-size: 13px; color: var(--glow-txt);">
                     {a.user_id}
                     {#if a.user_id === $me?.user_id}
-                      <span class="ml-2 text-[10px] text-[#8b5cf6]">(you)</span>
+                      <span style="margin-left: 8px; font-size: 10px; color: var(--indigo-400);">(you)</span>
                     {/if}
                   </td>
-                  <td class="py-2 px-4 text-xs text-[var(--text-muted)]">{formatDate(a.granted_at)}</td>
-                  <td class="py-2 px-4 mono text-xs text-[var(--text-muted)]">{a.granted_by ?? '—'}</td>
-                  <td class="py-2 px-4 text-right">
+                  <td style="padding: 10px 16px; font-family: var(--sans-product); font-size: 13px; color: var(--glow-mute);">{formatDate(a.granted_at)}</td>
+                  <td style="padding: 10px 16px; font-family: var(--mono-product); font-size: 13px; color: var(--glow-mute);">{a.granted_by ?? '—'}</td>
+                  <td style="padding: 10px 16px; text-align: right;">
                     <button
                       onclick={() => demote(a.user_id)}
                       disabled={actionLoading === a.user_id || a.user_id === $me?.user_id}
                       title={a.user_id === $me?.user_id ? "Can't demote yourself" : 'Demote'}
-                      class="px-3 py-1 text-xs mono text-amber-400 border border-amber-500/30 rounded hover:bg-amber-500/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                      class="btn-dark-ghost btn-demote"
+                      style="font-size: 12px; transition: border-color var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard);"
                     >
-                      {actionLoading === a.user_id ? '...' : 'Demote'}
+                      {actionLoading === a.user_id ? '…' : 'Demote'}
                     </button>
                   </td>
                 </tr>
@@ -142,40 +159,39 @@
 
     <!-- Promotable users -->
     <section>
-      <h2 class="mono text-sm text-[var(--text-secondary)] uppercase tracking-wider mb-3">
-        Signed-in users ({promotable.length})
-      </h2>
-      <p class="text-xs text-[var(--text-muted)] mb-3">
+      <p class="mono-label" style="margin-bottom: 8px;">Signed-in users ({promotable.length})</p>
+      <p style="font-family: var(--sans-product); font-size: 13px; color: var(--glow-mute); margin-bottom: 12px;">
         Users appear here after they sign in at least once.
       </p>
       {#if promotable.length === 0}
-        <div class="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-6 text-center text-sm text-[var(--text-muted)]">
+        <div class="card-term" style="padding: 24px; text-align: center; font-family: var(--sans-product); font-size: 14px; color: var(--glow-mute);">
           No non-admin users have signed in yet.
         </div>
       {:else}
-        <div class="bg-[var(--surface)] border border-[var(--border)] rounded-lg overflow-hidden">
-          <table class="w-full text-sm">
+        <div class="card-term" style="overflow: hidden; padding: 0;">
+          <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
             <thead>
-              <tr class="border-b border-[var(--border)]">
-                <th class="text-left py-2 px-4 text-xs mono text-[var(--text-muted)] font-normal">User ID</th>
-                <th class="text-left py-2 px-4 text-xs mono text-[var(--text-muted)] font-normal">First seen</th>
-                <th class="text-left py-2 px-4 text-xs mono text-[var(--text-muted)] font-normal">Last seen</th>
-                <th class="text-right py-2 px-4 text-xs mono text-[var(--text-muted)] font-normal">Action</th>
+              <tr style="border-bottom: 1px solid var(--night-rule2);">
+                <th class="mono-label" style="text-align: left; padding: 10px 16px;">User ID</th>
+                <th class="mono-label" style="text-align: left; padding: 10px 16px;">First seen</th>
+                <th class="mono-label" style="text-align: left; padding: 10px 16px;">Last seen</th>
+                <th class="mono-label" style="text-align: right; padding: 10px 16px;">Action</th>
               </tr>
             </thead>
             <tbody>
               {#each promotable as u (u.user_id)}
-                <tr class="border-b border-[var(--border)] last:border-0">
-                  <td class="py-2 px-4 mono text-xs text-[var(--text-primary)]">{u.user_id}</td>
-                  <td class="py-2 px-4 text-xs text-[var(--text-muted)]">{formatDate(u.first_seen_at)}</td>
-                  <td class="py-2 px-4 text-xs text-[var(--text-muted)]">{formatDate(u.last_seen_at)}</td>
-                  <td class="py-2 px-4 text-right">
+                <tr style="border-bottom: 1px solid var(--night-rule2);" class="card-term-hover">
+                  <td style="padding: 10px 16px; font-family: var(--mono-product); font-size: 13px; color: var(--glow-txt);">{u.user_id}</td>
+                  <td style="padding: 10px 16px; font-family: var(--sans-product); font-size: 13px; color: var(--glow-mute);">{formatDate(u.first_seen_at)}</td>
+                  <td style="padding: 10px 16px; font-family: var(--sans-product); font-size: 13px; color: var(--glow-mute);">{formatDate(u.last_seen_at)}</td>
+                  <td style="padding: 10px 16px; text-align: right;">
                     <button
                       onclick={() => promote(u.user_id)}
                       disabled={actionLoading === u.user_id}
-                      class="px-3 py-1 text-xs mono text-green-400 border border-green-500/30 rounded hover:bg-green-500/10 transition-colors disabled:opacity-50"
+                      class="btn-indigo"
+                      style="font-size: 12px; padding: 5px 14px;"
                     >
-                      {actionLoading === u.user_id ? '...' : 'Promote'}
+                      {actionLoading === u.user_id ? '…' : 'Promote'}
                     </button>
                   </td>
                 </tr>

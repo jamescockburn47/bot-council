@@ -125,31 +125,35 @@
   ]);
 </script>
 
-<div
-  class="bg-[var(--surface)] border border-[var(--border)] rounded-lg mb-6 overflow-hidden"
->
+<div class="card-term mb-6" style="padding: 0; overflow: hidden;">
   <button
     onclick={() => (expanded = !expanded)}
-    class="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-[var(--bg)] transition-colors"
+    class="w-full flex items-center justify-between px-4 py-3 text-left transition-colors"
+    style="background: var(--night-raise);"
+    onmouseenter={(e) => (e.currentTarget.style.background = 'var(--night-edge)')}
+    onmouseleave={(e) => (e.currentTarget.style.background = 'var(--night-raise)')}
   >
     <div class="flex items-center gap-3">
-      <h3 class="text-xs mono uppercase tracking-wider text-[var(--text-primary)]">
-        Synthesis quality report
-      </h3>
+      <p class="tm-eyebrow" style="color: var(--indigo-400); margin-bottom: 0;">Synthesis quality report</p>
       {#if citationsSummary}
         {#if citationsSummary.emptyTotal}
-          <span class="text-[10px] mono px-1.5 py-0.5 rounded bg-[var(--border)] text-[var(--text-muted)]">
+          <span
+            class="mono-label"
+            style="padding: 2px 6px; border-radius: var(--r-sm); background: var(--night-rule); color: var(--glow-faint);"
+          >
             no citations
           </span>
         {:else if citationsSummary.allValid}
           <span
-            class="text-[10px] mono px-1.5 py-0.5 rounded bg-green-500/10 text-green-400 border border-green-500/20"
+            class="mono-label"
+            style="padding: 2px 6px; border-radius: var(--r-sm); color: #4ade80; background: rgba(34,197,94,0.10); border: 1px solid rgba(34,197,94,0.20);"
           >
             {citationsSummary.total} citations · all valid
           </span>
         {:else}
           <span
-            class="text-[10px] mono px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20"
+            class="mono-label"
+            style="padding: 2px 6px; border-radius: var(--r-sm); color: #fbbf24; background: rgba(245,158,11,0.10); border: 1px solid rgba(245,158,11,0.20);"
           >
             {citationsSummary.invalid}/{citationsSummary.total} citations flagged
           </span>
@@ -157,48 +161,45 @@
       {/if}
       {#if issueCount > 0}
         <span
-          class="text-[10px] mono px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20"
+          class="mono-label"
+          style="padding: 2px 6px; border-radius: var(--r-sm); color: #fbbf24; background: rgba(245,158,11,0.10); border: 1px solid rgba(245,158,11,0.20);"
         >
           {issueCount} integrity note{issueCount !== 1 ? 's' : ''}
         </span>
       {:else}
         <span
-          class="text-[10px] mono px-1.5 py-0.5 rounded bg-green-500/10 text-green-400 border border-green-500/20"
+          class="mono-label"
+          style="padding: 2px 6px; border-radius: var(--r-sm); color: #4ade80; background: rgba(34,197,94,0.10); border: 1px solid rgba(34,197,94,0.20);"
         >
           no issues flagged
         </span>
       {/if}
     </div>
-    <span class="text-xs mono text-[var(--text-muted)]">
-      {expanded ? '▲' : '▼'}
-    </span>
+    <span class="mono-label">{expanded ? '▲' : '▼'}</span>
   </button>
 
   {#if expanded}
-    <div class="px-4 py-4 border-t border-[var(--border)] space-y-5">
+    <div class="px-4 py-4 space-y-5" style="border-top: 1px solid var(--night-rule);">
       <!-- Citation check -->
       {#if citationsSummary}
         <div>
-          <h4 class="text-[11px] mono uppercase tracking-wider text-[var(--text-muted)] mb-2">
-            Citation verification
-          </h4>
-          <p class="text-xs text-[var(--text-secondary)] mb-2 leading-relaxed">
+          <p class="tm-eyebrow" style="color: var(--indigo-400); margin-bottom: 8px;">Citation verification</p>
+          <p style="font-family: var(--sans-product); font-size: 13px; color: var(--glow-dim); line-height: 1.65; margin-bottom: 8px;">
             The synthesiser cites specific bot-round attributions (e.g. <code>[Agent A, Round 2]</code>).
             Each citation is checked against the transcript: bot must exist, round must exist, bot must
             have responded in that round without abstaining.
           </p>
-          <div class="text-xs mono text-[var(--text-secondary)]">
-            <span class="text-[var(--text-primary)]">{citationsSummary.valid}</span> of
-            <span class="text-[var(--text-primary)]">{citationsSummary.total}</span> citations
-            verified.
-          </div>
+          <p class="mono-label">
+            <span style="color: var(--glow-txt);">{citationsSummary.valid}</span> of
+            <span style="color: var(--glow-txt);">{citationsSummary.total}</span> citations verified.
+          </p>
           {#if citationsSummary.invalid > 0}
-            <ul class="text-xs mono text-amber-400 mt-2 space-y-1 list-disc list-inside">
+            <ul class="mono-label mt-2 space-y-1 list-disc list-inside" style="color: #fbbf24;">
               {#each citationCheck!.citations_invalid as bad}
                 <li>
-                  <span class="text-[var(--text-primary)]">{bad.citation}</span>
+                  <span style="color: var(--glow-txt);">{bad.citation}</span>
                   — {bad.reason}
-                  <span class="text-[var(--text-muted)]">({bad.location})</span>
+                  <span style="color: var(--glow-faint);">({bad.location})</span>
                 </li>
               {/each}
             </ul>
@@ -207,38 +208,36 @@
       {/if}
 
       <!-- Extraction outcomes -->
-      <div>
-        <h4 class="text-[11px] mono uppercase tracking-wider text-[var(--text-muted)] mb-2">
-          Extraction outcomes
-        </h4>
-        <p class="text-xs text-[var(--text-secondary)] mb-2 leading-relaxed">
+      <div style="border-top: 1px solid var(--night-rule); padding-top: 16px;">
+        <p class="tm-eyebrow" style="color: var(--indigo-400); margin-bottom: 8px;">Extraction outcomes</p>
+        <p style="font-family: var(--sans-product); font-size: 13px; color: var(--glow-dim); line-height: 1.65; margin-bottom: 8px;">
           Structured fields are recovered from the bot's prose by a separate model with source-quote
-          verification. <span class="text-[var(--text-primary)]">extracted</span> = field recovered and
-          quote verified. <span class="text-[var(--text-primary)]">authored</span> = bot emitted the
-          field directly on the wire. <span class="text-[var(--text-primary)]">failed</span> = the
+          verification. <span style="color: var(--glow-txt);">extracted</span> = field recovered and
+          quote verified. <span style="color: var(--glow-txt);">authored</span> = bot emitted the
+          field directly on the wire. <span style="color: var(--glow-txt);">failed</span> = the
           verifier refused the result (likely a hallucinated quote) and the field was dropped to avoid
           a lying source label.
         </p>
         <table class="text-xs mono w-full">
           <thead>
-            <tr class="text-[var(--text-muted)]">
-              <th class="text-left py-1">field</th>
-              <th class="text-right py-1">extracted</th>
-              <th class="text-right py-1">authored</th>
-              <th class="text-right py-1">failed</th>
+            <tr>
+              <th class="text-left py-1 mono-label">field</th>
+              <th class="text-right py-1 mono-label">extracted</th>
+              <th class="text-right py-1 mono-label">authored</th>
+              <th class="text-right py-1 mono-label">failed</th>
             </tr>
           </thead>
           <tbody>
             {#each fieldRows as row (row.key)}
-              <tr class="border-t border-[var(--border)]">
-                <td class="py-1 text-[var(--text-secondary)]">{row.label}</td>
-                <td class="py-1 text-right text-[var(--text-primary)]">
+              <tr style="border-top: 1px solid var(--night-rule);">
+                <td class="py-1" style="color: var(--glow-dim);">{row.label}</td>
+                <td class="py-1 text-right" style="color: var(--glow-txt);">
                   {row.bucket.extracted}
                 </td>
-                <td class="py-1 text-right text-[var(--text-muted)]">
+                <td class="py-1 text-right" style="color: var(--glow-faint);">
                   {row.bucket.authored}
                 </td>
-                <td class="py-1 text-right {row.bucket.failed > 0 ? 'text-amber-400' : 'text-[var(--text-muted)]'}">
+                <td class="py-1 text-right" style="color: {row.bucket.failed > 0 ? '#fbbf24' : 'var(--glow-faint)'};">
                   {row.bucket.failed}
                 </td>
               </tr>
@@ -248,16 +247,14 @@
       </div>
 
       <!-- Reliability: carry-forwards + retries + abstentions -->
-      <div>
-        <h4 class="text-[11px] mono uppercase tracking-wider text-[var(--text-muted)] mb-2">
-          Response reliability
-        </h4>
+      <div style="border-top: 1px solid var(--night-rule); padding-top: 16px;">
+        <p class="tm-eyebrow" style="color: var(--indigo-400); margin-bottom: 8px;">Response reliability</p>
         <div class="grid grid-cols-3 gap-4 text-xs mono">
           <div>
-            <div class="text-[var(--text-muted)] mb-1">Retries</div>
-            <div class="text-[var(--text-primary)]">{stats.reliability.retried.length}</div>
+            <div class="mono-label mb-1">Retries</div>
+            <div style="color: var(--glow-txt);"><span class="stat-serif" style="font-size: 24px;">{stats.reliability.retried.length}</span></div>
             {#if stats.reliability.retried.length > 0}
-              <ul class="text-[var(--text-muted)] mt-1 space-y-0.5">
+              <ul class="mono-label mt-1 space-y-0.5">
                 {#each stats.reliability.retried as r}
                   <li>{r.pseudonym}, R{r.round}</li>
                 {/each}
@@ -265,12 +262,12 @@
             {/if}
           </div>
           <div>
-            <div class="text-[var(--text-muted)] mb-1">Carried forward</div>
-            <div class="text-{stats.reliability.carriedForward.length > 0 ? 'amber-400' : '[var(--text-primary)]'}">
-              {stats.reliability.carriedForward.length}
+            <div class="mono-label mb-1">Carried forward</div>
+            <div style="color: {stats.reliability.carriedForward.length > 0 ? '#fbbf24' : 'var(--glow-txt)'};">
+              <span class="stat-serif" style="font-size: 24px; color: inherit;">{stats.reliability.carriedForward.length}</span>
             </div>
             {#if stats.reliability.carriedForward.length > 0}
-              <ul class="text-[var(--text-muted)] mt-1 space-y-0.5">
+              <ul class="mono-label mt-1 space-y-0.5">
                 {#each stats.reliability.carriedForward as c}
                   <li>{c.pseudonym}, R{c.round} ← R{c.from}</li>
                 {/each}
@@ -278,12 +275,12 @@
             {/if}
           </div>
           <div>
-            <div class="text-[var(--text-muted)] mb-1">Abstained</div>
-            <div class="text-{stats.reliability.abstained.length > 0 ? 'amber-400' : '[var(--text-primary)]'}">
-              {stats.reliability.abstained.length}
+            <div class="mono-label mb-1">Abstained</div>
+            <div style="color: {stats.reliability.abstained.length > 0 ? '#fbbf24' : 'var(--glow-txt)'};">
+              <span class="stat-serif" style="font-size: 24px; color: inherit;">{stats.reliability.abstained.length}</span>
             </div>
             {#if stats.reliability.abstained.length > 0}
-              <ul class="text-[var(--text-muted)] mt-1 space-y-0.5">
+              <ul class="mono-label mt-1 space-y-0.5">
                 {#each stats.reliability.abstained as a}
                   <li>{a.pseudonym}, R{a.round}</li>
                 {/each}
@@ -291,7 +288,7 @@
             {/if}
           </div>
         </div>
-        <p class="text-[10px] text-[var(--text-muted)] mt-3 leading-relaxed">
+        <p class="mono-label mt-3 leading-relaxed" style="text-transform: none; letter-spacing: 0; font-size: 11px;">
           Retry = simplified-prompt attempt that succeeded. Carry-forward = two attempts failed, the
           bot's earlier-round position was preserved so synthesis could still cite a voice.
           Abstained = no prior content existed to carry forward either.

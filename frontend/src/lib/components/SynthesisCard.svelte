@@ -11,18 +11,16 @@
 
 <button
   onclick={() => (expanded = !expanded)}
-  class="w-full text-left bg-[var(--surface)] border border-[var(--border)] rounded-lg p-4 hover:border-[{color}]/40 transition-colors"
+  class="card-term card-term-hover w-full text-left"
+  style="display: block;"
 >
   <div class="flex items-center justify-between mb-2">
-    <h4 class="text-xs mono uppercase tracking-wider" style="color: {color};">{title}</h4>
-    <span
-      class="text-lg font-bold mono"
-      style="color: {color};"
-    >{count}</span>
+    <p class="tm-eyebrow" style="color: {color}; margin-bottom: 0;">{title}</p>
+    <span class="stat-serif" style="font-size: 28px; color: {color};">{count}</span>
   </div>
 
   {#if !expanded && items.length > 0}
-    <p class="text-xs text-[var(--text-secondary)] line-clamp-2">
+    <p style="font-family: var(--sans-product); font-size: 13px; color: var(--glow-dim); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">
       {items[0].label}: {items[0].detail}
     </p>
   {/if}
@@ -30,16 +28,16 @@
   {#if expanded}
     <div class="mt-3 space-y-2">
       {#each items as item}
-        <div class="border-l-2 pl-3 py-1" style="border-color: {color}30;">
-          <p class="text-xs font-medium text-[var(--text-primary)]">{item.label}</p>
-          <p class="text-xs text-[var(--text-secondary)] mt-0.5">{item.detail}</p>
+        <div class="pl-3 py-1" style="border-left: 2px solid color-mix(in srgb, {color} 30%, transparent);">
+          <p style="font-family: var(--sans-product); font-size: 13px; font-weight: 500; color: var(--glow-txt);">{item.label}</p>
+          <p style="font-family: var(--sans-product); font-size: 13px; color: var(--glow-dim); margin-top: 2px;">{item.detail}</p>
         </div>
       {/each}
     </div>
   {/if}
 
   <div class="mt-2 flex justify-end">
-    <span class="text-[10px] mono text-[var(--text-muted)]">
+    <span class="mono-label">
       {expanded ? 'Collapse' : `${items.length} item${items.length !== 1 ? 's' : ''}`}
     </span>
   </div>

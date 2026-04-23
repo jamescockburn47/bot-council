@@ -23,24 +23,31 @@
   );
 </script>
 
-<div class="bg-[var(--bg)] border border-[var(--border)] rounded-lg p-4">
+<div class="card-term">
   <div class="flex items-center justify-between mb-2">
     <div class="flex items-center gap-3">
       <AgentBadge pseudonym={entry.pseudonym} {role} />
 
       {#if entry.abstained && !entry.valid}
-        <span class="text-[10px] mono px-1.5 py-0.5 rounded bg-red-500/10 text-red-400 border border-red-500/20">
+        <span
+          class="mono-label"
+          style="padding: 2px 6px; border-radius: var(--r-sm); color: #f87171; background: rgba(239,68,68,0.10); border: 1px solid rgba(239,68,68,0.20);"
+        >
           Unresponsive
         </span>
       {:else if entry.abstained}
-        <span class="text-[10px] mono px-1.5 py-0.5 rounded bg-[var(--border)] text-[var(--text-muted)]">
+        <span
+          class="mono-label"
+          style="padding: 2px 6px; border-radius: var(--r-sm); background: var(--night-rule); color: var(--glow-faint);"
+        >
           Abstained
         </span>
       {/if}
 
       {#if carriedFromRound != null}
         <span
-          class="text-[10px] mono px-1.5 py-0.5 rounded text-[var(--text-muted)] border border-[var(--border)]"
+          class="mono-label"
+          style="padding: 2px 6px; border-radius: var(--r-sm); border: 1px solid var(--night-rule); color: var(--glow-faint);"
           title="This bot did not respond in this round; its round-{carriedFromRound} position is shown so the voice is not lost."
         >
           &#x21bb; carried from R{carriedFromRound}
@@ -50,14 +57,14 @@
 
     <div class="flex items-center gap-3">
       {#if entry.confidence !== null}
-        <span class="text-xs mono text-[var(--text-muted)]">
-          conf: <span class="text-[var(--text-secondary)]">{entry.confidence}</span>
+        <span class="mono-label">
+          conf: <span style="color: var(--glow-dim);">{entry.confidence}</span>
         </span>
       {/if}
       {#if entry.valid}
-        <span class="text-[10px] text-green-400">valid</span>
+        <span class="mono-label" style="color: #4ade80;">valid</span>
       {:else if !entry.abstained}
-        <span class="text-[10px] text-red-400">invalid</span>
+        <span class="mono-label" style="color: #f87171;">invalid</span>
       {/if}
     </div>
   </div>
@@ -71,12 +78,12 @@
            substantive participation). Show a placeholder instead; the
            bot's R{carriedFromRound} answer is a click away on its own
            round card. -->
-      <p class="text-xs text-[var(--text-muted)] italic leading-relaxed">
+      <p class="mono-label italic leading-relaxed">
         {entry.pseudonym} did not substantively respond in this round.
         Their round-{carriedFromRound} position is preserved for synthesis.
       </p>
     {:else}
-      <p class="text-sm text-[var(--text-secondary)] whitespace-pre-wrap leading-relaxed">
+      <p style="font-family: var(--sans-product); font-size: 15px; line-height: 1.65; color: var(--glow-dim); white-space: pre-wrap;">
         {entry.response}
       </p>
     {/if}

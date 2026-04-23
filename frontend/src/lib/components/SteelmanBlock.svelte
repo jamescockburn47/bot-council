@@ -12,32 +12,38 @@
   let hasSteelmanText = $derived(
     wasExtracted && typeof metadata.steelman === 'string' && metadata.steelman.length > 0,
   );
+
+  const accent = 'var(--copper)';
 </script>
 
 {#if hasSteelmanText}
-  <div class="border-l-3 border-[#8b5cf6]/60 pl-3 py-2 mt-2">
-    <div class="flex items-center gap-2 flex-wrap">
-      <span
-        class="text-[10px] mono uppercase text-[#8b5cf6] bg-[#8b5cf6]/10 px-1.5 py-0.5 rounded"
-      >
-        Steelman
-      </span>
+  <div
+    style="
+      margin-top: 12px;
+      padding: 12px 14px;
+      border-left: 2px solid {accent};
+      background: color-mix(in srgb, var(--copper) 6%, transparent);
+      border-radius: 0 var(--r-md) var(--r-md) 0;
+    "
+  >
+    <div class="flex items-center gap-2 flex-wrap mb-2">
+      <p class="mono-label" style="color: {accent}; margin-bottom: 0;">Steelman</p>
       {#if wasExtracted}
         <span
-          class="text-[10px] mono uppercase px-1.5 py-0.5 rounded text-[#8b5cf6] bg-[#8b5cf6]/10 border border-[#8b5cf6]/30"
+          class="mono-label"
+          style="padding: 2px 6px; border-radius: var(--r-sm); color: var(--indigo-400); background: rgba(99,102,241,0.10); border: 1px solid rgba(99,102,241,0.25);"
           title="Extracted from the bot's prose by MiniMax with source-quote verification. Raw text is preserved above."
         >
           extracted
         </span>
       {/if}
     </div>
-    <p class="text-xs text-[var(--text-secondary)] mt-1.5">
+    <p style="font-family: var(--sans-product); font-size: 14px; line-height: 1.6; color: var(--glow-dim); white-space: pre-wrap;">
       {metadata.steelman}
     </p>
     {#if wasExtracted && metadata.quote}
-      <p class="text-[11px] text-[var(--text-muted)] mt-1.5 italic">
-        <span class="mono uppercase tracking-wider text-[10px] not-italic">Source quote:</span>
-        &ldquo;{metadata.quote}&rdquo;
+      <p style="font-family: var(--sans-product); font-style: italic; font-size: 12px; color: var(--glow-mute); margin-top: 8px;">
+        — &ldquo;{metadata.quote}&rdquo;
       </p>
     {/if}
   </div>

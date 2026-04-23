@@ -9,53 +9,59 @@
   } = $props();
 
   let showReasoning = $state(false);
-  let borderColor = $derived(CHALLENGE_COLORS[challenge.type] ?? '#94a3b8');
+  let accent = $derived(CHALLENGE_COLORS[challenge.type] ?? '#94a3b8');
   let wasExtracted = $derived(provenance?.source === 'extracted');
 </script>
 
 <div
-  class="border-l-3 pl-3 py-2 mt-2"
-  style="border-color: {borderColor};"
+  style="
+    margin-top: 12px;
+    padding: 12px 14px;
+    border-left: 2px solid {accent};
+    background: color-mix(in srgb, {accent} 6%, transparent);
+    border-radius: 0 var(--r-md) var(--r-md) 0;
+  "
 >
-  <div class="flex items-center gap-2 mb-1 flex-wrap">
-    <span
-      class="text-[10px] mono uppercase px-1.5 py-0.5 rounded"
-      style="color: {borderColor}; background: {borderColor}15;"
-    >
+  <div class="flex items-center gap-2 mb-2 flex-wrap">
+    <p class="mono-label" style="color: {accent}; margin-bottom: 0;">
       {challenge.type} challenge
-    </span>
+    </p>
     {#if wasExtracted}
       <span
-        class="text-[10px] mono uppercase px-1.5 py-0.5 rounded text-[#8b5cf6] bg-[#8b5cf6]/10 border border-[#8b5cf6]/30"
+        class="mono-label"
+        style="padding: 2px 6px; border-radius: var(--r-sm); color: var(--indigo-400); background: rgba(99,102,241,0.10); border: 1px solid rgba(99,102,241,0.25);"
         title="Extracted from the bot's prose by MiniMax with source-quote verification. Raw text is preserved above."
       >
         extracted
       </span>
     {/if}
   </div>
-  <p class="text-xs text-[var(--text-secondary)] mb-1">
-    <span class="text-[var(--text-muted)]">Claim targeted:</span> {challenge.claim_targeted}
+
+  <p style="font-family: var(--sans-product); font-size: 14px; line-height: 1.6; color: var(--glow-dim); white-space: pre-wrap;">
+    <span style="color: var(--glow-mute);">Claim targeted:</span> {challenge.claim_targeted}
   </p>
-  <p class="text-xs text-[var(--text-secondary)]">
-    <span class="text-[var(--text-muted)]">Counter-evidence:</span> {challenge.counter_evidence}
+  <p style="font-family: var(--sans-product); font-size: 14px; line-height: 1.6; color: var(--glow-dim); white-space: pre-wrap; margin-top: 4px;">
+    <span style="color: var(--glow-mute);">Counter-evidence:</span> {challenge.counter_evidence}
   </p>
 
   {#if wasExtracted && provenance?.quote}
-    <p class="text-[11px] text-[var(--text-muted)] mt-1.5 italic">
-      <span class="mono uppercase tracking-wider text-[10px] not-italic">Source quote:</span>
-      &ldquo;{provenance.quote}&rdquo;
+    <p style="font-family: var(--sans-product); font-style: italic; font-size: 12px; color: var(--glow-mute); margin-top: 8px;">
+      — &ldquo;{provenance.quote}&rdquo;
     </p>
   {/if}
 
   {#if validationReasoning}
     <button
       onclick={() => (showReasoning = !showReasoning)}
-      class="text-[10px] mono text-[var(--text-muted)] hover:text-[var(--text-secondary)] mt-1.5 transition-colors"
+      class="mono-label transition-colors"
+      style="margin-top: 6px; cursor: pointer; background: none; border: none; padding: 0;"
+      onmouseenter={(e) => (e.currentTarget.style.color = 'var(--glow-dim)')}
+      onmouseleave={(e) => (e.currentTarget.style.color = '')}
     >
       {showReasoning ? 'Hide' : 'Show'} validation reasoning
     </button>
     {#if showReasoning}
-      <p class="text-[11px] text-[var(--text-muted)] mt-1 italic">{validationReasoning}</p>
+      <p style="font-family: var(--sans-product); font-style: italic; font-size: 12px; color: var(--glow-mute); margin-top: 4px;">{validationReasoning}</p>
     {/if}
   {/if}
 </div>

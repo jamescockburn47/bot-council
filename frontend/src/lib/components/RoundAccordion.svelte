@@ -24,55 +24,71 @@
   let isPending = $derived(round.status === 'pending');
 </script>
 
-<div class="border border-[var(--border)] rounded-lg overflow-hidden">
+<div class="card-term" style="padding: 0; overflow: hidden;">
   <button
     onclick={() => (expanded = !expanded)}
-    class="w-full flex items-center justify-between px-4 py-3 bg-[var(--surface)] hover:bg-[var(--surface-hover)] transition-colors text-left"
+    class="w-full flex items-center justify-between px-4 py-3 text-left transition-colors"
+    style="background: var(--night-raise);"
+    onmouseenter={(e) => (e.currentTarget.style.background = 'var(--night-edge)')}
+    onmouseleave={(e) => (e.currentTarget.style.background = 'var(--night-raise)')}
   >
     <div class="flex items-center gap-3">
-      <span class="text-xs mono text-[var(--text-muted)]">R{round.round_number}</span>
-      <span class="text-sm font-medium text-[var(--text-primary)]">{roundName}</span>
-      <span class="text-[10px] mono text-[var(--text-muted)]">
-        {round.responses.length} response{round.responses.length !== 1 ? 's' : ''}
-      </span>
+      <!-- R{n} pill -->
+      <span
+        style="
+          font-family: var(--mono-product);
+          font-size: 11px;
+          font-weight: 500;
+          color: var(--indigo-400);
+          background: rgba(99,102,241,0.10);
+          border: 1px solid rgba(99,102,241,0.25);
+          border-radius: 999px;
+          padding: 3px 8px;
+          letter-spacing: 0.05em;
+        "
+      >R{round.round_number}</span>
+      <span style="font-family: var(--sans-product); font-weight: 600; font-size: 14px; color: var(--glow-txt);">{roundName}</span>
+      <span class="mono-label">{round.responses.length} response{round.responses.length !== 1 ? 's' : ''}</span>
     </div>
     <div class="flex items-center gap-2">
       {#if isComplete}
         <span class="w-2 h-2 rounded-full bg-green-500"></span>
       {:else if isPending}
-        <span class="w-2 h-2 rounded-full bg-[var(--text-muted)]"></span>
+        <span class="w-2 h-2 rounded-full" style="background: var(--glow-faint);"></span>
       {:else}
-        <span class="w-2 h-2 rounded-full bg-[#8b5cf6] animate-pulse"></span>
+        <span class="w-2 h-2 rounded-full animate-pulse" style="background: var(--indigo-400);"></span>
       {/if}
-      <span class="text-xs mono text-[var(--text-muted)]">{expanded ? '-' : '+'}</span>
+      <span class="mono-label">{expanded ? '-' : '+'}</span>
     </div>
   </button>
 
   {#if expanded}
-    <div class="p-4 space-y-3">
+    <div class="p-5 space-y-3" style="border-top: 1px solid var(--night-rule);">
       {#if isPending}
-        <p class="text-xs text-[var(--text-muted)] mono italic">Pending</p>
+        <p class="mono-label italic">Pending</p>
       {:else if !isComplete}
-        <p class="text-xs text-[#8b5cf6] mono italic">In progress...</p>
+        <p class="mono-label italic" style="color: var(--indigo-400);">In progress...</p>
       {/if}
 
       {#if crux && round.round_number === 3}
         <div
-          class="bg-[#8b5cf615] border border-[#8b5cf630] rounded-lg p-4 mb-1"
+          style="
+            background: rgba(99,102,241,0.08);
+            border: 1px solid rgba(99,102,241,0.25);
+            border-radius: var(--r-md);
+            padding: 16px;
+            margin-bottom: 4px;
+          "
         >
-          <h3
-            class="text-xs mono uppercase tracking-wider text-[var(--text-muted)] mb-1"
-          >
-            Crux
-          </h3>
-          <p class="text-sm text-[var(--text-primary)]">{crux.claim}</p>
-          <p class="text-xs text-[var(--text-muted)] mt-2">
+          <p class="tm-eyebrow" style="color: var(--indigo-400); margin-bottom: 6px;">Crux</p>
+          <p style="font-family: var(--sans-product); font-size: 14px; color: var(--glow-txt);">{crux.claim}</p>
+          <p class="mono-label" style="margin-top: 8px;">
             First stated by {crux.source_pseudonym}
           </p>
           <p
-            class="text-[11px] text-[var(--text-muted)] mt-1.5 italic"
+            style="font-family: var(--sans-product); font-style: italic; font-size: 12px; color: var(--glow-mute); margin-top: 6px;"
           >
-            <span class="mono uppercase tracking-wider text-[10px] not-italic">Source quote:</span>
+            <span class="mono-label not-italic">Source quote:</span>
             &ldquo;{crux.source_quote}&rdquo;
           </p>
         </div>

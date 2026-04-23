@@ -9,13 +9,14 @@
 use crate::bot_client::DebateRoundResponse;
 use crate::config::ModelsConfig;
 use crate::extractor::{self, ExtractTarget, ExtractionOutcome};
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 /// Per-field extraction provenance, serialised as the value of
 /// `responses.extraction_metadata`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FieldProvenance {
-    pub field: &'static str,  // "challenge" or "position_change"
+    pub field: &'static str,  // "challenge" | "position_change" | "crux_engagement" | "steelman"
     pub source: &'static str, // "authored" | "extracted" | "extraction_failed"
     pub quote: Option<String>,
 }
@@ -26,6 +27,155 @@ impl FieldProvenance {
     /// written; the field name is conveyed by the surrounding context.
     pub fn to_json(&self) -> serde_json::Value {
         json!({ "source": self.source, "quote": self.quote })
+    }
+}
+
+/// Engagement stance a bot can take on the R3 crux.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CruxEngagementStance {
+    /// Bot agrees with the crux claim.
+    Agreed,
+    /// Bot partially rejects the crux claim (concedes part, contests part).
+    PartiallyRejected,
+    /// Bot rejects the crux claim.
+    Rejected,
+    /// Bot rejects the framing of the crux itself (frame dispute).
+    FrameRejected,
+}
+
+/// Result of the R3 crux-engagement extraction. Returned alongside the
+/// `FieldProvenance` so callers can persist both the provenance and the
+/// classified stance (when available) into `responses.extraction_metadata`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CruxEngagementExtraction {
+    pub stance: Option<CruxEngagementStance>,
+    pub provenance: FieldProvenance,
+}
+
+impl CruxEngagementExtraction {
+    /// Serialise as the value stored under `extraction_metadata.crux_engagement`.
+    /// Shape: `{source, quote, stance?}` — stance is only present when the
+    /// extraction succeeded and the quote verified.
+    pub fn to_json(&self) -> serde_json::Value {
+        let mut obj = serde_json::Map::new();
+        obj.insert("source".into(), json!(self.provenance.source));
+        obj.insert("quote".into(), json!(self.provenance.quote));
+        if let Some(stance) = self.stance {
+            // Round-tripping through serde_json gives snake_case string.
+            if let Ok(v) = serde_json::to_value(stance) {
+                obj.insert("stance".into(), v);
+            }
+        }
+        serde_json::Value::Object(obj)
+    }
+}
+
+/// Raw MiniMax output shape for the crux-engagement extractor.
+#[derive(Debug, Deserialize)]
+struct RawCruxEngagement {
+    engagement_stance: CruxEngagementStance,
+    reasoning_quote: String,
+}
+
+/// Extract a bot's crux-engagement stance from its R3 prose.
+///
+/// MiniMax returns `{"engagement_stance": <stance>, "reasoning_quote": <substring>}`.
+/// If the reasoning quote is not a verbatim substring of the bot's text, the
+/// result is downgraded to `source: "extraction_failed"` — matching the
+/// existing challenge/position_change quote-verification policy.
+///
+/// External bots (non-text_only) short-circuit to `authored`; no MiniMax call.
+/// MiniMax errors, malformed JSON, or quote-verify failure all downgrade to
+/// `extraction_failed` — never propagate an error upward. This matches the
+/// existing pattern in `extract_if_needed`.
+pub async fn extract_crux_engagement(
+    models: &ModelsConfig,
+    bot_kind: &str,
+    bot_text: &str,
+) -> CruxEngagementExtraction {
+    let field_name = "crux_engagement";
+    if bot_kind != "text_only" {
+        return CruxEngagementExtraction {
+            stance: None,
+            provenance: FieldProvenance {
+                field: field_name,
+                source: "authored",
+                quote: None,
+            },
+        };
+    }
+    if bot_text.trim().is_empty() {
+        return CruxEngagementExtraction {
+            stance: None,
+            provenance: FieldProvenance {
+                field: field_name,
+                source: "extraction_failed",
+                quote: None,
+            },
+        };
+    }
+    let prompt = format!(
+        "Classify the bot's engagement with the R3 crux. Return exactly:\n\
+         {{\"engagement_stance\": \"<agreed|partially_rejected|rejected|frame_rejected>\",\n\
+          \"reasoning_quote\": \"<verbatim substring from the bot's text supporting the stance>\"}}\n\
+         \n\
+         Bot text:\n{bot_text}"
+    );
+    let raw = match crate::analyser::call_minimax(models, &prompt).await {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::warn!(
+                error = %e,
+                "crux_engagement extraction MiniMax call failed; provenance downgraded"
+            );
+            return CruxEngagementExtraction {
+                stance: None,
+                provenance: FieldProvenance {
+                    field: field_name,
+                    source: "extraction_failed",
+                    quote: None,
+                },
+            };
+        }
+    };
+    let parsed: RawCruxEngagement = match serde_json::from_str(&raw) {
+        Ok(p) => p,
+        Err(e) => {
+            tracing::warn!(
+                error = %e,
+                "crux_engagement extractor returned malformed JSON; provenance downgraded"
+            );
+            return CruxEngagementExtraction {
+                stance: None,
+                provenance: FieldProvenance {
+                    field: field_name,
+                    source: "extraction_failed",
+                    quote: None,
+                },
+            };
+        }
+    };
+    if !extractor::verify::quote_is_substring_of(&parsed.reasoning_quote, bot_text) {
+        tracing::warn!(
+            "crux_engagement extractor quote not a verbatim substring; provenance downgraded"
+        );
+        return CruxEngagementExtraction {
+            stance: None,
+            provenance: FieldProvenance {
+                field: field_name,
+                source: "extraction_failed",
+                quote: None,
+            },
+        };
+    }
+    CruxEngagementExtraction {
+        stance: Some(parsed.engagement_stance),
+        provenance: FieldProvenance {
+            field: field_name,
+            source: "extracted",
+            quote: Some(parsed.reasoning_quote),
+        },
     }
 }
 

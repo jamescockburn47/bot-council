@@ -44,6 +44,7 @@ pub async fn run_round3(
                 role_assignments,
                 pseudonym_map,
                 c,
+                models_config,
                 timeout_secs,
             )
             .await
@@ -73,9 +74,15 @@ pub async fn run_round3(
 ///
 /// Mirrors `run_round1`'s resilient dispatch: one simplified retry on
 /// failure, R0-carry-forward if both attempts fail, genuine abstention
-/// only if R0 itself is unavailable. Task 18 will layer a structured
-/// `crux_engagement` extraction on top of this; for now we persist the
-/// raw response without extraction metadata.
+/// only if R0 itself is unavailable.
+///
+/// Post-round extraction: for text_only bots on the Success arm, run the
+/// crux-engagement extractor to classify the bot's stance and verify the
+/// supporting source quote. Persisted into `responses.extraction_metadata`
+/// as `{"crux_engagement": {source, quote, stance?}}`. No extraction on
+/// CarriedForward (R0 text is not an R3 answer) or Abstained (no prose
+/// to extract from) — a lying "extracted" label would silently break the
+/// anti-hallucination guarantee.
 #[allow(clippy::too_many_arguments)]
 async fn run_round3_crux(
     pool: &SqlitePool,
@@ -87,6 +94,7 @@ async fn run_round3_crux(
     role_assignments: &HashMap<String, Role>,
     pseudonym_map: &HashMap<String, String>,
     crux: &crate::analyser::crux::CruxSelection,
+    models_config: &ModelsConfig,
     timeout_secs: u64,
 ) -> Result<(), String> {
     // Fetch each bot's non-abstained R0 text once for potential carry-forward.
@@ -161,41 +169,64 @@ async fn run_round3_crux(
                     |_| false, // no structural validation for R3 crux
                 )
                 .await;
-                (bot_id, outcome)
+                (bot_id, bot_kind, outcome)
             }
         })
         .collect();
 
     let results = futures::future::join_all(futures).await;
 
-    for (bot_id, outcome) in results {
-        let (response_text, confidence, abstained, retry_count, fallback_from_round) =
-            match outcome {
-                DispatchOutcome::Success {
-                    mut response,
-                    retry_count,
-                } => {
-                    response_parser::normalise_response(&mut response);
-                    (
-                        response.response,
-                        response.confidence,
-                        false,
-                        retry_count as i64,
-                        None,
-                    )
-                }
-                DispatchOutcome::CarriedForward {
-                    r0_text,
-                    retry_count,
-                } => (r0_text, None, false, retry_count as i64, Some(0i64)),
-                DispatchOutcome::Abstained { retry_count } => (
-                    "(abstained)".to_string(),
-                    None,
-                    true,
+    // Iterate sequentially because the Success arm may hit MiniMax for
+    // text_only crux_engagement extraction; per-round bot count is small
+    // (typically 5).
+    for (bot_id, bot_kind, outcome) in results {
+        let (
+            response_text,
+            confidence,
+            abstained,
+            retry_count,
+            fallback_from_round,
+            extraction_metadata_json,
+        ) = match outcome {
+            DispatchOutcome::Success {
+                mut response,
+                retry_count,
+            } => {
+                response_parser::normalise_response(&mut response);
+                // Post-round crux-engagement extraction for text_only bots.
+                // No-op for external bots (short-circuits on bot_kind).
+                let crux_extraction = crate::orchestrator::extraction::extract_crux_engagement(
+                    models_config,
+                    &bot_kind,
+                    &response.response,
+                )
+                .await;
+                let extraction_metadata_json = serde_json::to_string(&serde_json::json!({
+                    "crux_engagement": crux_extraction.to_json()
+                }))
+                .ok();
+                (
+                    response.response,
+                    response.confidence,
+                    false,
                     retry_count as i64,
                     None,
-                ),
-            };
+                    extraction_metadata_json,
+                )
+            }
+            DispatchOutcome::CarriedForward {
+                r0_text,
+                retry_count,
+            } => (r0_text, None, false, retry_count as i64, Some(0i64), None),
+            DispatchOutcome::Abstained { retry_count } => (
+                "(abstained)".to_string(),
+                None,
+                true,
+                retry_count as i64,
+                None,
+                None,
+            ),
+        };
         let resp_id = uuid::Uuid::new_v4().to_string();
         queries_phase1::insert_response_full(
             pool,
@@ -210,7 +241,7 @@ async fn run_round3_crux(
             true,
             retry_count,
             abstained,
-            None,
+            extraction_metadata_json.as_deref(),
             fallback_from_round,
         )
         .await

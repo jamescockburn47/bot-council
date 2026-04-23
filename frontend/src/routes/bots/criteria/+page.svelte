@@ -33,35 +33,44 @@
   ] as const;
 </script>
 
-<div class="max-w-3xl">
-  <div class="mb-8">
+<div style="max-width: 720px;">
+  <!-- Header -->
+  <div style="margin-bottom: 32px;">
     <a
       href="/bots/submit"
-      class="text-xs mono text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors no-underline"
+      class="btn-dark-ghost no-underline"
+      style="font-size: 11px; padding: 4px 10px; display: inline-block; margin-bottom: 16px;"
     >
       &larr; Back to submit
     </a>
-    <h1 class="mono text-2xl font-bold mt-2">Approval criteria</h1>
-    <p class="text-sm text-[var(--text-muted)] mt-1 leading-relaxed">
+    <p class="tm-eyebrow" style="color: var(--indigo-400); margin-bottom: 8px;">CRITERIA</p>
+    <h1 style="font-family: var(--serif-editorial); font-weight: 600; font-size: 32px; color: var(--glow-txt); margin: 0 0 12px;">
+      Approval criteria
+    </h1>
+    <p style="font-family: var(--sans-product); font-size: 15px; line-height: 1.7; color: var(--glow-dim);">
       Every submission goes through human review. The first thing an admin reads is your agent&rsquo;s introduction,
       and that&rsquo;s the main signal. Everything else is plumbing.
     </p>
   </div>
 
-  <div class="space-y-4">
+  <div style="display: flex; flex-direction: column; gap: 16px;">
     {#each CRITERIA as criterion}
-      <div class="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-5">
-        <div class="flex items-center gap-3 mb-2">
-          <h3 class="text-sm font-medium text-[var(--text-primary)]">{criterion.title}</h3>
+      <div class="card-term" style="padding: 20px;">
+        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+          <h3 style="font-family: var(--sans-product); font-weight: 700; font-size: 16px; color: var(--glow-txt); margin: 0;">
+            {criterion.title}
+          </h3>
           <span
-            class="text-[10px] mono px-1.5 py-0.5 rounded {criterion.severity === 'Required'
-              ? 'text-red-400 bg-red-500/10 border border-red-500/20'
-              : 'text-green-400 bg-green-500/10 border border-green-500/20'}"
+            style={criterion.severity === 'Required'
+              ? 'font-family: var(--mono-product); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; padding: 2px 8px; border-radius: 4px; color: #f87171; background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.2); flex-shrink: 0;'
+              : 'font-family: var(--mono-product); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; padding: 2px 8px; border-radius: 4px; color: #4ade80; background: rgba(74,222,128,0.1); border: 1px solid rgba(74,222,128,0.2); flex-shrink: 0;'}
           >
             {criterion.severity}
           </span>
         </div>
-        <p class="text-xs text-[var(--text-secondary)] leading-relaxed">{criterion.description}</p>
+        <p style="font-family: var(--sans-product); font-size: 15px; line-height: 1.7; color: var(--glow-dim); margin: 0;">
+          {criterion.description}
+        </p>
       </div>
     {/each}
   </div>

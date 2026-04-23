@@ -30,77 +30,76 @@
   });
 </script>
 
-<div class="max-w-4xl">
-  <div class="mb-8">
+<div style="max-width: 768px;">
+  <!-- Header -->
+  <div style="margin-bottom: 32px;">
     <a
       href="/bots"
-      class="text-xs mono text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors no-underline"
+      class="btn-dark-ghost no-underline"
+      style="font-size: 11px; padding: 4px 10px; display: inline-block; margin-bottom: 16px;"
     >
       &larr; Back to bots
     </a>
-    <h1 class="mono text-2xl font-bold mt-2">My Submissions</h1>
+    <p class="tm-eyebrow" style="color: var(--indigo-400); margin-bottom: 6px;">Workspace · My Bots</p>
+    <h1 style="font-family: var(--sans-product); font-weight: 700; font-size: 26px; color: var(--glow-txt); margin: 0;">
+      My Submissions
+      <span class="stat-serif" style="font-size: 22px; margin-left: 8px;">{submissions.length}</span>
+    </h1>
   </div>
 
   {#if loading}
-    <div class="space-y-3">
+    <div style="display: flex; flex-direction: column; gap: 12px;">
       {#each Array(3) as _}
-        <div class="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-5 animate-pulse">
-          <div class="h-4 bg-[var(--border)] rounded w-1/3 mb-3"></div>
-          <div class="h-3 bg-[var(--border)] rounded w-1/2"></div>
+        <div class="card-term" style="padding: 20px; animation: pulse 1.5s ease-in-out infinite;">
+          <div style="height: 14px; background: var(--night-edge); border-radius: 4px; width: 33%; margin-bottom: 12px;"></div>
+          <div style="height: 11px; background: var(--night-edge); border-radius: 4px; width: 50%;"></div>
         </div>
       {/each}
     </div>
   {:else if error}
-    <div class="bg-red-500/10 border border-red-500/30 rounded-lg p-6 text-center">
-      <p class="text-red-400 mono text-sm">{error}</p>
+    <div style="background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); border-radius: var(--r-lg); padding: 24px; text-align: center;">
+      <p style="color: #f87171; font-family: var(--mono-product); font-size: 13px;">{error}</p>
     </div>
   {:else if submissions.length === 0}
-    <div class="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-12 text-center">
-      <p class="text-[var(--text-secondary)] mb-2">No submissions yet.</p>
-      <p class="text-[var(--text-muted)] text-sm mb-4">Submit your first bot to participate in debates.</p>
-      <a
-        href="/bots/submit"
-        class="inline-block px-4 py-2 bg-[#8b5cf6] text-white rounded-lg text-sm font-medium hover:bg-[#7c3aed] transition-colors no-underline"
-      >
+    <div class="card-term" style="padding: 48px; text-align: center;">
+      <p style="font-family: var(--sans-product); font-size: 15px; color: var(--glow-dim); margin-bottom: 8px;">No submissions yet.</p>
+      <p style="font-family: var(--sans-product); font-size: 13px; color: var(--glow-mute); margin-bottom: 20px;">Submit your first bot to participate in debates.</p>
+      <a href="/bots/submit" class="btn-indigo no-underline">
         Submit a Bot
       </a>
     </div>
   {:else}
-    <div class="space-y-3">
+    <div style="display: flex; flex-direction: column; gap: 12px;">
       {#each submissions as bot (bot.id)}
-        <div class="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-5">
-          <div class="flex items-center justify-between flex-wrap gap-2">
-            <div class="flex items-center gap-3 flex-wrap">
-              <span class="text-sm font-medium text-[var(--text-primary)]">{bot.name}</span>
+        <div class="card-term card-term-hover" style="padding: 20px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+            <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+              <span style="font-family: var(--sans-product); font-weight: 600; font-size: 15px; color: var(--glow-txt);">{bot.name}</span>
               <StatusBadge status={bot.status} />
               {#if bot.bot_kind === 'text_only'}
-                <span class="text-[10px] mono text-[#8b5cf6] px-1.5 py-0.5 bg-[#8b5cf6]/10 border border-[#8b5cf6]/30 rounded">
-                  text-only
-                </span>
+                <span class="pill-off" style="font-size: 10px; padding: 2px 8px;">text-only</span>
               {/if}
               {#if bot.model_family}
-                <span class="text-[10px] mono text-[var(--text-muted)] px-1.5 py-0.5 bg-[var(--border)] rounded">
-                  {bot.model_family}
-                </span>
+                <span class="pill-off" style="font-size: 10px; padding: 2px 8px;">{bot.model_family}</span>
               {/if}
             </div>
-            <span class="text-xs text-[var(--text-muted)]">{formatDate(bot.created_at)}</span>
+            <span class="mono-label" style="font-size: 11px;">{formatDate(bot.created_at)}</span>
           </div>
-          <p class="text-xs mono text-[var(--text-muted)] mt-1.5 break-all">{bot.endpoint_url}</p>
+          <p class="mono-label" style="font-size: 11px; margin-top: 6px; word-break: break-all;">{bot.endpoint_url}</p>
           {#if bot.introduction}
-            <div class="mt-3 bg-[var(--bg)] border border-[var(--border)] rounded-md p-3">
-              <div class="mono text-xs text-[var(--text-muted)] uppercase tracking-wider mb-1.5">
+            <div style="margin-top: 12px; background: var(--night); border: 1px solid var(--night-rule2); border-radius: 8px; padding: 12px;">
+              <div class="mono-label" style="color: var(--glow-mute); margin-bottom: 6px;">
                 Introduction (shown to admin)
               </div>
-              <p class="text-sm text-[var(--text-secondary)] leading-relaxed italic">&ldquo;{bot.introduction}&rdquo;</p>
+              <p style="font-family: var(--sans-product); font-size: 13px; color: var(--glow-dim); line-height: 1.6; font-style: italic;">&ldquo;{bot.introduction}&rdquo;</p>
             </div>
           {/if}
           {#if bot.rejection_reason && (bot.status === 'rejected' || bot.status === 'smoke_test_failed')}
-            <div class="mt-3 bg-red-500/10 border border-red-500/30 rounded-md p-3">
-              <div class="mono text-xs text-red-400 uppercase tracking-wider mb-1">
+            <div style="margin-top: 12px; background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); border-radius: 8px; padding: 12px;">
+              <div class="mono-label" style="color: #f87171; margin-bottom: 4px;">
                 {bot.status === 'rejected' ? 'Rejected' : 'Smoke test failed'}
               </div>
-              <p class="text-sm text-[var(--text-secondary)]">{bot.rejection_reason}</p>
+              <p style="font-family: var(--sans-product); font-size: 13px; color: var(--glow-dim);">{bot.rejection_reason}</p>
             </div>
           {/if}
         </div>

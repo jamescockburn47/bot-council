@@ -107,7 +107,7 @@ pub fn is_effective_abstention_response(text: &str) -> bool {
         .any(|marker| normalized.contains(marker))
 }
 
-/// Run the configured adversarial debate protocol (5-round standard or 3-round simple mode).
+/// Run the 5-round adversarial debate protocol.
 pub async fn run_multi_round_debate(
     pool: &SqlitePool,
     client: &ClientWithMiddleware,
@@ -121,7 +121,6 @@ pub async fn run_multi_round_debate(
 ) -> Result<(), String> {
     let id = debate_id.as_str();
     let timeout = debate_config.default_timeout_secs;
-    let simple_mode = debate_config.test_mode_simple;
 
     // Build maps from debate_bots table
     let debate_bots = queries_phase1::get_debate_bots_with_roles(pool, id)
@@ -184,12 +183,7 @@ pub async fn run_multi_round_debate(
             &event_tx,
             DebateEvent::RoundStarted {
                 round_number: 0,
-                name: if simple_mode {
-                    "Opening"
-                } else {
-                    round_name(0)
-                }
-                .to_string(),
+                name: round_name(0).to_string(),
             },
         );
         let r0 = rounds::round0::run_round0(
@@ -255,12 +249,7 @@ pub async fn run_multi_round_debate(
             &event_tx,
             DebateEvent::RoundStarted {
                 round_number: 1,
-                name: if simple_mode {
-                    "Rebuttal"
-                } else {
-                    round_name(1)
-                }
-                .to_string(),
+                name: round_name(1).to_string(),
             },
         );
         rounds::round1::run_round1(
@@ -300,7 +289,7 @@ pub async fn run_multi_round_debate(
         })
         .collect();
 
-    // === ROUND 2 — Structured Rebuttal (standard) / Final Position (simple mode) ===
+    // === ROUND 2 — Structured Rebuttal ===
     if resume_round <= 2 {
         queries::update_debate_status(pool, id, "round_2")
             .await
@@ -310,12 +299,7 @@ pub async fn run_multi_round_debate(
             &event_tx,
             DebateEvent::RoundStarted {
                 round_number: 2,
-                name: if simple_mode {
-                    "Final Position"
-                } else {
-                    round_name(2)
-                }
-                .to_string(),
+                name: round_name(2).to_string(),
             },
         );
         rounds::round2::run_round2(
@@ -330,7 +314,7 @@ pub async fn run_multi_round_debate(
             models_config,
             timeout,
             debate_config.max_retries,
-            !simple_mode,
+            true,
         )
         .await?;
         state_machine::complete_round(pool, id, 2).await?;
@@ -340,24 +324,6 @@ pub async fn run_multi_round_debate(
                 .map_err(|e| format!("db: {e}"))?;
             emit_round_responses(&event_tx, 2, &responses, &pseudonym_map, &role_assignments);
         }
-    }
-
-    if simple_mode {
-        return run_divergence_and_synthesis(
-            pool,
-            id,
-            topic,
-            models_config,
-            debate_config,
-            bots,
-            bot_tokens,
-            &pseudonym_map,
-            &r0_responses,
-            2,
-            &participant_map_text,
-            &event_tx,
-        )
-        .await;
     }
 
     // Build Round 2 response map for pairing

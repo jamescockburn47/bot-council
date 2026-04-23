@@ -441,9 +441,12 @@ async fn list_debates_test_view_includes_only_operator_test_topics() {
 }
 
 #[tokio::test]
-async fn debate_creation_rejects_null_token_bot_always() {
+async fn debate_creation_does_not_reject_null_token_bot_at_preflight() {
+    // Token is optional under the unified contract: a NULL-token bot passes
+    // the preflight token check. The smoke test still runs, and the
+    // `example.invalid` endpoint will fail for connectivity, but the
+    // failure message must NOT cite a missing token as the reason.
     let (app, pool) = common::test_app().await;
-    // Seed a bot with token_ciphertext = NULL plus two bots with real ciphertext so quorum is otherwise met.
     sqlx::query(
         "INSERT INTO bots (id, name, endpoint_url, status, token_ciphertext, bot_kind) \
          VALUES ('nulltok', 'NoToken', 'http://example.invalid/debate', 'active', NULL, 'external')",
@@ -468,6 +471,10 @@ async fn debate_creation_rejects_null_token_bot_always() {
     .unwrap();
     let resp = tower::ServiceExt::oneshot(app, req).await.unwrap();
     assert_eq!(resp.status(), 400);
-    let body = axum::body::to_bytes(resp.into_body(), 4096).await.unwrap();
-    assert!(String::from_utf8_lossy(&body).contains("no encrypted token"));
+    let body = axum::body::to_bytes(resp.into_body(), 8192).await.unwrap();
+    let body_str = String::from_utf8_lossy(&body);
+    assert!(
+        !body_str.contains("no encrypted token"),
+        "token-null must not be a preflight failure reason: {body_str}"
+    );
 }

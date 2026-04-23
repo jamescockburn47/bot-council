@@ -85,26 +85,19 @@ struct RawCruxEngagement {
 /// result is downgraded to `source: "extraction_failed"` — matching the
 /// existing challenge/position_change quote-verification policy.
 ///
-/// External bots (non-text_only) short-circuit to `authored`; no MiniMax call.
-/// MiniMax errors, malformed JSON, or quote-verify failure all downgrade to
-/// `extraction_failed` — never propagate an error upward. This matches the
-/// existing pattern in `extract_if_needed`.
+/// Runs against every bot's R3 prose regardless of `bot_kind` — the external
+/// vs text-only distinction no longer gates extraction. MiniMax errors,
+/// malformed JSON, or quote-verify failure all downgrade to
+/// `extraction_failed` — never propagate an error upward.
+///
+/// `_bot_kind` is kept on the signature for call-site compatibility during
+/// the transition off of dual-contract bots; callers should pass it through.
 pub async fn extract_crux_engagement(
     models: &ModelsConfig,
-    bot_kind: &str,
+    _bot_kind: &str,
     bot_text: &str,
 ) -> CruxEngagementExtraction {
     let field_name = "crux_engagement";
-    if bot_kind != "text_only" {
-        return CruxEngagementExtraction {
-            stance: None,
-            provenance: FieldProvenance {
-                field: field_name,
-                source: "authored",
-                quote: None,
-            },
-        };
-    }
     if bot_text.trim().is_empty() {
         return CruxEngagementExtraction {
             stance: None,
@@ -217,25 +210,15 @@ struct RawSteelman {
 /// failure the result downgrades to `source: "extraction_failed"`, matching
 /// the existing challenge/position_change quote-verification policy.
 ///
-/// External bots (non-text_only) short-circuit to `authored`; no MiniMax
-/// call. MiniMax errors, malformed JSON, or quote-verify failure all
-/// downgrade to `extraction_failed` — never propagate an error upward.
+/// Runs against every bot's R4 prose regardless of `bot_kind`. MiniMax
+/// errors, malformed JSON, or quote-verify failure all downgrade to
+/// `extraction_failed` — never propagate an error upward.
 pub async fn extract_steelman(
     models: &ModelsConfig,
-    bot_kind: &str,
+    _bot_kind: &str,
     bot_text: &str,
 ) -> SteelmanExtraction {
     let field_name = "steelman";
-    if bot_kind != "text_only" {
-        return SteelmanExtraction {
-            steelman: None,
-            provenance: FieldProvenance {
-                field: field_name,
-                source: "authored",
-                quote: None,
-            },
-        };
-    }
     if bot_text.trim().is_empty() {
         return SteelmanExtraction {
             steelman: None,
@@ -309,12 +292,16 @@ pub async fn extract_steelman(
     }
 }
 
-/// If the bot is text_only and `response` is missing the structured field
-/// required for `target`, run extraction and patch `response` in place.
-/// Returns the provenance record to be persisted.
+/// If `response` is missing the structured field required for `target`, run
+/// extraction and patch `response` in place. Returns the provenance record
+/// to be persisted.
+///
+/// Unified across `bot_kind`: if the bot supplied the field in its response
+/// (external-style structured output), that's "authored" — no MiniMax call.
+/// Otherwise we extract from prose.
 pub async fn extract_if_needed(
     models: &ModelsConfig,
-    bot_kind: &str,
+    _bot_kind: &str,
     target: ExtractTarget,
     response: &mut DebateRoundResponse,
 ) -> FieldProvenance {
@@ -322,13 +309,6 @@ pub async fn extract_if_needed(
         ExtractTarget::Challenge => "challenge",
         ExtractTarget::PositionChange => "position_change",
     };
-    if bot_kind != "text_only" {
-        return FieldProvenance {
-            field: field_name,
-            source: "authored",
-            quote: None,
-        };
-    }
     let already_present = match target {
         ExtractTarget::Challenge => response.challenge.is_some(),
         ExtractTarget::PositionChange => response.position_change.is_some(),
@@ -425,12 +405,21 @@ mod tests {
     // These two tests short-circuit before any MiniMax call — fast.
 
     #[tokio::test]
-    async fn external_bot_is_never_extracted() {
+    async fn external_bot_with_existing_field_is_not_extracted() {
+        // `bot_kind` no longer gates extraction; what matters is whether
+        // the response already carries the field. External bots that
+        // author structured fields keep the "authored" provenance and
+        // avoid the extractor round-trip — same as text_only bots that
+        // happen to emit the field.
         let models = test_models_config("http://localhost:0");
         let mut r = empty_resp("some prose");
+        r.challenge = Some(ChallengeField {
+            claim_targeted: "X".into(),
+            counter_evidence: "Y".into(),
+            challenge_type: "factual".into(),
+        });
         let p = extract_if_needed(&models, "external", ExtractTarget::Challenge, &mut r).await;
         assert_eq!(p.source, "authored");
-        assert!(r.challenge.is_none());
     }
 
     #[tokio::test]

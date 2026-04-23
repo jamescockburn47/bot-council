@@ -57,6 +57,6 @@ export function colourFor(kind: NodeKind): string {
     case 'contested':
       return '#f43f5e';
     case 'minority':
-      return '#8b5cf6';
+      return '#6366F1';
   }
 }

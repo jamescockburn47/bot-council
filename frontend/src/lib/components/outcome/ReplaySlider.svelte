@@ -58,13 +58,15 @@
 </script>
 
 <div
-  class="mt-3 flex items-center gap-3 p-2 rounded-lg border border-[var(--border)] bg-[var(--surface)]"
+  class="card-term"
+  style="margin-top: 12px; display: flex; align-items: center; gap: 12px; padding: 8px 12px;"
 >
   <button
     type="button"
     onclick={onPlayToggle}
     disabled={rounds <= 1}
-    class="text-xs mono px-2.5 py-1 rounded border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--text-muted)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+    class="btn-dark-ghost"
+    style="font-family: var(--mono-product); font-size: 11px; letter-spacing: 0.1em; padding: 6px 12px; opacity: 1;"
     aria-label={playing ? 'Pause replay' : 'Play replay'}
   >
     {playing ? 'Pause' : 'Play'}
@@ -78,22 +80,24 @@
         aria-selected={round === t.id}
         aria-label="Show round {t.label}"
         onclick={() => onRoundChange(t.id)}
-        class="relative px-2.5 py-1 text-[10px] mono rounded transition-all
+        class="mono-label"
+        style="padding: 4px 10px; border-radius: 6px; transition: all var(--dur-fast) var(--ease-standard); cursor: pointer; border: none;
                {round === t.id
-                 ? 'bg-[var(--text-primary)] text-[var(--bg)] font-medium'
-                 : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'}"
+                 ? 'background: var(--indigo-500); color: #fff; font-weight: 600;'
+                 : 'background: transparent; color: var(--glow-faint);'}"
       >
         {t.label}
       </button>
       {#if t.id !== -1}
-        <span class="h-px w-3 bg-[var(--border)]" aria-hidden="true"></span>
+        <span style="height: 6px; width: 12px; background: var(--night-edge); border-radius: 999px; flex-shrink: 0;" aria-hidden="true"></span>
       {/if}
     {/each}
   </div>
 
   {#if inferred && round !== -1}
     <span
-      class="text-[10px] mono px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/20 whitespace-nowrap"
+      class="mono-label"
+      style="padding: 2px 8px; border-radius: 999px; background: rgba(245,158,11,0.1); color: #fcd34d; border: 1px solid rgba(245,158,11,0.2); white-space: nowrap;"
       title="Round data reconstructed heuristically from the transcript. Authoritative per-round synthesis is not yet available."
     >
       inferred

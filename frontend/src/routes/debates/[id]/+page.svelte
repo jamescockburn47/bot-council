@@ -189,6 +189,7 @@
                 abstained: d.abstained,
                 validation_reasoning: null,
                 extraction_metadata: d.extraction_metadata ?? null,
+                retry_count: d.retry_count ?? 0,
               },
             ];
             transcript = transcript;

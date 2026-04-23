@@ -78,6 +78,7 @@ pub async fn get_transcript(
                     validation_reasoning,
                     extraction_metadata,
                     fallback_from_round: r.fallback_from_round,
+                    retry_count: r.retry_count,
                 }
             })
             .collect();

@@ -121,6 +121,9 @@ export interface TranscriptEntry {
    *  round (typically R0) because the bot failed to respond in the current
    *  round. Null when the bot responded directly. */
   fallback_from_round?: number | null;
+  /** Re-dispatch attempts that landed this response. `0` = first attempt
+   *  succeeded; `1` = dispatcher fell back to the simplified retry prompt. */
+  retry_count: number;
 }
 
 export interface ExtractionMetadata {

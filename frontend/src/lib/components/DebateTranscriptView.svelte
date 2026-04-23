@@ -4,6 +4,7 @@
   import RoundAccordion from '$lib/components/RoundAccordion.svelte';
   import DivergencePanel from '$lib/components/DivergencePanel.svelte';
   import RawJsonToggle from '$lib/components/RawJsonToggle.svelte';
+  import SynthesisQualityReport from '$lib/components/SynthesisQualityReport.svelte';
   import type {
     DebateResponse,
     TranscriptResponse,
@@ -113,26 +114,11 @@
     </div>
   {/if}
 
-  <!-- Citation check -->
-  {#if synthesis.citation_check}
-    {@const cc = synthesis.citation_check}
-    {@const allValid = cc.citations_invalid.length === 0}
-    <div class="mb-6 flex items-center gap-2">
-      {#if allValid}
-        <span
-          class="text-xs mono px-2 py-1 rounded bg-green-500/10 text-green-400 border border-green-500/20"
-        >
-          All {cc.citations_total} citations valid
-        </span>
-      {:else}
-        <span
-          class="text-xs mono px-2 py-1 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20"
-        >
-          {cc.citations_invalid.length} invalid citation{cc.citations_invalid.length !== 1 ? 's' : ''} of {cc.citations_total}
-        </span>
-      {/if}
-    </div>
-  {/if}
+  <!-- Synthesis quality: citation verification, extraction outcomes, reliability -->
+  <SynthesisQualityReport
+    citationCheck={synthesis.citation_check}
+    transcript={transcript}
+  />
 
   <RawJsonToggle data={synthesis} />
   <div class="mb-8"></div>

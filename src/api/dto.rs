@@ -232,6 +232,11 @@ pub struct TranscriptEntry {
     /// responded in this round directly.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fallback_from_round: Option<i64>,
+    /// Number of re-dispatch attempts that landed this response. `0` means
+    /// the bot's first attempt succeeded; `1` means the dispatcher fell
+    /// back to the simplified retry prompt. Surfaced in the synthesis
+    /// quality panel as a reliability signal.
+    pub retry_count: i64,
 }
 
 /// Anonymisation log entry mapping pseudonym to role.

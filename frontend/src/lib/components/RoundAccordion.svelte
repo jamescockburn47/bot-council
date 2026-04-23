@@ -1,11 +1,12 @@
 <script lang="ts">
   import ResponseCard from '$lib/components/ResponseCard.svelte';
   import RawJsonToggle from '$lib/components/RawJsonToggle.svelte';
-  import type { TranscriptRound } from '$lib/types';
+  import type { TranscriptRound, CruxData } from '$lib/types';
 
-  let { round, roleMap }: {
+  let { round, roleMap, crux = null }: {
     round: TranscriptRound;
     roleMap: Record<string, string | null>;
+    crux?: CruxData | null;
   } = $props();
 
   let expanded = $state(false);
@@ -53,6 +54,28 @@
         <p class="text-xs text-[var(--text-muted)] mono italic">Pending</p>
       {:else if !isComplete}
         <p class="text-xs text-[#8b5cf6] mono italic">In progress...</p>
+      {/if}
+
+      {#if crux && round.round_number === 3}
+        <div
+          class="bg-[#8b5cf615] border border-[#8b5cf630] rounded-lg p-4 mb-1"
+        >
+          <h3
+            class="text-xs mono uppercase tracking-wider text-[var(--text-muted)] mb-1"
+          >
+            Crux
+          </h3>
+          <p class="text-sm text-[var(--text-primary)]">{crux.claim}</p>
+          <p class="text-xs text-[var(--text-muted)] mt-2">
+            First stated by {crux.source_pseudonym}
+          </p>
+          <p
+            class="text-[11px] text-[var(--text-muted)] mt-1.5 italic"
+          >
+            <span class="mono uppercase tracking-wider text-[10px] not-italic">Source quote:</span>
+            &ldquo;{crux.source_quote}&rdquo;
+          </p>
+        </div>
       {/if}
 
       {#each round.responses as entry (entry.pseudonym)}

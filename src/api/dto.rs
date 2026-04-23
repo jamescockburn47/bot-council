@@ -186,6 +186,21 @@ pub struct TranscriptResponse {
     pub rounds: Vec<TranscriptRound>,
     pub anonymisation_log: Vec<AnonymisationEntry>,
     pub divergence_analyses: Vec<DivergenceEntry>,
+    /// The single most-divergent claim selected between R2 and R3. Injected
+    /// into the R3 crux prompt so every bot engages the same point. Absent
+    /// on debates where crux selection was skipped (e.g. pre-crux debates,
+    /// or failure modes that fell back to the legacy cross-examination
+    /// format).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub crux: Option<CruxDto>,
+}
+
+/// Crux selection exposed on the transcript for frontend rendering.
+#[derive(Debug, Serialize)]
+pub struct CruxDto {
+    pub claim: String,
+    pub source_pseudonym: String,
+    pub source_quote: String,
 }
 
 /// A single round in the transcript.

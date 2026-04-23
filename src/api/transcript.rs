@@ -137,11 +137,29 @@ pub async fn get_transcript(
         })
         .collect();
 
+    // Load the selected crux (if any) from the stored `crux_selection`
+    // analysis row. `get_analyses` orders by `created_at`; take the last
+    // row so a re-run produces the freshest selection. Older debates have
+    // no row and `crux` stays `None`.
+    let crux_rows = queries_phase1::get_analyses(state.db(), &id, Some("crux_selection"))
+        .await
+        .map_err(AppError::Database)?;
+    let crux: Option<CruxDto> = crux_rows.last().and_then(|row| {
+        serde_json::from_str::<crate::analyser::crux::CruxSelection>(&row.result_json)
+            .ok()
+            .map(|sel| CruxDto {
+                claim: sel.claim,
+                source_pseudonym: sel.source_pseudonym,
+                source_quote: sel.source_quote,
+            })
+    });
+
     Ok(Json(TranscriptResponse {
         debate_id: id,
         topic: debate.topic,
         rounds: transcript_rounds,
         anonymisation_log,
         divergence_analyses,
+        crux,
     }))
 }

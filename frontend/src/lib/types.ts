@@ -85,6 +85,17 @@ export interface TranscriptResponse {
   rounds: TranscriptRound[];
   anonymisation_log: AnonymisationEntry[];
   divergence_analyses: DivergenceEntry[];
+  /** The single most-divergent claim selected between R2 and R3 and injected
+   *  into every bot's R3 prompt. Absent on debates where crux selection was
+   *  skipped (pre-crux debates, or selector failure that fell back to the
+   *  legacy cross-examination format). */
+  crux?: CruxData;
+}
+
+export interface CruxData {
+  claim: string;
+  source_pseudonym: string;
+  source_quote: string;
 }
 
 export interface TranscriptRound {

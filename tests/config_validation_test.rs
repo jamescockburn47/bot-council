@@ -51,7 +51,6 @@ fn base() -> Settings {
             max_retries: 0,
             quorum: 3,
             synthesis_temperature: 0.0,
-            test_mode_simple: false,
         },
         sentry: SentryConfig {
             dsn: "".into(),

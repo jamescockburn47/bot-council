@@ -31,17 +31,17 @@
 
 <nav
   class="fixed left-0 top-0 h-screen w-56 flex flex-col z-50"
-  style="background: var(--night-raise); border-right: 1px solid var(--night-rule);"
+  style="background: #FAF6F0; border-right: 1px solid rgba(28,25,23,0.10);"
 >
-  <div class="px-5 py-5" style="border-bottom: 1px solid var(--night-rule);">
+  <div class="px-5 py-5" style="border-bottom: 1px solid rgba(28,25,23,0.10);">
     <a
       href="/"
       class="no-underline block"
-      style="font-family: var(--sans-product); font-weight: 800; font-size: 17px; letter-spacing: -0.01em; color: var(--glow-txt);"
+      style="font-family: var(--sans-product); font-weight: 800; font-size: 17px; letter-spacing: -0.01em; color: #1C1917;"
     >
       LQ Council
     </a>
-    <p class="mt-1 mono-label" style="font-size: 8px; letter-spacing: 0.3em;">
+    <p class="mt-1 mono-label" style="font-size: 8px; letter-spacing: 0.3em; color: #78716C;">
       Agentic Playground
     </p>
   </div>
@@ -57,20 +57,20 @@
             font-family: var(--sans-product);
             font-size: 13px;
             font-weight: {active ? 600 : 500};
-            color: {active ? 'var(--glow-txt)' : 'var(--glow-mute)'};
-            background: {active ? 'rgba(99,102,241,0.08)' : 'transparent'};
-            border-right: 2px solid {active ? 'var(--indigo-500)' : 'transparent'};
+            color: {active ? '#C4A052' : '#44403C'};
+            background: {active ? 'rgba(196,160,82,0.10)' : 'transparent'};
+            border-left: 2px solid {active ? '#C4A052' : 'transparent'};
             transition: color var(--dur-fast), background var(--dur-fast);
           "
-          onmouseenter={(e) => { if (!active) (e.currentTarget as HTMLElement).style.color = 'var(--glow-txt)'; }}
-          onmouseleave={(e) => { if (!active) (e.currentTarget as HTMLElement).style.color = 'var(--glow-mute)'; }}
+          onmouseenter={(e) => { if (!active) { (e.currentTarget as HTMLElement).style.color = '#1C1917'; (e.currentTarget as HTMLElement).style.background = 'rgba(28,25,23,0.05)'; } }}
+          onmouseleave={(e) => { if (!active) { (e.currentTarget as HTMLElement).style.color = '#44403C'; (e.currentTarget as HTMLElement).style.background = 'transparent'; } }}
         >
           <span
             style="
               font-family: var(--mono-product);
               font-size: 10px;
               letter-spacing: 0.15em;
-              color: {active ? 'var(--copper)' : 'var(--glow-faint)'};
+              color: {active ? '#C4A052' : 'rgba(28,25,23,0.35)'};
               min-width: 18px;
             "
           >
@@ -82,13 +82,13 @@
     {/each}
   </div>
 
-  <div class="px-5 py-4" style="border-top: 1px solid var(--night-rule);">
-    <p class="mono-label" style="font-size: 8px; letter-spacing: 0.25em;">Session</p>
+  <div class="px-5 py-4" style="border-top: 1px solid rgba(28,25,23,0.10);">
+    <p class="mono-label" style="font-size: 8px; letter-spacing: 0.25em; color: #78716C;">Session</p>
     <p
       class="mt-1"
-      style="font-family: var(--sans-product); font-size: 12px; color: var(--glow-dim);"
+      style="font-family: var(--sans-product); font-size: 12px; color: #78716C;"
     >
-      Signed in as <span style="color: var(--glow-txt); font-weight: 500;">{role}</span>
+      Signed in as <span style="color: #44403C; font-weight: 500;">{role}</span>
     </p>
   </div>
 </nav>

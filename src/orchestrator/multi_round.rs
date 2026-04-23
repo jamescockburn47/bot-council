@@ -439,6 +439,15 @@ pub async fn run_multi_round_debate(
         })
         .collect();
 
+    // Preserve R3 responses by bot_id so the divergence analyser can
+    // classify each bot's crux_shift (R1→R3 movement on the selected
+    // crux claim). Empty if R3 was skipped / fully abstained.
+    let r3_text_by_bot: HashMap<String, String> = all_prior
+        .iter()
+        .filter(|r| r.round_number == 3 && !r.abstained)
+        .map(|r| (r.bot_id.clone(), r.response_json.clone()))
+        .collect();
+
     // === ROUND 4 — Final Position ===
     if resume_round <= 4 {
         queries::update_debate_status(pool, id, "round_4")
@@ -475,6 +484,11 @@ pub async fn run_multi_round_debate(
     }
 
     // === DIVERGENCE ANALYSIS ===
+    // Pass the selected crux (if crux selection succeeded) and each bot's
+    // R3 text so `analyse_divergence` can populate `crux_shift` per-bot.
+    // None of the three inputs (r0/r3/crux) are required; when any is
+    // missing the divergence record simply omits `crux_shift`.
+    let crux_claim_owned = crux_result.as_ref().ok().map(|c| c.claim.clone());
     run_divergence_and_synthesis(
         pool,
         id,
@@ -487,6 +501,8 @@ pub async fn run_multi_round_debate(
         &r0_responses,
         4,
         &participant_map_text,
+        crux_claim_owned.as_deref(),
+        &r3_text_by_bot,
         &event_tx,
     )
     .await
@@ -494,6 +510,10 @@ pub async fn run_multi_round_debate(
 
 /// Post-final-round: run divergence analysis per bot, run peer scoring
 /// across participating bots, then run final synthesis.
+///
+/// `crux_claim` is `Some` only when crux selection between R2 and R3
+/// succeeded; `r3_text_by_bot` is empty if R3 fully abstained. Both feed
+/// the per-bot `crux_shift` classification in `analyse_divergence`.
 #[allow(clippy::too_many_arguments)]
 async fn run_divergence_and_synthesis(
     pool: &SqlitePool,
@@ -507,6 +527,8 @@ async fn run_divergence_and_synthesis(
     r0_responses: &[crate::db::models::ResponseRow],
     final_round_number: i64,
     participant_map_text: &str,
+    crux_claim: Option<&str>,
+    r3_text_by_bot: &HashMap<String, String>,
     event_tx: &Option<broadcast::Sender<DebateEvent>>,
 ) -> Result<(), String> {
     queries::update_debate_status(pool, debate_id, "analysing")
@@ -532,11 +554,21 @@ async fn run_divergence_and_synthesis(
                 .position_change_json
                 .clone()
                 .unwrap_or_else(|| "{}".into());
+            let r3_text = r3_text_by_bot.get(&bot_id).cloned();
+            let crux_claim_owned = crux_claim.map(|s| s.to_string());
             let config = models_config.clone();
             async move {
                 (
                     bot_id,
-                    analyse_divergence(&config, &r0_resp, &final_text, &pc_json).await,
+                    analyse_divergence(
+                        &config,
+                        &r0_resp,
+                        &final_text,
+                        &pc_json,
+                        crux_claim_owned.as_deref(),
+                        r3_text.as_deref(),
+                    )
+                    .await,
                 )
             }
         })

@@ -16,7 +16,7 @@ use serde_json::json;
 /// `responses.extraction_metadata`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FieldProvenance {
-    pub field: &'static str,  // "challenge" | "position_change" | "crux_engagement" | "steelman"
+    pub field: &'static str, // "challenge" | "position_change" | "crux_engagement" | "steelman"
     pub source: &'static str, // "authored" | "extracted" | "extraction_failed"
     pub quote: Option<String>,
 }
@@ -289,9 +289,7 @@ pub async fn extract_steelman(
         }
     };
     if !extractor::verify::quote_is_substring_of(&parsed.source_quote, bot_text) {
-        tracing::warn!(
-            "steelman extractor quote not a verbatim substring; provenance downgraded"
-        );
+        tracing::warn!("steelman extractor quote not a verbatim substring; provenance downgraded");
         return SteelmanExtraction {
             steelman: None,
             provenance: FieldProvenance {

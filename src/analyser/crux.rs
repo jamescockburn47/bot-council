@@ -43,8 +43,8 @@ pub async fn select_crux(
     topic: &str,
     r1_entries: &[R1Entry],
 ) -> Result<CruxSelection, CruxError> {
-    let entries_json = serde_json::to_string(r1_entries)
-        .map_err(|e| CruxError::MinimaxFailed(e.to_string()))?;
+    let entries_json =
+        serde_json::to_string(r1_entries).map_err(|e| CruxError::MinimaxFailed(e.to_string()))?;
 
     let base_prompt = format!(
         "{n} participants wrote R0 and R1 responses on the topic: {topic}\n\n\
@@ -86,10 +86,7 @@ pub async fn select_crux(
             .iter()
             .find(|e| e.pseudonym == parsed.source_pseudonym)
         {
-            if crate::extractor::verify::quote_is_substring_of(
-                &parsed.source_quote,
-                &entry.r1,
-            ) {
+            if crate::extractor::verify::quote_is_substring_of(&parsed.source_quote, &entry.r1) {
                 return Ok(parsed);
             }
         }

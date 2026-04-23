@@ -183,8 +183,7 @@ mod tests {
             "justification_adequate": true,
             "flags": []
         }"#;
-        let dr: DivergenceResult =
-            serde_json::from_str(raw).expect("legacy JSON must still parse");
+        let dr: DivergenceResult = serde_json::from_str(raw).expect("legacy JSON must still parse");
         assert!(dr.crux_shift.is_none());
     }
 }

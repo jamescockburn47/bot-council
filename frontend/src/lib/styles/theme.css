@@ -1,0 +1,22 @@
+/* ===================================================================
+   Legacy → brand token bridge.
+   Lets un-migrated components keep referencing --bg, --surface, etc.
+   until every route is swept onto the new primitives. Delete this file
+   when no route references any var() below.
+   =================================================================== */
+
+:root {
+  /* Backwards-compat mappings — DO NOT add new consumers. */
+  --bg: var(--night);
+  --surface: var(--night-raise);
+  --border: var(--night-rule);
+  --text-primary: var(--glow-txt);
+  --text-secondary: var(--glow-dim);
+  --text-muted: var(--glow-mute);
+
+  /* Status colours (see agent-colors.ts; kept here for any inline `style=`
+     references in legacy components that have not been migrated yet.) */
+  --status-running:   var(--indigo-500);
+  --status-complete:  #10B981;   /* --cat-llm-dark */
+  --status-cancelled: #EF4444;   /* --cat-sec-dark */
+}

@@ -135,24 +135,44 @@
 {#if PUBLIC_PATHS.has(currentPath)}
   {@render children()}
 {:else if fatalError}
-  <div class="flex items-center justify-center min-h-screen flex-col gap-3 p-8">
-    <p class="mono text-sm text-red-400">Auth initialisation failed</p>
-    <p class="mono text-xs text-[var(--text-muted)] max-w-lg text-center whitespace-pre-wrap">{fatalError}</p>
+  <div class="flex items-center justify-center min-h-screen flex-col gap-3 p-8" style="background: var(--night);">
+    <p class="mono-label" style="color: #EF4444;">Auth initialisation failed</p>
+    <p
+      class="max-w-lg text-center whitespace-pre-wrap"
+      style="font-family: var(--mono-product); font-size: 12px; color: var(--glow-faint); line-height: 1.6;"
+    >
+      {fatalError}
+    </p>
     <div class="flex gap-3 mt-2">
-      <a href="/sign-in" class="mono text-xs text-[#8b5cf6] hover:underline">Go to sign-in</a>
-      <button onclick={() => location.reload()} class="mono text-xs text-[#8b5cf6] hover:underline">Reload</button>
+      <a
+        href="/sign-in"
+        class="no-underline"
+        style="font-family: var(--mono-product); font-size: 12px; color: var(--indigo-400);"
+      >Go to sign-in</a>
+      <button
+        onclick={() => location.reload()}
+        style="font-family: var(--mono-product); font-size: 12px; color: var(--indigo-400); background: none; border: none; cursor: pointer;"
+      >Reload</button>
     </div>
   </div>
 {:else if stage === 'ready' && $me}
-  <div class="flex min-h-screen">
+  <div class="flex min-h-screen" style="background: var(--night);">
     <Sidebar currentPath={currentPath} role={$me.role} />
     <main class="ml-56 flex-1 p-8">
       {@render children()}
     </main>
   </div>
 {:else}
-  <div class="flex items-center justify-center min-h-screen flex-col gap-2">
-    <p class="mono text-xs text-[var(--text-muted)]">{stageLabel[stage]}</p>
-    <p class="mono text-[10px] text-[var(--text-muted)]/60">stage: {stage}</p>
+  <div class="flex items-center justify-center min-h-screen flex-col gap-2" style="background: var(--night);">
+    <p
+      style="font-family: var(--mono-product); font-size: 12px; color: var(--glow-mute); letter-spacing: 0.1em;"
+    >
+      {stageLabel[stage]}
+    </p>
+    <p
+      style="font-family: var(--mono-product); font-size: 10px; color: var(--glow-faint); letter-spacing: 0.2em;"
+    >
+      stage: {stage}
+    </p>
   </div>
 {/if}

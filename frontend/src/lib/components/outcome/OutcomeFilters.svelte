@@ -16,12 +16,7 @@
   } = $props();
 
   function buttonClass(active: boolean): string {
-    return [
-      'text-[10px] mono uppercase tracking-wider px-2.5 py-1 rounded transition-colors',
-      active
-        ? 'bg-[var(--text-primary)]/10 text-[var(--text-primary)] border border-[var(--text-muted)]'
-        : 'text-[var(--text-muted)] border border-[var(--border)] hover:text-[var(--text-primary)] hover:border-[var(--text-muted)]',
-    ].join(' ');
+    return active ? 'pill-on' : 'pill-off';
   }
 </script>
 
@@ -45,10 +40,10 @@
 
   <div class="flex-1"></div>
 
-  <label class="flex items-center gap-2 text-[10px] mono text-[var(--text-muted)]">
+  <label class="flex items-center gap-2" style="font-family: var(--mono-product); font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--glow-mute);">
     <span>Highlight supporter</span>
     <select
-      class="bg-[var(--surface)] border border-[var(--border)] rounded px-2 py-1 text-[var(--text-secondary)] text-[10px] mono"
+      style="background: var(--night-raise); border: 1px solid var(--night-rule2); border-radius: 8px; padding: 8px 12px; font-family: var(--sans-product); font-size: 13px; color: var(--glow-txt);"
       value={highlightedSupporter ?? ''}
       onchange={(e) => {
         const v = (e.currentTarget as HTMLSelectElement).value;

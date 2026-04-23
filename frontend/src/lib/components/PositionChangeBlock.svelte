@@ -7,44 +7,63 @@
   } = $props();
 
   let wasExtracted = $derived(provenance?.source === 'extracted');
+  const accent = 'var(--indigo-400)';
 </script>
 
 {#if change.changed}
-  <div class="border-l-3 border-amber-500/60 pl-3 py-2 mt-2">
-    <div class="flex items-center gap-2 flex-wrap">
-      <span class="text-[10px] mono uppercase text-amber-400 bg-amber-400/10 px-1.5 py-0.5 rounded">
-        Position changed
-      </span>
+  <div
+    style="
+      margin-top: 12px;
+      padding: 12px 14px;
+      border-left: 2px solid {accent};
+      background: color-mix(in srgb, var(--indigo-400) 6%, transparent);
+      border-radius: 0 var(--r-md) var(--r-md) 0;
+    "
+  >
+    <div class="flex items-center gap-2 flex-wrap mb-2">
+      <p class="mono-label" style="color: {accent}; margin-bottom: 0;">Position changed</p>
       {#if wasExtracted}
         <span
-          class="text-[10px] mono uppercase px-1.5 py-0.5 rounded text-[#8b5cf6] bg-[#8b5cf6]/10 border border-[#8b5cf6]/30"
+          class="mono-label"
+          style="padding: 2px 6px; border-radius: var(--r-sm); color: var(--indigo-400); background: rgba(99,102,241,0.10); border: 1px solid rgba(99,102,241,0.25);"
           title="Extracted from the bot's prose by MiniMax with source-quote verification. Raw text is preserved above."
         >
           extracted
         </span>
       {/if}
     </div>
-    <div class="mt-1.5 text-xs text-[var(--text-secondary)]">
-      <p><span class="text-[var(--text-muted)]">From:</span> {change.from_summary}</p>
-      <p class="mt-0.5"><span class="text-[var(--text-muted)]">To:</span> {change.to_summary}</p>
-      <p class="mt-0.5"><span class="text-[var(--text-muted)]">Reason:</span> {change.reason}</p>
-    </div>
+    <p style="font-family: var(--sans-product); font-size: 14px; line-height: 1.6; color: var(--glow-dim); white-space: pre-wrap;">
+      <span style="color: var(--glow-mute);">From:</span> {change.from_summary}
+    </p>
+    <p style="font-family: var(--sans-product); font-size: 14px; line-height: 1.6; color: var(--glow-dim); white-space: pre-wrap; margin-top: 2px;">
+      <span style="color: var(--glow-mute);">To:</span> {change.to_summary}
+    </p>
+    <p style="font-family: var(--sans-product); font-size: 14px; line-height: 1.6; color: var(--glow-dim); white-space: pre-wrap; margin-top: 2px;">
+      <span style="color: var(--glow-mute);">Reason:</span> {change.reason}
+    </p>
     {#if wasExtracted && provenance?.quote}
-      <p class="text-[11px] text-[var(--text-muted)] mt-1.5 italic">
-        <span class="mono uppercase tracking-wider text-[10px] not-italic">Source quote:</span>
-        &ldquo;{provenance.quote}&rdquo;
+      <p style="font-family: var(--sans-product); font-style: italic; font-size: 12px; color: var(--glow-mute); margin-top: 8px;">
+        — &ldquo;{provenance.quote}&rdquo;
       </p>
     {/if}
   </div>
 {:else}
-  <div class="pl-3 py-1 mt-2">
+  <div
+    style="
+      margin-top: 12px;
+      padding: 8px 14px;
+      border-left: 2px solid rgba(99,102,241,0.25);
+      border-radius: 0 var(--r-md) var(--r-md) 0;
+    "
+  >
     <div class="flex items-center gap-2 flex-wrap">
-      <span class="text-[10px] mono text-[var(--text-muted)]">
+      <span class="mono-label">
         Position held &mdash; {change.reason}
       </span>
       {#if wasExtracted}
         <span
-          class="text-[10px] mono uppercase px-1.5 py-0.5 rounded text-[#8b5cf6] bg-[#8b5cf6]/10 border border-[#8b5cf6]/30"
+          class="mono-label"
+          style="padding: 2px 6px; border-radius: var(--r-sm); color: var(--indigo-400); background: rgba(99,102,241,0.10); border: 1px solid rgba(99,102,241,0.25);"
           title="Extracted from the bot's prose by MiniMax with source-quote verification. Raw text is preserved above."
         >
           extracted
@@ -52,9 +71,8 @@
       {/if}
     </div>
     {#if wasExtracted && provenance?.quote}
-      <p class="text-[11px] text-[var(--text-muted)] mt-1.5 italic pl-0">
-        <span class="mono uppercase tracking-wider text-[10px] not-italic">Source quote:</span>
-        &ldquo;{provenance.quote}&rdquo;
+      <p style="font-family: var(--sans-product); font-style: italic; font-size: 12px; color: var(--glow-mute); margin-top: 8px;">
+        — &ldquo;{provenance.quote}&rdquo;
       </p>
     {/if}
   </div>

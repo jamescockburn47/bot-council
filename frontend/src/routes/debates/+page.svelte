@@ -120,15 +120,16 @@
 </script>
 
 <div class="max-w-5xl">
-  <div class="flex items-center justify-between mb-8">
-    <h1 class="mono text-2xl font-bold">Debates</h1>
+  <div class="flex items-end justify-between mb-8 flex-wrap gap-4">
+    <div>
+      <p class="tm-eyebrow mb-2" style="color: var(--indigo-400);">Workspace</p>
+      <h1 style="font-family: var(--sans-product); font-weight: 800; font-size: 32px; letter-spacing: -0.02em; color: var(--glow-txt);">
+        Debates
+        <span class="stat-serif" style="font-size: 28px; margin-left: 12px;">{debates.length}</span>
+      </h1>
+    </div>
     {#if $me?.role === 'admin'}
-      <a
-        href="/debates/new"
-        class="px-4 py-2 bg-[#8b5cf6] text-white rounded-lg text-sm font-medium hover:bg-[#7c3aed] transition-colors no-underline"
-      >
-        New Debate
-      </a>
+      <a href="/debates/new" class="btn-indigo no-underline">New Debate →</a>
     {/if}
   </div>
 
@@ -137,20 +138,21 @@
     {#each FILTERS as f}
       <button
         onclick={() => (filter = f)}
-        class="px-3 py-1.5 rounded-lg text-xs mono transition-colors {filter === f
-          ? 'bg-[#8b5cf6] text-white'
-          : 'bg-[var(--surface)] text-[var(--text-secondary)] border border-[var(--border)] hover:text-[var(--text-primary)]'}"
+        class={filter === f ? 'pill-on' : 'pill-off'}
       >
         {f.charAt(0).toUpperCase() + f.slice(1)}
       </button>
     {/each}
     {#if $me?.role === 'admin'}
-      <span class="w-px h-5 bg-[var(--border)] mx-1"></span>
-      <label class="flex items-center gap-2 text-xs mono text-[var(--text-secondary)] cursor-pointer select-none">
+      <span style="width: 1px; height: 20px; background: var(--night-rule); margin: 0 4px;"></span>
+      <label
+        class="flex items-center gap-2 cursor-pointer select-none"
+        style="font-family: var(--mono-product); font-size: 12px; color: var(--glow-mute);"
+      >
         <input
           type="checkbox"
           bind:checked={showArchived}
-          class="accent-[#8b5cf6]"
+          style="accent-color: var(--indigo-500);"
         />
         Show archived
       </label>
@@ -160,39 +162,34 @@
   {#if loading}
     <div class="space-y-4">
       {#each Array(4) as _}
-        <div class="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-5 animate-pulse">
-          <div class="h-4 bg-[var(--border)] rounded w-3/4 mb-3"></div>
-          <div class="h-3 bg-[var(--border)] rounded w-1/3 mb-2"></div>
-          <div class="h-3 bg-[var(--border)] rounded w-1/4"></div>
+        <div class="card-term animate-pulse">
+          <div class="h-4 rounded w-3/4 mb-3" style="background: var(--night-rule);"></div>
+          <div class="h-3 rounded w-1/3 mb-2" style="background: var(--night-rule);"></div>
+          <div class="h-3 rounded w-1/4" style="background: var(--night-rule);"></div>
         </div>
       {/each}
     </div>
   {:else if error}
-    <div class="bg-red-500/10 border border-red-500/30 rounded-lg p-6 text-center">
-      <p class="text-red-400 mono text-sm">{error}</p>
+    <div style="background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.25); border-radius: var(--r-lg); padding: 20px; text-align: center;">
+      <p style="font-family: var(--mono-product); font-size: 13px; color: #FCA5A5;">{error}</p>
       <button
         onclick={reload}
-        class="mt-3 px-4 py-1.5 text-xs mono text-red-400 border border-red-500/30 rounded hover:bg-red-500/10 transition-colors"
+        style="margin-top: 12px; font-family: var(--mono-product); font-size: 11px; padding: 6px 14px; color: #FCA5A5; border: 1px solid rgba(239,68,68,0.3); border-radius: 8px; background: transparent; cursor: pointer;"
       >
         Retry
       </button>
     </div>
   {:else if filtered.length === 0}
-    <div class="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-12 text-center">
+    <div class="card-term" style="padding: 48px; text-align: center;">
       {#if filter !== 'all' && debates.length > 0}
-        <p class="text-[var(--text-muted)] mono text-sm">No {filter} debates found.</p>
+        <p style="font-family: var(--mono-product); font-size: 13px; color: var(--glow-mute);">No {filter} debates found.</p>
       {:else}
-        <p class="text-[var(--text-secondary)] mb-2">No debates yet.</p>
+        <p style="font-family: var(--sans-product); font-size: 16px; color: var(--glow-dim); margin-bottom: 8px;">No debates yet.</p>
         {#if $me?.role === 'admin'}
-          <p class="text-[var(--text-muted)] text-sm mb-4">Create your first debate to get started.</p>
-          <a
-            href="/debates/new"
-            class="inline-block px-4 py-2 bg-[#8b5cf6] text-white rounded-lg text-sm font-medium hover:bg-[#7c3aed] transition-colors no-underline"
-          >
-            New Debate
-          </a>
+          <p style="font-family: var(--sans-product); font-size: 13px; color: var(--glow-mute); margin-bottom: 16px;">Create your first debate to get started.</p>
+          <a href="/debates/new" class="btn-indigo no-underline" style="display: inline-block;">New Debate →</a>
         {:else}
-          <p class="text-[var(--text-muted)] text-sm">Only admins can create debates.</p>
+          <p style="font-family: var(--sans-product); font-size: 13px; color: var(--glow-mute); margin-bottom: 16px;">Only admins can create debates.</p>
         {/if}
       {/if}
     </div>
@@ -200,32 +197,28 @@
     <div class="space-y-3">
       {#each filtered as debate (debate.id)}
         {@const archived = debate.archived_at != null}
-        <div
-          class="bg-[var(--surface)] border rounded-lg p-5 transition-colors group
-                 {archived ? 'border-[var(--border)] opacity-60' : 'border-[var(--border)] hover:border-[#8b5cf6]/40'}"
-        >
+        <div class="card-term card-term-hover" style="padding: 18px; opacity: {archived ? 0.55 : 1};">
           <div class="flex items-start justify-between gap-4">
             <a
               href="/debates/{debate.id}"
               class="flex-1 min-w-0 no-underline"
             >
-              <h3 class="text-sm font-medium text-[var(--text-primary)] group-hover:text-white transition-colors mb-1.5">
+              <h3 style="font-family: var(--sans-product); font-weight: 600; font-size: 15px; color: var(--glow-txt); line-height: 1.35; margin-bottom: 8px;">
                 {truncate(debate.topic, 120)}
                 {#if archived}
-                  <span class="ml-2 text-[10px] mono uppercase tracking-wider text-[var(--text-muted)] border border-[var(--border)] rounded px-1.5 py-0.5 align-middle">
+                  <span class="pill-on" style="background: rgba(154,52,18,0.14); color: var(--copper); border-color: rgba(154,52,18,0.35); font-size: 9px; padding: 2px 8px; margin-left: 8px; vertical-align: middle;">
                     archived
                   </span>
                 {/if}
               </h3>
               <div class="flex items-center gap-3 flex-wrap">
                 <StatusBadge status={debate.status} />
-                <span class="text-[10px] mono text-[var(--text-muted)]">
-                  {debate.bots.length} agent{debate.bots.length !== 1 ? 's' : ''}
-                </span>
-                <span class="text-[10px] mono text-[var(--text-muted)]">
+                <span class="stat-serif" style="font-size: 16px;">{debate.bots.length}</span>
+                <span class="mono-label" style="color: var(--glow-faint); font-size: 10px; letter-spacing: 0.15em;">agent{debate.bots.length !== 1 ? 's' : ''}</span>
+                <span class="mono-label" style="color: var(--glow-faint); font-size: 10px; letter-spacing: 0.15em;">
                   {debate.id.slice(0, 8)}
                 </span>
-                <span class="text-[10px] mono text-[var(--text-muted)]">
+                <span class="mono-label" style="color: var(--glow-faint); font-size: 10px; letter-spacing: 0.15em;">
                   {formatDate(debate.created_at)}
                 </span>
               </div>
@@ -237,7 +230,8 @@
                   type="button"
                   disabled={busyId === debate.id}
                   onclick={() => doArchive(debate, !archived)}
-                  class="px-2.5 py-1 text-[10px] mono text-[var(--text-secondary)] border border-[var(--border)] rounded hover:text-[var(--text-primary)] hover:border-[var(--text-muted)] transition-colors disabled:opacity-50"
+                  class="btn-dark-ghost"
+                  style="font-size: 10px; padding: 5px 12px;"
                 >
                   {archived ? 'Unarchive' : 'Archive'}
                 </button>
@@ -245,11 +239,11 @@
                   type="button"
                   disabled={busyId === debate.id}
                   onclick={() => doDelete(debate)}
-                  class="px-2.5 py-1 text-[10px] mono rounded border transition-colors disabled:opacity-50
-                         {confirmingDelete === debate.id
-                           ? 'text-red-300 bg-red-500/20 border-red-500/50'
-                           : 'text-[var(--text-muted)] border-[var(--border)] hover:text-red-400 hover:border-red-500/40'}"
                   title="Permanent delete (cascade)"
+                  class={confirmingDelete === debate.id ? '' : 'btn-dark-ghost'}
+                  style={confirmingDelete === debate.id
+                    ? 'font-size: 10px; padding: 5px 12px; background: rgba(239,68,68,0.15); color: #FCA5A5; border: 1px solid rgba(239,68,68,0.5); border-radius: 8px; font-family: var(--sans-product); font-weight: 500; cursor: pointer;'
+                    : 'font-size: 10px; padding: 5px 12px;'}
                 >
                   {confirmingDelete === debate.id ? 'Click to confirm' : 'Delete'}
                 </button>

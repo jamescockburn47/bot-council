@@ -6,13 +6,14 @@
 <div class="mt-2">
   <button
     onclick={() => (open = !open)}
-    class="text-[10px] mono text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors"
+    class="btn-dark-ghost"
+    style="font-size: 10px; padding: 5px 12px;"
   >
     {open ? 'Hide' : 'View'} raw JSON
   </button>
   {#if open}
     <pre
-      class="mt-2 p-3 bg-[var(--bg)] border border-[var(--border)] rounded text-[11px] mono text-[var(--text-secondary)] overflow-x-auto max-h-96 overflow-y-auto"
+      style="background: var(--night-edge); border: 1px solid var(--night-rule); border-radius: 8px; padding: 12px; font-family: var(--mono-product); font-size: 11px; color: var(--glow-dim); overflow-x: auto; overflow-y: auto; max-height: 24rem; margin-top: 8px;"
     >{JSON.stringify(data, null, 2)}</pre>
   {/if}
 </div>

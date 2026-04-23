@@ -52,30 +52,30 @@
         maintainAspectRatio: false,
         scales: {
           x: {
-            grid: { color: '#1e1e3a' },
-            ticks: { color: '#4a4a6a', font: { family: 'monospace', size: 11 } },
+            grid: { color: 'rgba(31,31,47,0.8)' },
+            ticks: { color: '#8888A0', font: { family: 'monospace', size: 11 } },
           },
           y: {
             min: 0,
             max: 100,
-            grid: { color: '#1e1e3a' },
-            ticks: { color: '#4a4a6a', font: { family: 'monospace', size: 11 } },
+            grid: { color: 'rgba(31,31,47,0.8)' },
+            ticks: { color: '#8888A0', font: { family: 'monospace', size: 11 } },
           },
         },
         plugins: {
           legend: {
             labels: {
-              color: '#94a3b8',
+              color: '#8888A0',
               font: { family: 'monospace', size: 11 },
               usePointStyle: true,
               pointStyle: 'circle',
             },
           },
           tooltip: {
-            backgroundColor: '#0a0a1a',
-            titleColor: '#e2e8f0',
-            bodyColor: '#94a3b8',
-            borderColor: '#1e1e3a',
+            backgroundColor: '#0F0F17',
+            titleColor: '#E4E4EF',
+            bodyColor: '#8888A0',
+            borderColor: 'rgba(31,31,47,0.8)',
             borderWidth: 1,
           },
         },
@@ -89,10 +89,8 @@
   });
 </script>
 
-<div class="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-4">
-  <h3 class="text-xs mono text-[var(--text-muted)] mb-3 uppercase tracking-wider">
-    Confidence Trajectories
-  </h3>
+<div class="card-term">
+  <p class="tm-eyebrow" style="color: var(--indigo-400); margin-bottom: 12px;">Confidence Trajectories</p>
   <div class="h-48">
     <canvas bind:this={canvas}></canvas>
   </div>

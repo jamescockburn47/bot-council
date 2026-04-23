@@ -88,7 +88,7 @@
     <SynthesisCard
       title="Minority Positions"
       count={synthesis.synthesis?.minority_positions?.length ?? 0}
-      color="#8b5cf6"
+      color="var(--indigo-400)"
       items={minorityItems}
     />
   </div>
@@ -102,12 +102,10 @@
 
   <!-- Meta observations -->
   {#if synthesis.synthesis?.meta_observations}
-    <div class="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-4 mb-6">
-      <h3 class="text-xs mono text-[var(--text-muted)] mb-2 uppercase tracking-wider">
-        Meta Observations
-      </h3>
+    <div class="card-term mb-6">
+      <p class="tm-eyebrow" style="color: var(--indigo-400); margin-bottom: 8px;">Meta Observations</p>
       <p
-        class="text-sm text-[var(--text-secondary)] whitespace-pre-wrap leading-relaxed"
+        style="font-family: var(--sans-product); font-size: 14px; color: var(--glow-dim); white-space: pre-wrap; line-height: 1.65;"
       >
         {synthesis.synthesis.meta_observations}
       </p>
@@ -123,10 +121,8 @@
   <RawJsonToggle data={synthesis} />
   <div class="mb-8"></div>
 {:else if !isTerminal}
-  <div
-    class="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-6 mb-8 text-center"
-  >
-    <p class="text-sm text-[var(--text-muted)] mono">
+  <div class="card-term mb-8 text-center">
+    <p class="mono-label">
       Synthesis will appear when all rounds complete.
     </p>
   </div>
@@ -134,11 +130,7 @@
 
 <!-- Transcript -->
 {#if transcript}
-  <h2
-    class="text-xs mono text-[var(--text-muted)] uppercase tracking-wider mb-4"
-  >
-    Transcript
-  </h2>
+  <p class="tm-eyebrow mb-4" style="color: var(--indigo-400);">Transcript</p>
   <div class="space-y-3 mb-8">
     {#each transcript.rounds as round (round.round_number)}
       <RoundAccordion {round} {roleMap} crux={transcript.crux ?? null} />
@@ -153,28 +145,31 @@
   {/if}
 
   <!-- Anonymisation log -->
-  <div class="border border-[var(--border)] rounded-lg overflow-hidden mb-8">
+  <div class="card-term mb-8" style="padding: 0; overflow: hidden;">
     <button
       onclick={() => (anonLogExpanded = !anonLogExpanded)}
-      class="w-full flex items-center justify-between px-4 py-3 bg-[var(--surface)] hover:bg-[var(--surface-hover)] transition-colors text-left"
+      class="w-full flex items-center justify-between px-4 py-3 text-left transition-colors"
+      style="background: var(--night-raise);"
+      onmouseenter={(e) => (e.currentTarget.style.background = 'var(--night-edge)')}
+      onmouseleave={(e) => (e.currentTarget.style.background = 'var(--night-raise)')}
     >
-      <span class="text-sm font-medium text-[var(--text-primary)]">Anonymisation Log</span>
-      <span class="text-xs mono text-[var(--text-muted)]">{anonLogExpanded ? '-' : '+'}</span>
+      <span style="font-family: var(--sans-product); font-size: 14px; font-weight: 500; color: var(--glow-txt);">Anonymisation Log</span>
+      <span class="mono-label">{anonLogExpanded ? '-' : '+'}</span>
     </button>
     {#if anonLogExpanded}
-      <div class="p-4">
+      <div class="p-4" style="border-top: 1px solid var(--night-rule);">
         <table class="w-full text-xs mono">
           <thead>
-            <tr class="text-[var(--text-muted)]">
-              <th class="text-left pb-2">Pseudonym</th>
-              <th class="text-left pb-2">Role</th>
+            <tr>
+              <th class="text-left pb-2 mono-label">Pseudonym</th>
+              <th class="text-left pb-2 mono-label">Role</th>
             </tr>
           </thead>
           <tbody>
             {#each transcript.anonymisation_log as entry (entry.pseudonym)}
-              <tr class="border-t border-[var(--border)]">
-                <td class="py-1.5 text-[var(--text-secondary)]">{entry.pseudonym}</td>
-                <td class="py-1.5 text-[var(--text-muted)]">{entry.role ?? 'none'}</td>
+              <tr style="border-top: 1px solid var(--night-rule);">
+                <td class="py-1.5" style="color: var(--glow-dim);">{entry.pseudonym}</td>
+                <td class="py-1.5" style="color: var(--glow-faint);">{entry.role ?? 'none'}</td>
               </tr>
             {/each}
           </tbody>

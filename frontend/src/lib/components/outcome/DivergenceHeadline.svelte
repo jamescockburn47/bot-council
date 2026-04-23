@@ -27,16 +27,17 @@
 </script>
 
 <div
-  class="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5 mb-6"
+  class="card-term-lg"
+  style="margin-bottom: 24px;"
   aria-label="Debate divergence signals"
 >
   <div class="flex items-baseline justify-between mb-4">
-    <h3 class="text-xs mono uppercase tracking-wider text-[var(--text-muted)]">
+    <h3 class="tm-eyebrow" style="color: var(--indigo-400);">
       Divergence signals
     </h3>
     <span
-      class="mono text-xs px-2 py-0.5 rounded"
-      style="background: {toneStyles[tone].bar}22; color: {toneStyles[tone].bar};"
+      class="mono-label"
+      style="padding: 2px 8px; border-radius: 4px; background: {toneStyles[tone].bar}22; color: {toneStyles[tone].bar};"
     >
       {toneStyles[tone].label}
     </span>
@@ -45,17 +46,14 @@
   <!-- Big divergence score bar — the headline number. -->
   <div class="mb-5">
     <div class="flex items-baseline justify-between mb-1.5">
-      <span class="text-[10px] mono uppercase tracking-wider text-[var(--text-muted)]">
-        Divergence score
-      </span>
-      <span class="mono text-2xl font-bold" style="color: {toneStyles[tone].bar};">
-        {sig.divergenceScore}<span class="text-sm opacity-60">/100</span>
+      <span class="mono-label">Divergence score</span>
+      <span class="stat-serif" style="font-size: 40px; color: {toneStyles[tone].bar};">
+        {sig.divergenceScore}<span style="font-size: 16px; opacity: 0.6;">/100</span>
       </span>
     </div>
-    <div class="h-1.5 rounded-full bg-[var(--border)] overflow-hidden">
+    <div style="height: 6px; border-radius: 999px; background: var(--night-edge); overflow: hidden;">
       <div
-        class="h-full rounded-full transition-all duration-700"
-        style="width: {sig.divergenceScore}%; background: {toneStyles[tone].bar};"
+        style="height: 100%; border-radius: 999px; transition: width 700ms; width: {sig.divergenceScore}%; background: {toneStyles[tone].bar};"
       ></div>
     </div>
   </div>
@@ -73,20 +71,19 @@
       'reversals without adequate justification',
       sig.unjustifiedReversals > 0,
     )}
-    {@render signal('Minority voices', sig.minorityVoices, '#8b5cf6', 'bots that held their ground alone', false)}
+    {@render signal('Minority voices', sig.minorityVoices, '#6366F1', 'bots that held their ground alone', false)}
   </div>
 </div>
 
 {#snippet signal(label: string, count: number, colour: string, help: string, emphasis: boolean)}
   <div
-    class="rounded-lg p-3 border"
-    style="background: {colour}0a; border-color: {colour}{emphasis ? '55' : '22'};"
+    style="background: {colour}0a; border: 1px solid {colour}{emphasis ? '55' : '22'}; border-radius: var(--r-lg); padding: 12px;"
     title={help}
   >
-    <div class="mono text-2xl font-bold" style="color: {colour};">
+    <div style="font-family: var(--serif-editorial); font-weight: 600; font-size: 28px; color: {colour};">
       {count}
     </div>
-    <div class="text-[10px] mono uppercase tracking-wider text-[var(--text-secondary)] mt-0.5">
+    <div class="mono-label" style="margin-top: 2px;">
       {label}
     </div>
   </div>

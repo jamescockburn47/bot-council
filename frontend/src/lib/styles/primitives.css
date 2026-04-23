@@ -1,0 +1,134 @@
+/* ===================================================================
+   Shared UI primitives for the Terminal surface.
+   Source patterns: preview/components-{buttons,terminal-cards}.html
+   in the brand kit. Do not redefine these per-component.
+   =================================================================== */
+
+/* --- Buttons --------------------------------------------------------- */
+
+.btn-indigo {
+  background: var(--indigo-600);
+  color: #fff;
+  font-family: var(--sans-product);
+  font-size: 14px;
+  font-weight: 600;
+  padding: 11px 22px;
+  border: none;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-standard);
+}
+.btn-indigo:hover { background: var(--indigo-500); }
+.btn-indigo:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-dark-ghost {
+  background: var(--night-raise);
+  color: var(--glow-txt);
+  font-family: var(--sans-product);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 9px 18px;
+  border: 1px solid var(--night-rule3);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-standard);
+}
+.btn-dark-ghost:hover { border-color: var(--indigo-400); }
+
+/* --- Pills (filter toggles, status badges) --------------------------- */
+
+.pill-on {
+  background: rgba(99, 102, 241, 0.20);
+  color: #C7CBFF;
+  font-family: var(--sans-product);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 6px 14px;
+  border: 1px solid rgba(99, 102, 241, 0.40);
+  border-radius: 999px;
+}
+
+.pill-off {
+  background: var(--night-raise);
+  color: var(--glow-mute);
+  font-family: var(--sans-product);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 6px 14px;
+  border: 1px solid var(--night-rule);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: color var(--dur-fast), border-color var(--dur-fast);
+}
+.pill-off:hover { color: var(--glow-txt); border-color: var(--night-rule3); }
+
+/* --- Cards ----------------------------------------------------------- */
+
+.card-term {
+  background: var(--night-raise);
+  border: 1px solid var(--night-rule);
+  border-radius: var(--r-lg);
+  padding: 16px;
+}
+
+.card-term-lg {
+  background: var(--night-raise);
+  border: 1px solid var(--night-rule);
+  border-radius: var(--r-lg);
+  padding: 24px;
+}
+
+.card-term-hover {
+  transition: transform var(--dur-base) var(--ease-standard),
+              border-color var(--dur-base) var(--ease-standard),
+              box-shadow var(--dur-base) var(--ease-standard);
+}
+.card-term-hover:hover {
+  transform: translateY(-2px);
+  border-color: var(--indigo-500);
+  box-shadow: var(--shadow-lift);
+}
+
+/* --- Typography helpers --------------------------------------------- */
+
+.mono-label {
+  font-family: var(--mono-product);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--glow-faint);
+}
+
+.stat-serif {
+  font-family: var(--serif);
+  font-weight: 700;
+  line-height: 1;
+  color: var(--copper);
+  letter-spacing: -0.02em;
+}
+
+.copper-accent { color: var(--copper); }
+
+/* --- Hero background orbs (landing page only) ----------------------- */
+
+.hero-orbs {
+  position: relative;
+  isolation: isolate;
+}
+.hero-orbs::before,
+.hero-orbs::after {
+  content: '';
+  position: absolute;
+  width: 24rem; height: 24rem;
+  border-radius: 9999px;
+  background: rgba(99, 102, 241, 0.10);
+  filter: blur(120px);
+  z-index: -1;
+  pointer-events: none;
+}
+.hero-orbs::before { top: -8rem; left: -4rem; }
+.hero-orbs::after  { bottom: -8rem; right: -4rem; background: rgba(167, 139, 250, 0.08); }

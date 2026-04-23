@@ -107,25 +107,21 @@
 </script>
 
 {#if !isTerminal}
-  <div
-    class="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-10 text-center"
-  >
-    <h3 class="text-sm text-[var(--text-primary)] mb-2">
+  <div class="card-term" style="padding: 40px; text-align: center;">
+    <h3 style="font-family: var(--sans-product); font-size: 14px; color: var(--glow-txt); margin-bottom: 8px;">
       Outcome map will render once the debate completes
     </h3>
-    <p class="text-xs mono text-[var(--text-muted)]">
+    <p class="mono-label" style="color: var(--glow-mute);">
       Status: {debate.status}. Switch to the Transcript tab to follow the
       debate in progress.
     </p>
   </div>
 {:else if !synthesis || !graph}
-  <div
-    class="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-10 text-center"
-  >
-    <h3 class="text-sm text-[var(--text-primary)] mb-2">
+  <div class="card-term" style="padding: 40px; text-align: center;">
+    <h3 style="font-family: var(--sans-product); font-size: 14px; color: var(--glow-txt); margin-bottom: 8px;">
       Synthesis not available
     </h3>
-    <p class="text-xs mono text-[var(--text-muted)]">
+    <p class="mono-label" style="color: var(--glow-mute);">
       The synthesis engine did not produce a result for this debate. Check
       the Transcript tab for the raw rounds.
     </p>
@@ -137,19 +133,13 @@
   <div class="flex gap-2 mb-4">
     <button
       onclick={() => (outcomeView = 'arguments')}
-      class="px-3 py-1.5 text-xs mono rounded border transition-colors
-             {outcomeView === 'arguments'
-               ? 'text-[var(--text-primary)] border-[var(--text-muted)] bg-[var(--surface-hover)]'
-               : 'text-[var(--text-secondary)] border-[var(--border)] hover:border-[var(--text-muted)] hover:text-[var(--text-primary)]'}"
+      class={outcomeView === 'arguments' ? 'pill-on' : 'pill-off'}
     >
       Arguments
     </button>
     <button
       onclick={() => (outcomeView = 'positions')}
-      class="px-3 py-1.5 text-xs mono rounded border transition-colors
-             {outcomeView === 'positions'
-               ? 'text-[var(--text-primary)] border-[var(--text-muted)] bg-[var(--surface-hover)]'
-               : 'text-[var(--text-secondary)] border-[var(--border)] hover:border-[var(--text-muted)] hover:text-[var(--text-primary)]'}"
+      class={outcomeView === 'positions' ? 'pill-on' : 'pill-off'}
       disabled={!transcript || transcript.rounds.length === 0}
     >
       Positions

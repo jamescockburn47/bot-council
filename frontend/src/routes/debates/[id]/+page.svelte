@@ -440,11 +440,11 @@
 {#if loading}
   <div class="max-w-5xl space-y-4">
     <div class="animate-pulse">
-      <div class="h-6 bg-[var(--border)] rounded w-1/4 mb-4"></div>
-      <div class="h-8 bg-[var(--border)] rounded w-3/4 mb-6"></div>
+      <div class="h-6 rounded w-1/4 mb-4" style="background: var(--night-rule);"></div>
+      <div class="h-8 rounded w-3/4 mb-6" style="background: var(--night-rule);"></div>
       <div class="grid grid-cols-2 gap-4">
         {#each Array(4) as _}
-          <div class="h-32 bg-[var(--surface)] border border-[var(--border)] rounded-lg"></div>
+          <div class="card-term h-32"></div>
         {/each}
       </div>
     </div>
@@ -457,7 +457,8 @@
       <p class="text-red-400 mono text-sm">{error}</p>
       <a
         href="/debates"
-        class="inline-block mt-3 px-4 py-1.5 text-xs mono text-[var(--text-secondary)] border border-[var(--border)] rounded hover:text-[var(--text-primary)] transition-colors no-underline"
+        class="inline-block mt-3 px-4 py-1.5 text-xs mono border border-[var(--night-rule)] rounded hover:border-[var(--night-rule3)] transition-colors no-underline"
+        style="color: var(--glow-dim);"
       >
         Back to debates
       </a>
@@ -468,44 +469,50 @@
     <!-- Header -->
     <div class="mb-6">
       <div class="flex items-center gap-3 mb-2">
+        <p class="tm-eyebrow" style="color: var(--indigo-400);">Debate</p>
         <a
           href="/debates"
-          class="text-xs mono text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors no-underline"
+          class="mono-label no-underline"
+          style="color: var(--glow-faint);"
         >
-          Debates
+          All debates
         </a>
-        <span class="text-[var(--text-muted)]">/</span>
-        <span class="text-xs mono text-[var(--text-muted)]">{debate.id.slice(0, 8)}</span>
+        <span style="color: var(--glow-faint);">/</span>
+        <span class="mono-label">{debate.id.slice(0, 8)}</span>
         <StatusBadge status={debate.status} />
         {#if sseConnected}
           <span
-            class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs mono text-[#22c55e] bg-[#22c55e15] border border-[#22c55e30]"
+            class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs mono"
+            style="color: #22c55e; background: #22c55e15; border: 1px solid #22c55e30;"
           >
             <span class="w-1.5 h-1.5 rounded-full bg-[#22c55e] animate-pulse"></span>
             LIVE
           </span>
         {/if}
       </div>
-      <h1 class="text-xl font-bold text-[var(--text-primary)] mb-3">
+      <h1
+        style="font-family: var(--serif); font-weight: 600; font-size: clamp(22px, 3vw, 32px); color: var(--glow-txt); margin-bottom: 12px; line-height: 1.2;"
+      >
         {debate.topic}
       </h1>
       <div class="flex items-center justify-between">
-        <div
-          class="flex items-center gap-4 text-[10px] mono text-[var(--text-muted)]"
-        >
-          <span>{debate.bots.length} agent{debate.bots.length !== 1 ? 's' : ''}</span>
+        <div class="flex items-center gap-4">
+          <span class="mono-label">{debate.bots.length} agent{debate.bots.length !== 1 ? 's' : ''}</span>
           {#if transcript}
-            <span>{transcript.rounds.length} round{transcript.rounds.length !== 1 ? 's' : ''}</span>
+            <span class="mono-label">{transcript.rounds.length} round{transcript.rounds.length !== 1 ? 's' : ''}</span>
           {/if}
-          <span>Created {formatDate(debate.created_at)}</span>
+          <span class="mono-label">Created {formatDate(debate.created_at)}</span>
           {#if debate.completed_at}
-            <span>Completed {formatDate(debate.completed_at)}</span>
+            <span class="mono-label">Completed {formatDate(debate.completed_at)}</span>
           {/if}
         </div>
         {#if isTerminal && transcript}
           <button
             onclick={exportMarkdown}
-            class="px-3 py-1.5 text-xs mono text-[var(--text-secondary)] border border-[var(--border)] rounded hover:text-[var(--text-primary)] hover:border-[var(--text-muted)] transition-colors"
+            class="px-3 py-1.5 text-xs mono border rounded transition-colors"
+            style="color: var(--glow-dim); border-color: var(--night-rule);"
+            onmouseenter={(e) => (e.currentTarget.style.borderColor = 'var(--night-rule3)')}
+            onmouseleave={(e) => (e.currentTarget.style.borderColor = 'var(--night-rule)')}
           >
             Export .md
           </button>
@@ -529,12 +536,12 @@
   <div class="max-w-3xl mx-auto mt-12">
     <div class="bg-red-500/10 border border-red-500/30 rounded-lg p-6">
       <h2 class="text-sm font-semibold text-red-400 mb-2 mono">Render error</h2>
-      <p class="text-xs text-[var(--text-secondary)] mb-3 mono whitespace-pre-wrap">{err instanceof Error ? err.message : String(err)}</p>
-      <p class="text-xs text-[var(--text-muted)] mb-4">Reported to Sentry. Try reset, reload, or go back to the debate list.</p>
+      <p class="text-xs mb-3 mono whitespace-pre-wrap" style="color: var(--glow-dim);">{err instanceof Error ? err.message : String(err)}</p>
+      <p class="text-xs mb-4" style="color: var(--glow-faint);">Reported to Sentry. Try reset, reload, or go back to the debate list.</p>
       <div class="flex gap-3">
-        <button onclick={reset} class="text-xs mono px-3 py-1.5 bg-[#8b5cf6] text-white rounded">Reset</button>
-        <button onclick={() => location.reload()} class="text-xs mono px-3 py-1.5 border border-[var(--border)] rounded text-[var(--text-secondary)]">Reload</button>
-        <a href="/debates" class="text-xs mono px-3 py-1.5 border border-[var(--border)] rounded text-[var(--text-secondary)] no-underline">Back</a>
+        <button onclick={reset} class="btn-indigo text-xs" style="padding: 6px 12px; font-size: 12px;">Reset</button>
+        <button onclick={() => location.reload()} class="text-xs mono px-3 py-1.5 border rounded" style="color: var(--glow-dim); border-color: var(--night-rule);">Reload</button>
+        <a href="/debates" class="text-xs mono px-3 py-1.5 border rounded no-underline" style="color: var(--glow-dim); border-color: var(--night-rule);">Back</a>
       </div>
     </div>
   </div>

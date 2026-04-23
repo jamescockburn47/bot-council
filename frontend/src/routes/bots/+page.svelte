@@ -82,44 +82,30 @@
 </script>
 
 <div class="max-w-5xl">
+  <!-- Header -->
   <div class="flex items-center justify-between mb-8">
-    <h1 class="mono text-2xl font-bold">Bot Management</h1>
+    <div>
+      <p class="tm-eyebrow mb-1" style="color: var(--indigo-400);">Workspace · Agents</p>
+      <h1 class="page-title" style="font-family: var(--sans-product); font-weight: 700; font-size: 26px; color: var(--glow-txt);">
+        Bots
+        <span class="stat-serif" style="font-size: 22px; margin-left: 8px;">{bots.length}</span>
+      </h1>
+    </div>
     <div class="flex gap-2">
-      <a
-        href="/bots/submit"
-        class="px-4 py-2 bg-[#8b5cf6] text-white rounded-lg text-sm font-medium hover:bg-[#7c3aed] transition-colors no-underline"
-      >
-        Submit Bot
-      </a>
-      <a
-        href="/bots/my-submissions"
-        class="px-4 py-2 bg-[var(--surface)] text-[var(--text-secondary)] border border-[var(--border)] rounded-lg text-sm hover:text-[var(--text-primary)] transition-colors no-underline"
-      >
-        My Submissions
-      </a>
+      <a href="/bots/submit" class="btn-indigo no-underline">Submit a bot</a>
+      <a href="/bots/my-submissions" class="btn-dark-ghost no-underline">My Submissions</a>
     </div>
   </div>
 
-  <!-- Tabs -->
-  <div class="flex gap-1 mb-6 border-b border-[var(--border)]">
+  <!-- Tabs / filter pills -->
+  <div class="flex gap-2 mb-6" style="border-bottom: 1px solid var(--night-rule2); padding-bottom: 12px;">
     {#each TABS as t}
       <button
         onclick={() => { tab = t.key; }}
-        class="px-4 py-2.5 text-sm mono transition-colors relative {tab === t.key
-          ? 'text-[var(--text-primary)]'
-          : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}"
+        class={tab === t.key ? 'pill-on' : 'pill-off'}
       >
         {t.label}
-        <span
-          class="ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full {tab === t.key
-            ? 'bg-[#8b5cf6]/20 text-[#8b5cf6]'
-            : 'bg-[var(--border)] text-[var(--text-muted)]'}"
-        >
-          {t.count()}
-        </span>
-        {#if tab === t.key}
-          <div class="absolute bottom-0 left-0 right-0 h-0.5 bg-[#8b5cf6]"></div>
-        {/if}
+        <span style="margin-left: 6px; font-size: 10px;">({t.count()})</span>
       </button>
     {/each}
   </div>
@@ -128,20 +114,20 @@
   {#if loading}
     <div class="space-y-3">
       {#each Array(3) as _}
-        <div class="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-5 animate-pulse">
-          <div class="h-4 bg-[var(--border)] rounded w-1/3 mb-3"></div>
-          <div class="h-3 bg-[var(--border)] rounded w-1/2"></div>
+        <div class="card-term" style="padding: 20px; animation: pulse 1.5s ease-in-out infinite;">
+          <div style="height: 14px; background: var(--night-edge); border-radius: 4px; width: 33%; margin-bottom: 12px;"></div>
+          <div style="height: 11px; background: var(--night-edge); border-radius: 4px; width: 50%;"></div>
         </div>
       {/each}
     </div>
 
   <!-- Error -->
   {:else if error}
-    <div class="bg-red-500/10 border border-red-500/30 rounded-lg p-6 text-center">
-      <p class="text-red-400 mono text-sm">{error}</p>
+    <div style="background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); border-radius: var(--r-lg); padding: 24px; text-align: center;">
+      <p style="color: #f87171; font-family: var(--mono-product); font-size: 13px;">{error}</p>
       <button
         onclick={loadBots}
-        class="mt-3 px-4 py-1.5 text-xs mono text-red-400 border border-red-500/30 rounded hover:bg-red-500/10 transition-colors"
+        style="margin-top: 12px; padding: 6px 16px; font-size: 11px; font-family: var(--mono-product); color: #f87171; border: 1px solid rgba(239,68,68,0.3); border-radius: 6px; background: transparent; cursor: pointer; transition: background var(--dur-fast) var(--ease-standard);"
       >
         Retry
       </button>
@@ -150,53 +136,50 @@
   <!-- Active Tab -->
   {:else if tab === 'active'}
     {#if active.length === 0}
-      <div class="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-8 text-center text-[var(--text-muted)] text-sm">
+      <div class="card-term" style="padding: 32px; text-align: center; color: var(--glow-mute); font-family: var(--sans-product); font-size: 14px;">
         No active bots.
       </div>
     {:else}
-      <div class="overflow-x-auto">
-        <table class="w-full text-sm">
+      <div style="overflow-x: auto;">
+        <table style="width: 100%; border-collapse: collapse; font-family: var(--sans-product); font-size: 14px;">
           <thead>
-            <tr class="border-b border-[var(--border)]">
-              <th class="text-left py-3 px-4 text-xs mono text-[var(--text-muted)] font-normal">Name</th>
-              <th class="text-left py-3 px-4 text-xs mono text-[var(--text-muted)] font-normal">Kind</th>
-              <th class="text-left py-3 px-4 text-xs mono text-[var(--text-muted)] font-normal">Endpoint</th>
-              <th class="text-left py-3 px-4 text-xs mono text-[var(--text-muted)] font-normal">Model</th>
-              <th class="text-left py-3 px-4 text-xs mono text-[var(--text-muted)] font-normal">Added</th>
-              <th class="text-right py-3 px-4 text-xs mono text-[var(--text-muted)] font-normal">Action</th>
+            <tr style="border-bottom: 1px solid var(--night-rule2);">
+              <th class="mono-label" style="text-align: left; padding: 12px 16px;">Name</th>
+              <th class="mono-label" style="text-align: left; padding: 12px 16px;">Kind</th>
+              <th class="mono-label" style="text-align: left; padding: 12px 16px;">Endpoint</th>
+              <th class="mono-label" style="text-align: left; padding: 12px 16px;">Model</th>
+              <th class="mono-label" style="text-align: left; padding: 12px 16px;">Added</th>
+              <th class="mono-label" style="text-align: right; padding: 12px 16px;">Action</th>
             </tr>
           </thead>
           <tbody>
             {#each active as bot (bot.id)}
-              <tr class="border-b border-[var(--border)] last:border-0 hover:bg-[rgba(255,255,255,0.02)]">
-                <td class="py-3 px-4 text-[var(--text-primary)]">{bot.name}</td>
-                <td class="py-3 px-4">
+              <tr class="bot-row" style="border-bottom: 1px solid var(--night-rule2);">
+                <td style="padding: 12px 16px; font-weight: 600; font-size: 15px; color: var(--glow-txt);">{bot.name}</td>
+                <td style="padding: 12px 16px;">
                   {#if bot.bot_kind === 'text_only'}
-                    <span class="text-[10px] mono text-[#8b5cf6] px-1.5 py-0.5 bg-[#8b5cf6]/10 border border-[#8b5cf6]/30 rounded">
-                      text-only
-                    </span>
+                    <span class="pill-off" style="font-size: 10px; padding: 2px 8px;">text-only</span>
                   {:else}
-                    <span class="text-[10px] mono text-[var(--text-muted)] px-1.5 py-0.5 bg-[var(--border)] rounded">
-                      external
-                    </span>
+                    <span class="pill-off" style="font-size: 10px; padding: 2px 8px;">external</span>
                   {/if}
                 </td>
-                <td class="py-3 px-4 mono text-xs text-[var(--text-muted)] max-w-48 truncate">{bot.endpoint_url}</td>
-                <td class="py-3 px-4">
+                <td style="padding: 12px 16px; max-width: 192px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                  <span class="mono-label" style="font-size: 11px;">{bot.endpoint_url}</span>
+                </td>
+                <td style="padding: 12px 16px;">
                   {#if bot.model_family}
-                    <span class="text-[10px] mono text-[var(--text-muted)] px-1.5 py-0.5 bg-[var(--border)] rounded">
-                      {bot.model_family}
-                    </span>
+                    <span class="pill-off" style="font-size: 10px; padding: 2px 8px;">{bot.model_family}</span>
                   {:else}
-                    <span class="text-[var(--text-muted)]">&mdash;</span>
+                    <span style="color: var(--glow-faint);">&mdash;</span>
                   {/if}
                 </td>
-                <td class="py-3 px-4 text-xs text-[var(--text-muted)]">{formatDate(bot.created_at)}</td>
-                <td class="py-3 px-4 text-right">
+                <td style="padding: 12px 16px; font-size: 12px; color: var(--glow-mute);">{formatDate(bot.created_at)}</td>
+                <td style="padding: 12px 16px; text-align: right;">
                   <button
                     onclick={() => handleAction('deactivate', bot.id)}
                     disabled={actionLoading === bot.id}
-                    class="px-3 py-1 text-xs mono text-amber-400 border border-amber-500/30 rounded hover:bg-amber-500/10 transition-colors disabled:opacity-50"
+                    class="btn-dark-ghost"
+                    style="font-size: 12px; padding: 4px 12px;"
                   >
                     {actionLoading === bot.id ? '...' : 'Deactivate'}
                   </button>
@@ -211,79 +194,74 @@
   <!-- Pending Tab -->
   {:else if tab === 'pending'}
     {#if pending.length === 0}
-      <div class="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-8 text-center text-[var(--text-muted)] text-sm">
+      <div class="card-term" style="padding: 32px; text-align: center; color: var(--glow-mute); font-family: var(--sans-product); font-size: 14px;">
         No pending submissions.
       </div>
     {:else}
       <div class="space-y-4">
         {#each pending as bot (bot.id)}
-          <div class="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-5">
-            <div class="flex items-start justify-between gap-4 flex-wrap">
-              <div class="flex-1 min-w-0">
-                <div class="flex items-center gap-3 mb-2 flex-wrap">
-                  <h3 class="text-sm font-medium text-[var(--text-primary)]">{bot.name}</h3>
+          <div class="card-term card-term-hover" style="padding: 20px;">
+            <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap;">
+              <div style="flex: 1; min-width: 0;">
+                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap;">
+                  <h3 style="font-family: var(--sans-product); font-weight: 600; font-size: 15px; color: var(--glow-txt); margin: 0;">{bot.name}</h3>
                   <StatusBadge status={bot.status} />
                   {#if bot.bot_kind === 'text_only'}
-                    <span class="text-[10px] mono text-[#8b5cf6] px-1.5 py-0.5 bg-[#8b5cf6]/10 border border-[#8b5cf6]/30 rounded">
-                      text-only
-                    </span>
+                    <span class="pill-off" style="font-size: 10px; padding: 2px 8px;">text-only</span>
                   {:else}
-                    <span class="text-[10px] mono text-[var(--text-muted)] px-1.5 py-0.5 bg-[var(--border)] rounded">
-                      external
-                    </span>
+                    <span class="pill-off" style="font-size: 10px; padding: 2px 8px;">external</span>
                   {/if}
                   {#if bot.model_family}
-                    <span class="text-[10px] mono text-[var(--text-muted)] px-1.5 py-0.5 bg-[var(--border)] rounded">
-                      {bot.model_family}
-                    </span>
+                    <span class="pill-off" style="font-size: 10px; padding: 2px 8px;">{bot.model_family}</span>
                   {/if}
                 </div>
 
                 {#if bot.introduction}
-                  <div class="mb-3 bg-[#8b5cf615] border border-[#8b5cf630] rounded-md p-3">
-                    <div class="mono text-xs text-[#8b5cf6] uppercase tracking-wider mb-1.5">
+                  <div style="margin-bottom: 12px; background: rgba(99,102,241,0.08); border: 1px solid rgba(99,102,241,0.2); border-radius: 8px; padding: 12px;">
+                    <div class="mono-label" style="color: var(--indigo-400); margin-bottom: 6px;">
                       Introduction &mdash; primary signal
                     </div>
-                    <p class="text-sm text-[var(--text-secondary)] leading-relaxed italic">&ldquo;{bot.introduction}&rdquo;</p>
+                    <p style="font-family: var(--sans-product); font-size: 13px; color: var(--glow-dim); line-height: 1.6; font-style: italic;">&ldquo;{bot.introduction}&rdquo;</p>
                   </div>
                 {/if}
 
-                <div class="space-y-1 text-xs text-[var(--text-muted)]">
-                  <p class="break-all">
-                    <span class="mono">Endpoint:</span>
-                    <span class="text-[var(--text-secondary)]">{bot.endpoint_url}</span>
+                <div style="display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--glow-mute);">
+                  <p style="word-break: break-all;">
+                    <span class="mono-label" style="display: inline;">Endpoint:</span>
+                    <span style="color: var(--glow-dim); margin-left: 4px;">{bot.endpoint_url}</span>
                   </p>
                   {#if bot.description}
                     <p>
-                      <span class="mono">Description:</span>
-                      <span class="text-[var(--text-secondary)]">{bot.description}</span>
+                      <span class="mono-label" style="display: inline;">Description:</span>
+                      <span style="color: var(--glow-dim); margin-left: 4px;">{bot.description}</span>
                     </p>
                   {/if}
                   {#if bot.submitted_by}
                     <p>
-                      <span class="mono">Submitted by:</span>
-                      <span class="text-[var(--text-secondary)]">{bot.submitted_by}</span>
+                      <span class="mono-label" style="display: inline;">Submitted by:</span>
+                      <span style="color: var(--glow-dim); margin-left: 4px;">{bot.submitted_by}</span>
                     </p>
                   {/if}
                   <p>
-                    <span class="mono">Date:</span>
-                    <span class="text-[var(--text-secondary)]">{formatDate(bot.created_at)}</span>
+                    <span class="mono-label" style="display: inline;">Date:</span>
+                    <span style="color: var(--glow-dim); margin-left: 4px;">{formatDate(bot.created_at)}</span>
                   </p>
                 </div>
                 {#if bot.status === 'smoke_test_failed' && bot.rejection_reason}
-                  <div class="mt-3 bg-amber-500/10 border border-amber-500/30 rounded-md p-3">
-                    <div class="mono text-xs text-amber-400 uppercase tracking-wider mb-1">
+                  <div style="margin-top: 12px; background: rgba(245,158,11,0.1); border: 1px solid rgba(245,158,11,0.3); border-radius: 8px; padding: 12px;">
+                    <div class="mono-label" style="color: #fbbf24; margin-bottom: 4px;">
                       Smoke test failed
                     </div>
-                    <p class="text-sm text-[var(--text-secondary)]">{bot.rejection_reason}</p>
+                    <p style="font-family: var(--sans-product); font-size: 13px; color: var(--glow-dim);">{bot.rejection_reason}</p>
                   </div>
                 {/if}
               </div>
-              <div class="flex gap-2 shrink-0">
+              <div style="display: flex; gap: 8px; flex-shrink: 0;">
                 <button
                   onclick={() => handleAction('approve', bot.id)}
                   disabled={actionLoading === bot.id}
-                  class="px-3 py-1.5 text-xs mono text-green-400 border border-green-500/30 rounded hover:bg-green-500/10 transition-colors disabled:opacity-50"
+                  class="btn-indigo"
+                  style="font-size: 12px; padding: 6px 14px;"
                 >
                   {actionLoading === bot.id
                     ? '...'
@@ -292,7 +270,8 @@
                 <button
                   onclick={() => { rejectingBot = bot; rejectReason = ''; }}
                   disabled={actionLoading === bot.id}
-                  class="px-3 py-1.5 text-xs mono text-red-400 border border-red-500/30 rounded hover:bg-red-500/10 transition-colors disabled:opacity-50"
+                  class="btn-dark-ghost"
+                  style="font-size: 12px; padding: 6px 14px; color: #f87171; border-color: rgba(239,68,68,0.3);"
                 >
                   Reject
                 </button>
@@ -306,53 +285,50 @@
   <!-- Inactive Tab -->
   {:else if tab === 'inactive'}
     {#if inactive.length === 0}
-      <div class="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-8 text-center text-[var(--text-muted)] text-sm">
+      <div class="card-term" style="padding: 32px; text-align: center; color: var(--glow-mute); font-family: var(--sans-product); font-size: 14px;">
         No inactive bots.
       </div>
     {:else}
-      <div class="overflow-x-auto">
-        <table class="w-full text-sm">
+      <div style="overflow-x: auto;">
+        <table style="width: 100%; border-collapse: collapse; font-family: var(--sans-product); font-size: 14px;">
           <thead>
-            <tr class="border-b border-[var(--border)]">
-              <th class="text-left py-3 px-4 text-xs mono text-[var(--text-muted)] font-normal">Name</th>
-              <th class="text-left py-3 px-4 text-xs mono text-[var(--text-muted)] font-normal">Kind</th>
-              <th class="text-left py-3 px-4 text-xs mono text-[var(--text-muted)] font-normal">Endpoint</th>
-              <th class="text-left py-3 px-4 text-xs mono text-[var(--text-muted)] font-normal">Model</th>
-              <th class="text-left py-3 px-4 text-xs mono text-[var(--text-muted)] font-normal">Status</th>
-              <th class="text-right py-3 px-4 text-xs mono text-[var(--text-muted)] font-normal">Action</th>
+            <tr style="border-bottom: 1px solid var(--night-rule2);">
+              <th class="mono-label" style="text-align: left; padding: 12px 16px;">Name</th>
+              <th class="mono-label" style="text-align: left; padding: 12px 16px;">Kind</th>
+              <th class="mono-label" style="text-align: left; padding: 12px 16px;">Endpoint</th>
+              <th class="mono-label" style="text-align: left; padding: 12px 16px;">Model</th>
+              <th class="mono-label" style="text-align: left; padding: 12px 16px;">Status</th>
+              <th class="mono-label" style="text-align: right; padding: 12px 16px;">Action</th>
             </tr>
           </thead>
           <tbody>
             {#each inactive as bot (bot.id)}
-              <tr class="border-b border-[var(--border)] last:border-0 hover:bg-[rgba(255,255,255,0.02)]">
-                <td class="py-3 px-4 text-[var(--text-primary)]">{bot.name}</td>
-                <td class="py-3 px-4">
+              <tr class="bot-row" style="border-bottom: 1px solid var(--night-rule2);">
+                <td style="padding: 12px 16px; font-weight: 600; font-size: 15px; color: var(--glow-txt);">{bot.name}</td>
+                <td style="padding: 12px 16px;">
                   {#if bot.bot_kind === 'text_only'}
-                    <span class="text-[10px] mono text-[#8b5cf6] px-1.5 py-0.5 bg-[#8b5cf6]/10 border border-[#8b5cf6]/30 rounded">
-                      text-only
-                    </span>
+                    <span class="pill-off" style="font-size: 10px; padding: 2px 8px;">text-only</span>
                   {:else}
-                    <span class="text-[10px] mono text-[var(--text-muted)] px-1.5 py-0.5 bg-[var(--border)] rounded">
-                      external
-                    </span>
+                    <span class="pill-off" style="font-size: 10px; padding: 2px 8px;">external</span>
                   {/if}
                 </td>
-                <td class="py-3 px-4 mono text-xs text-[var(--text-muted)] max-w-48 truncate">{bot.endpoint_url}</td>
-                <td class="py-3 px-4">
+                <td style="padding: 12px 16px; max-width: 192px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                  <span class="mono-label" style="font-size: 11px;">{bot.endpoint_url}</span>
+                </td>
+                <td style="padding: 12px 16px;">
                   {#if bot.model_family}
-                    <span class="text-[10px] mono text-[var(--text-muted)] px-1.5 py-0.5 bg-[var(--border)] rounded">
-                      {bot.model_family}
-                    </span>
+                    <span class="pill-off" style="font-size: 10px; padding: 2px 8px;">{bot.model_family}</span>
                   {:else}
-                    <span class="text-[var(--text-muted)]">&mdash;</span>
+                    <span style="color: var(--glow-faint);">&mdash;</span>
                   {/if}
                 </td>
-                <td class="py-3 px-4"><StatusBadge status={bot.status} /></td>
-                <td class="py-3 px-4 text-right">
+                <td style="padding: 12px 16px;"><StatusBadge status={bot.status} /></td>
+                <td style="padding: 12px 16px; text-align: right;">
                   <button
                     onclick={() => handleAction('reactivate', bot.id)}
                     disabled={actionLoading === bot.id}
-                    class="px-3 py-1 text-xs mono text-green-400 border border-green-500/30 rounded hover:bg-green-500/10 transition-colors disabled:opacity-50"
+                    class="btn-indigo"
+                    style="font-size: 12px; padding: 4px 12px;"
                   >
                     {actionLoading === bot.id ? '...' : 'Reactivate'}
                   </button>
@@ -368,16 +344,16 @@
   <!-- Reject modal -->
   {#if rejectingBot}
     <div
-      class="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
+      style="position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 50;"
       role="dialog"
       aria-modal="true"
       aria-labelledby="reject-title"
     >
-      <div class="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-6 w-full max-w-md mx-4">
-        <h3 id="reject-title" class="mono text-sm text-[var(--text-primary)] mb-3">
+      <div class="card-term" style="padding: 24px; width: 100%; max-width: 440px; margin: 0 16px;">
+        <h3 id="reject-title" style="font-family: var(--mono-product); font-size: 13px; color: var(--glow-txt); margin-bottom: 12px;">
           Reject {rejectingBot.name}
         </h3>
-        <p class="text-xs text-[var(--text-muted)] mb-3">
+        <p style="font-family: var(--sans-product); font-size: 12px; color: var(--glow-mute); margin-bottom: 12px;">
           Enter a reason (min 10 chars, max 500). This is shown to the submitter.
         </p>
         <textarea
@@ -385,25 +361,25 @@
           rows={4}
           maxlength={500}
           placeholder="Reason for rejection..."
-          class="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded text-sm text-[var(--text-primary)]"
+          style="width: 100%; padding: 10px 14px; background: var(--night); border: 1px solid var(--night-rule2); border-radius: 8px; font-family: var(--sans-product); font-size: 13px; color: var(--glow-txt); resize: none; box-sizing: border-box;"
         ></textarea>
-        <p class="text-xs text-[var(--text-muted)] mt-1 text-right">
+        <p style="font-family: var(--sans-product); font-size: 11px; color: var(--glow-mute); margin-top: 4px; text-align: right;">
           {rejectReason.trim().length} / 500
           {#if rejectReason.trim().length > 0 && rejectReason.trim().length < 10}
-            <span class="text-amber-400">(min 10)</span>
+            <span style="color: #fbbf24;">(min 10)</span>
           {/if}
         </p>
-        <div class="mt-3 flex justify-end gap-2">
+        <div style="margin-top: 12px; display: flex; justify-content: flex-end; gap: 8px;">
           <button
             onclick={() => { rejectingBot = null; rejectReason = ''; }}
-            class="px-3 py-1.5 text-sm rounded border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--border)]/20 transition-colors"
+            class="btn-dark-ghost"
           >
             Cancel
           </button>
           <button
             disabled={rejectReason.trim().length < 10 || submittingReject}
             onclick={confirmReject}
-            class="px-3 py-1.5 text-sm rounded bg-red-500 text-white hover:bg-red-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            style="padding: 8px 16px; font-size: 13px; border-radius: 8px; background: #dc2626; color: white; border: none; cursor: pointer; transition: background var(--dur-fast) var(--ease-standard);"
           >
             {submittingReject ? 'Rejecting...' : 'Reject'}
           </button>
@@ -412,3 +388,12 @@
     </div>
   {/if}
 </div>
+
+<style>
+  .bot-row:last-child {
+    border-bottom: none;
+  }
+  .bot-row:hover td {
+    background: rgba(255, 255, 255, 0.02);
+  }
+</style>

@@ -178,7 +178,7 @@
       case 'tension':
         return 'rgba(244,63,94,0.7)';
       case 'topic-minority':
-        return 'rgba(139,92,246,0.55)';
+        return 'rgba(99,102,241,0.55)';
     }
   }
 
@@ -204,7 +204,7 @@
       // let the ResizeObserver below keep it in sync.
       .width(container.clientWidth)
       .height(container.clientHeight)
-      .backgroundColor('#0a0a11')
+      .backgroundColor('#08080D')
       .showNavInfo(false)
       .graphData(shape(graph) as any)
       .nodeId('id')
@@ -226,7 +226,7 @@
           // bolder than argument labels so it reads as the focal point.
           const label = new SpriteText(wrap(node.fullText || 'Topic', TOPIC_WRAP_CHARS));
           label.color = '#ffffff';
-          label.backgroundColor = 'rgba(10,10,17,0.94)';
+          label.backgroundColor = 'rgba(15,15,23,0.94)';
           label.borderColor = 'rgba(255,255,255,0.28)';
           label.borderWidth = 0.8;
           label.padding = 4;
@@ -252,7 +252,7 @@
           : pithy(node.fullText || '', SHORT_LABEL_CHARS);
         const shortSprite = new SpriteText(shortText);
         shortSprite.color = '#f4f4f5';
-        shortSprite.backgroundColor = 'rgba(10,10,17,0.82)';
+        shortSprite.backgroundColor = 'rgba(15,15,23,0.82)';
         shortSprite.borderColor = `${colour}aa`;
         shortSprite.borderWidth = 0.65;
         shortSprite.padding = SHORT_PADDING;
@@ -262,7 +262,7 @@
 
         const fullSprite = new SpriteText(wrap(node.fullText || node.label, FULL_WRAP_CHARS));
         fullSprite.color = '#ffffff';
-        fullSprite.backgroundColor = 'rgba(10,10,17,0.95)';
+        fullSprite.backgroundColor = 'rgba(15,15,23,0.95)';
         fullSprite.borderColor = colour;
         fullSprite.borderWidth = 0.85;
         fullSprite.padding = FULL_PADDING;
@@ -291,7 +291,7 @@
         const support = `${node.support}/${node.totalBots}`;
         const conf = node.confidence != null ? ` · conf ${node.confidence}` : '';
         const body = escapeHtml(node.fullText || node.label);
-        return `<div style="background:#0a0a11;border:1px solid ${colourFor(node.kind)};padding:6px 9px;border-radius:6px;max-width:300px;font-family:ui-sans-serif;color:#e4e4e7;font-size:11px;line-height:1.4;"><div style="color:${colourFor(node.kind)};text-transform:uppercase;letter-spacing:0.08em;font-size:9px;margin-bottom:4px;">${node.kind} · ${support}${conf}</div>${body}</div>`;
+        return `<div style="background:var(--night-edge,#1A1A26);border:1px solid var(--night-rule2,rgba(255,255,255,0.07));padding:10px;border-radius:8px;max-width:300px;font-family:var(--mono-product,'JetBrains Mono',monospace);color:var(--glow-txt,rgba(255,255,255,0.92));font-size:11px;line-height:1.4;"><div style="color:${colourFor(node.kind)};text-transform:uppercase;letter-spacing:0.1em;font-size:9px;margin-bottom:4px;">${node.kind} · ${support}${conf}</div>${body}</div>`;
       })
       .onNodeClick((n: any) => {
         // Stop CLICK_ZOOM_DIST world units *past* the node along the
@@ -450,13 +450,14 @@
 <div class="relative w-full mx-auto">
   <div
     bind:this={container}
-    class="w-full rounded-xl border border-[var(--border)] overflow-hidden bg-[#0a0a11]"
-    style="height: 70vh; min-height: 560px;"
+    class="w-full overflow-hidden"
+    style="height: 70vh; min-height: 560px; border-radius: var(--r-lg); border: 1px solid var(--night-rule2); background: #08080D;"
   ></div>
   <button
     type="button"
     onclick={resetView}
-    class="absolute bottom-3 right-3 text-[10px] mono uppercase tracking-wider px-2.5 py-1.5 rounded bg-black/60 backdrop-blur border border-white/10 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-white/30 transition-colors"
+    class="mono-label absolute bottom-3 right-3"
+    style="padding: 6px 12px; border-radius: 6px; background: rgba(8,8,13,0.75); backdrop-filter: blur(4px); border: 1px solid var(--night-rule2); color: var(--glow-dim); transition: color var(--dur-fast); cursor: pointer;"
     aria-label="Reset camera view"
   >
     Reset view

@@ -98,20 +98,24 @@
   });
 </script>
 
-<div class="max-w-3xl">
-  <div class="mb-8">
+<div style="max-width: 768px;">
+  <!-- Page header -->
+  <p class="tm-eyebrow mb-2" style="color: var(--indigo-400);">Workspace · Create</p>
+  <h1 style="font-family: var(--sans-product); font-weight: 800; font-size: 32px; letter-spacing: -0.02em; color: var(--glow-txt); margin-bottom: 24px;">New Debate</h1>
+
+  <!-- Back link -->
+  <div style="margin-bottom: 32px;">
     <a
       href="/debates"
-      class="text-xs mono text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors no-underline"
+      class="btn-dark-ghost no-underline"
     >
-      &larr; Back to debates
+      &larr; Cancel
     </a>
-    <h1 class="mono text-2xl font-bold mt-2">New Debate</h1>
   </div>
 
   <!-- Topic -->
-  <div class="mb-6">
-    <label for="topic" class="block text-sm font-medium text-[var(--text-secondary)] mb-2">
+  <div style="margin-bottom: 24px;">
+    <label for="topic" class="mono-label" style="display: block; margin-bottom: 6px; color: var(--indigo-400);">
       Topic
     </label>
     <input
@@ -119,28 +123,28 @@
       type="text"
       bind:value={topic}
       placeholder="Enter the debate topic or question..."
-      class="w-full px-4 py-3 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[#8b5cf6]/50 transition-colors"
+      style="background: var(--night-raise); border: 1px solid var(--night-rule2); border-radius: 8px; padding: 10px 14px; font-family: var(--sans-product); font-size: 14px; color: var(--glow-txt); width: 100%; box-sizing: border-box; transition: border-color var(--dur-fast) var(--ease-standard); outline: none;"
     />
   </div>
 
   <!-- Bot Selection -->
-  <div class="mb-6">
-    <div class="flex items-center justify-between mb-2">
-      <span class="text-sm font-medium text-[var(--text-secondary)]">
+  <div style="margin-bottom: 24px;">
+    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+      <span class="mono-label" style="color: var(--indigo-400);">
         Select Bots
-        <span class="text-[var(--text-muted)] font-normal">(3&ndash;5 required)</span>
+        <span style="color: var(--glow-mute); font-weight: normal;">(3&ndash;5 required)</span>
       </span>
-      <div class="flex gap-2">
+      <div style="display: flex; gap: 8px; align-items: center;">
         <button
           onclick={selectAll}
-          class="text-xs mono text-[#8b5cf6] hover:text-[#a78bfa] transition-colors"
+          style="font-family: var(--mono-product); font-size: 11px; letter-spacing: 0.1em; color: var(--indigo-400); background: none; border: none; cursor: pointer; padding: 0; transition: color var(--dur-fast) var(--ease-standard);"
         >
           Select all
         </button>
-        <span class="text-[var(--text-muted)]">/</span>
+        <span style="color: var(--glow-faint);">/</span>
         <button
           onclick={clearSelection}
-          class="text-xs mono text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors"
+          style="font-family: var(--mono-product); font-size: 11px; letter-spacing: 0.1em; color: var(--glow-mute); background: none; border: none; cursor: pointer; padding: 0; transition: color var(--dur-fast) var(--ease-standard);"
         >
           Clear
         </button>
@@ -148,61 +152,64 @@
     </div>
 
     {#if loading}
-      <div class="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-6">
-        <div class="space-y-3">
+      <div class="card-term" style="padding: 24px;">
+        <div style="display: flex; flex-direction: column; gap: 12px;">
           {#each Array(3) as _}
-            <div class="h-10 bg-[var(--border)] rounded animate-pulse"></div>
+            <div style="height: 40px; background: var(--night-rule2); border-radius: 6px; animation: pulse 1.5s ease-in-out infinite;"></div>
           {/each}
         </div>
       </div>
     {:else if loadError}
-      <div class="bg-red-500/10 border border-red-500/30 rounded-lg p-4 text-center">
-        <p class="text-red-400 mono text-sm">{loadError}</p>
+      <div style="background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.25); border-radius: 12px; padding: 16px; text-align: center;">
+        <p style="font-family: var(--mono-product); font-size: 13px; color: #EF4444; margin: 0;">{loadError}</p>
       </div>
     {:else if activeBots.length === 0}
       <div
-        class="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-6 text-center text-[var(--text-muted)] text-sm"
+        class="card-term"
+        style="padding: 24px; text-align: center;"
       >
-        No active bots available. Register bots first.
+        <p style="font-family: var(--sans-product); font-size: 14px; color: var(--glow-mute); margin: 0;">No active bots available. Register bots first.</p>
       </div>
     {:else}
-      <div class="bg-[var(--surface)] border border-[var(--border)] rounded-lg divide-y divide-[var(--border)]">
+      <div style="display: flex; flex-direction: column; gap: 8px;">
         {#each activeBots as bot (bot.id)}
           <label
-            class="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-[rgba(139,92,246,0.05)] transition-colors {selectedBotIds.has(bot.id) ? 'bg-[rgba(139,92,246,0.08)]' : ''}"
+            class="card-term {selectedBotIds.has(bot.id) ? '' : 'card-term-hover'}"
+            style="{selectedBotIds.has(bot.id) ? 'border-color: var(--indigo-500); background: rgba(99,102,241,0.05);' : ''} cursor: pointer; display: flex; align-items: center; gap: 12px; padding: 14px;"
           >
             <input
               type="checkbox"
               checked={selectedBotIds.has(bot.id)}
               onchange={() => toggleBot(bot.id)}
               disabled={!selectedBotIds.has(bot.id) && selectionCount >= 5}
-              class="accent-[#8b5cf6]"
+              style="accent-color: var(--indigo-500); flex-shrink: 0;"
             />
-            <span class="text-sm text-[var(--text-primary)]">{bot.name}</span>
+            <span style="font-family: var(--sans-product); font-size: 14px; color: var(--glow-txt);">{bot.name}</span>
             {#if bot.model_family}
-              <span class="text-[10px] mono text-[var(--text-muted)] px-1.5 py-0.5 bg-[var(--border)] rounded">
+              <span style="font-family: var(--mono-product); font-size: 10px; letter-spacing: 0.1em; color: var(--glow-mute); padding: 2px 6px; background: var(--night-edge); border-radius: 4px; margin-left: auto;">
                 {bot.model_family}
               </span>
             {/if}
           </label>
         {/each}
       </div>
-      <p class="text-xs text-[var(--text-muted)] mt-1.5">
+      <p style="font-family: var(--sans-product); font-size: 12px; color: var(--glow-mute); margin-top: 6px;">
         {selectionCount} of {activeBots.length} selected
         {#if selectionCount < 3}
-          <span class="text-amber-400"> &mdash; select at least 3</span>
+          <span style="color: #F59E0B;"> &mdash; select at least 3</span>
         {/if}
       </p>
     {/if}
   </div>
 
   <!-- Goal Mode -->
-  <div class="mb-6">
-    <span class="block text-sm font-medium text-[var(--text-secondary)] mb-2">Goal Mode</span>
-    <div class="space-y-2">
+  <div style="margin-bottom: 24px;">
+    <span class="mono-label" style="display: block; margin-bottom: 8px; color: var(--indigo-400);">Goal Mode</span>
+    <div style="display: flex; flex-direction: column; gap: 8px;">
       {#each GOAL_MODES as mode}
         <label
-          class="flex items-center gap-3 px-4 py-2.5 bg-[var(--surface)] border border-[var(--border)] rounded-lg {mode.enabled ? 'cursor-pointer hover:border-[#8b5cf6]/30' : 'opacity-50 cursor-not-allowed'} transition-colors {goalMode === mode.value ? 'border-[#8b5cf6]/50 bg-[rgba(139,92,246,0.08)]' : ''}"
+          class="{mode.enabled ? 'card-term-hover' : ''}"
+          style="display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: var(--night-raise); border: 1px solid {goalMode === mode.value ? 'var(--indigo-500)' : 'var(--night-rule2)'}; border-radius: 8px; {goalMode === mode.value ? 'background: rgba(99,102,241,0.05);' : ''} {mode.enabled ? 'cursor: pointer;' : 'opacity: 0.45; cursor: not-allowed;'} transition: border-color var(--dur-fast) var(--ease-standard);"
         >
           <input
             type="radio"
@@ -211,12 +218,12 @@
             checked={goalMode === mode.value}
             onchange={() => { goalMode = mode.value; }}
             disabled={!mode.enabled}
-            class="accent-[#8b5cf6]"
+            style="accent-color: var(--indigo-500); flex-shrink: 0;"
           />
-          <span class="text-sm {mode.enabled ? 'text-[var(--text-primary)]' : 'text-[var(--text-muted)]'}">
+          <span style="font-family: var(--sans-product); font-size: 14px; color: {mode.enabled ? 'var(--glow-txt)' : 'var(--glow-mute)'};">
             {mode.label}
           </span>
-          <span class="text-[10px] mono text-[var(--text-muted)] ml-auto">
+          <span style="font-family: var(--mono-product); font-size: 10px; letter-spacing: 0.1em; color: var(--glow-mute); margin-left: auto;">
             {mode.note}
           </span>
         </label>
@@ -225,40 +232,40 @@
   </div>
 
   <!-- Advanced (collapsed) -->
-  <div class="mb-8">
+  <div style="margin-bottom: 32px;">
     <button
       onclick={() => { showAdvanced = !showAdvanced; }}
-      class="flex items-center gap-2 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+      style="display: flex; align-items: center; gap: 8px; font-family: var(--sans-product); font-size: 14px; color: var(--glow-dim); background: none; border: none; cursor: pointer; padding: 0; transition: color var(--dur-fast) var(--ease-standard);"
     >
-      <span class="mono text-xs">{showAdvanced ? '\u25BC' : '\u25B6'}</span>
+      <span style="font-family: var(--mono-product); font-size: 11px;">{showAdvanced ? '\u25BC' : '\u25B6'}</span>
       Advanced protocol details
     </button>
 
     {#if showAdvanced}
-      <div class="mt-3 bg-[var(--surface)] border border-[var(--border)] rounded-lg p-5 space-y-4">
+      <div class="card-term" style="margin-top: 12px; padding: 20px; display: flex; flex-direction: column; gap: 16px;">
         <div>
-          <span class="text-xs mono text-[var(--text-muted)]">Rounds</span>
-          <p class="text-sm text-[var(--text-primary)]">5 (fixed)</p>
+          <span class="mono-label" style="display: block; margin-bottom: 4px;">Rounds</span>
+          <p style="font-family: var(--sans-product); font-size: 14px; color: var(--glow-txt); margin: 0;">5 (fixed)</p>
         </div>
         <div>
-          <span class="text-xs mono text-[var(--text-muted)] mb-2 block">Constitutional Roles</span>
-          <div class="overflow-x-auto">
-            <table class="w-full text-sm">
+          <span class="mono-label" style="display: block; margin-bottom: 8px;">Constitutional Roles</span>
+          <div style="overflow-x: auto;">
+            <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
               <thead>
-                <tr class="border-b border-[var(--border)]">
-                  <th class="text-left py-2 pr-4 text-xs mono text-[var(--text-muted)] font-normal">
+                <tr style="border-bottom: 1px solid var(--night-rule2);">
+                  <th style="text-align: left; padding: 8px 16px 8px 0; font-family: var(--mono-product); font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--glow-mute); font-weight: normal;">
                     Role
                   </th>
-                  <th class="text-left py-2 text-xs mono text-[var(--text-muted)] font-normal">
+                  <th style="text-align: left; padding: 8px 0; font-family: var(--mono-product); font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--glow-mute); font-weight: normal;">
                     Description
                   </th>
                 </tr>
               </thead>
               <tbody>
                 {#each ROLES as role}
-                  <tr class="border-b border-[var(--border)] last:border-0">
-                    <td class="py-2 pr-4 mono text-xs text-[#8b5cf6]">{role.name}</td>
-                    <td class="py-2 text-[var(--text-secondary)] text-xs">{role.description}</td>
+                  <tr style="border-bottom: 1px solid var(--night-rule2);">
+                    <td style="padding: 8px 16px 8px 0; font-family: var(--mono-product); font-size: 11px; color: var(--indigo-400);">{role.name}</td>
+                    <td style="padding: 8px 0; font-family: var(--sans-product); font-size: 12px; color: var(--glow-dim);">{role.description}</td>
                   </tr>
                 {/each}
               </tbody>
@@ -271,24 +278,61 @@
 
   <!-- Submit Error -->
   {#if submitError}
-    <div class="bg-red-500/10 border border-red-500/30 rounded-lg p-4 mb-4">
-      <p class="text-red-400 mono text-sm">{submitError}</p>
+    <div style="background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.25); border-radius: 12px; padding: 16px; margin-bottom: 16px;">
+      <p style="font-family: var(--sans-product); font-size: 12px; color: #EF4444; margin: 0;">Error · {submitError}</p>
     </div>
   {/if}
 
   <!-- Launch Button -->
-  <button
-    onclick={handleSubmit}
-    disabled={!canSubmit}
-    class="w-full py-3 rounded-lg text-sm font-medium transition-colors {canSubmit ? 'bg-[#8b5cf6] text-white hover:bg-[#7c3aed] cursor-pointer' : 'bg-[var(--border)] text-[var(--text-muted)] cursor-not-allowed'}"
-  >
-    {#if submitting}
-      <span class="inline-flex items-center gap-2">
-        <span class="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
-        Launching...
-      </span>
+  <div style="display: flex; gap: 12px; align-items: center;">
+    {#if canSubmit}
+      <button
+        onclick={handleSubmit}
+        disabled={!canSubmit}
+        class="btn-indigo"
+        style="padding: 12px 28px;"
+      >
+        {#if submitting}
+          <span style="display: inline-flex; align-items: center; gap: 8px;">
+            <span style="width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.3); border-top-color: white; border-radius: 50%; animation: spin 0.75s linear infinite; display: inline-block;"></span>
+            Launching...
+          </span>
+        {:else}
+          Create Debate &rarr;
+        {/if}
+      </button>
     {:else}
-      Launch Debate
+      <button
+        onclick={handleSubmit}
+        disabled
+        style="padding: 12px 28px; background: var(--night-edge); border: 1px solid var(--night-rule2); border-radius: 8px; font-family: var(--sans-product); font-size: 14px; font-weight: 500; color: var(--glow-mute); cursor: not-allowed;"
+      >
+        {#if submitting}
+          <span style="display: inline-flex; align-items: center; gap: 8px;">
+            <span style="width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.15); border-top-color: rgba(255,255,255,0.4); border-radius: 50%; animation: spin 0.75s linear infinite; display: inline-block;"></span>
+            Launching...
+          </span>
+        {:else}
+          Create Debate &rarr;
+        {/if}
+      </button>
     {/if}
-  </button>
+    <a href="/debates" class="btn-dark-ghost no-underline">← Cancel</a>
+  </div>
 </div>
+
+<style>
+  input:focus {
+    border-color: var(--indigo-500) !important;
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+</style>

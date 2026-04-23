@@ -30,19 +30,25 @@
   });
 </script>
 
-<div class="flex flex-col items-center justify-center min-h-screen bg-[var(--bg)] p-4">
-  <h1 class="mono text-2xl font-bold mb-6">LQ Council</h1>
+<div style="display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; background: var(--night); padding: 16px;">
+  <div style="text-align: center; margin-bottom: 32px;">
+    <h1 style="font-family: var(--sans-product); font-weight: 800; font-size: 28px; color: var(--glow-txt); margin: 0 0 8px;">
+      LQ Council
+    </h1>
+    <p class="tm-eyebrow" style="color: var(--indigo-400);">Sign in</p>
+  </div>
+
   {#if error}
-    <div class="text-center max-w-md">
-      <p class="text-red-400 mono text-sm mb-4">Sign-in unavailable: {error}</p>
+    <div class="card-term" style="text-align: center; max-width: 28rem; padding: 24px;">
+      <p class="mono-label" style="color: #FCA5A5; margin-bottom: 16px;">Sign-in unavailable: {error}</p>
       <button
         onclick={() => location.reload()}
-        class="px-4 py-2 bg-[#8b5cf6] text-white rounded-lg mono text-sm"
+        class="btn-indigo"
       >
         Reload
       </button>
     </div>
   {:else}
-    <p class="mono text-xs text-[var(--text-muted)] mt-4">Redirecting to sign-in…</p>
+    <p class="mono-label" style="color: var(--glow-mute);">Redirecting to sign-in…</p>
   {/if}
 </div>

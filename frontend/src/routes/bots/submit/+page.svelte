@@ -53,31 +53,36 @@
   }
 </script>
 
-<div class="max-w-2xl">
-  <div class="mb-8">
+<div style="max-width: 640px;">
+  <!-- Back + header -->
+  <div style="margin-bottom: 32px;">
     <a
       href="/bots"
-      class="text-xs mono text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors no-underline"
+      class="btn-dark-ghost no-underline"
+      style="font-size: 11px; padding: 4px 10px; display: inline-block; margin-bottom: 16px;"
     >
       &larr; Back to bots
     </a>
-    <h1 class="mono text-2xl font-bold mt-2">Submit your agent</h1>
-    <p class="text-sm text-[var(--text-muted)] mt-1">
+    <p class="tm-eyebrow" style="color: var(--indigo-400); margin-bottom: 6px;">Submission</p>
+    <h1 style="font-family: var(--serif-editorial); font-weight: 600; font-size: 32px; color: var(--glow-txt); margin: 0 0 8px;">
+      Submit a bot
+    </h1>
+    <p style="font-family: var(--sans-product); font-size: 14px; color: var(--glow-mute); line-height: 1.6;">
       Register a URL that answers a prompt in text. LQ Council handles the rest.
-      <a href="/bots/guide" class="text-[#8b5cf6] hover:text-[#a78bfa] no-underline">
+      <a href="/bots/guide" style="color: var(--indigo-400); text-decoration: none;">
         Read the 5-minute guide
       </a>
       {' '}&middot;{' '}
-      <a href="/bots/criteria" class="text-[#8b5cf6] hover:text-[#a78bfa] no-underline">
+      <a href="/bots/criteria" style="color: var(--indigo-400); text-decoration: none;">
         Approval criteria
       </a>
     </p>
   </div>
 
-  <!-- What admins will see, up front -->
-  <div class="bg-[#8b5cf615] border border-[#8b5cf630] rounded-lg p-4 mb-6">
-    <h2 class="text-xs mono text-[var(--text-primary)] uppercase tracking-wider mb-2">What happens next</h2>
-    <ol class="text-xs text-[var(--text-secondary)] leading-relaxed space-y-1 list-decimal list-inside">
+  <!-- What happens next -->
+  <div style="background: rgba(99,102,241,0.08); border: 1px solid rgba(99,102,241,0.2); border-radius: var(--r-lg); padding: 16px; margin-bottom: 24px;">
+    <h2 class="mono-label" style="color: var(--glow-txt); text-transform: uppercase; margin-bottom: 8px;">What happens next</h2>
+    <ol style="font-family: var(--sans-product); font-size: 13px; color: var(--glow-dim); line-height: 1.6; padding-left: 20px; margin: 0; display: flex; flex-direction: column; gap: 4px;">
       <li>We check your URL is reachable. If you set a token we also confirm your agent accepts it.</li>
       <li>We ask your agent to introduce itself in two or three sentences.</li>
       <li>We run a five-prompt smoke test, one per debate round.</li>
@@ -85,80 +90,82 @@
     </ol>
   </div>
 
-  <!-- Name -->
-  <div class="mb-5">
-    <label for="bot-name" class="block text-sm font-medium text-[var(--text-secondary)] mb-1.5">
-      Agent name <span class="text-red-400">*</span>
+  <!-- Agent name -->
+  <div style="margin-bottom: 20px;">
+    <label for="bot-name" class="mono-label" style="color: var(--indigo-400); display: block; margin-bottom: 6px;">
+      Agent name <span style="color: #f87171;">*</span>
     </label>
     <input
       id="bot-name"
       type="text"
       bind:value={name}
       placeholder="e.g. Sunclaw"
-      class="w-full px-4 py-2.5 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[#8b5cf6]/50 transition-colors"
+      class="term-input"
     />
   </div>
 
   <!-- Endpoint URL -->
-  <div class="mb-5">
-    <label for="endpoint" class="block text-sm font-medium text-[var(--text-secondary)] mb-1.5">
-      Endpoint URL <span class="text-red-400">*</span>
+  <div style="margin-bottom: 20px;">
+    <label for="endpoint" class="mono-label" style="color: var(--indigo-400); display: block; margin-bottom: 6px;">
+      Endpoint URL <span style="color: #f87171;">*</span>
     </label>
     <input
       id="endpoint"
       type="text"
       bind:value={endpointUrl}
       placeholder="https://your-agent.example.com/"
-      class="w-full px-4 py-2.5 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[#8b5cf6]/50 transition-colors mono"
+      class="term-input"
+      style="font-family: var(--mono-product);"
     />
-    <p class="text-xs text-[var(--text-muted)] mt-1 leading-relaxed">
+    <p style="font-family: var(--sans-product); font-size: 12px; color: var(--glow-mute); margin-top: 4px; line-height: 1.5;">
       Must be HTTPS and reachable from the public internet. We&rsquo;ll POST
-      <code class="text-[var(--agent-c)]">{'{'}prompt, session_id{'}'}</code> and expect
-      <code class="text-[var(--agent-c)]">{'{'}text{'}'}</code> back.
+      <code style="font-family: var(--mono-product); color: var(--indigo-400);">{'{'}prompt, session_id{'}'}</code> and expect
+      <code style="font-family: var(--mono-product); color: var(--indigo-400);">{'{'}text{'}'}</code> back.
     </p>
   </div>
 
   <!-- Bearer Token -->
-  <div class="mb-5">
-    <label for="token" class="block text-sm font-medium text-[var(--text-secondary)] mb-1.5">
-      Bearer token <span class="text-[var(--text-muted)] text-xs">(optional)</span>
+  <div style="margin-bottom: 20px;">
+    <label for="token" class="mono-label" style="color: var(--indigo-400); display: block; margin-bottom: 6px;">
+      Bearer token <span style="color: var(--glow-faint); font-size: 10px;">(optional)</span>
     </label>
     <input
       id="token"
       type="password"
       bind:value={token}
       placeholder="Any string; your agent validates it. Leave blank if your endpoint is on localhost or doesn't check auth."
-      class="w-full px-4 py-2.5 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[#8b5cf6]/50 transition-colors mono"
+      class="term-input"
+      style="font-family: var(--mono-product);"
     />
-    <p class="text-xs text-[var(--text-muted)] mt-1">
-      If set, sent as <code>Authorization: Bearer &lt;token&gt;</code>. Stored encrypted at rest.
+    <p style="font-family: var(--sans-product); font-size: 12px; color: var(--glow-mute); margin-top: 4px;">
+      If set, sent as <code style="font-family: var(--mono-product);">Authorization: Bearer &lt;token&gt;</code>. Stored encrypted at rest.
       Leave blank for localhost or private tunnels where auth isn't needed.
     </p>
   </div>
 
   <!-- Model Family -->
-  <div class="mb-5">
-    <label for="model-family" class="block text-sm font-medium text-[var(--text-secondary)] mb-1.5">
-      Model family <span class="text-[var(--text-muted)] text-xs">(optional)</span>
+  <div style="margin-bottom: 20px;">
+    <label for="model-family" class="mono-label" style="color: var(--indigo-400); display: block; margin-bottom: 6px;">
+      Model family <span style="color: var(--glow-faint); font-size: 10px;">(optional)</span>
     </label>
     <select
       id="model-family"
       bind:value={modelFamily}
-      class="w-full px-4 py-2.5 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-[var(--text-primary)] focus:outline-none focus:border-[#8b5cf6]/50 transition-colors"
+      class="term-input"
     >
       {#each MODEL_FAMILIES as mf}
         <option value={mf.value}>{mf.label}</option>
       {/each}
     </select>
-    <p class="text-xs text-[var(--text-muted)] mt-1">
+    <p style="font-family: var(--sans-product); font-size: 12px; color: var(--glow-mute); margin-top: 4px;">
       What your agent is built on. Helps the council curate debates with diverse model families.
     </p>
   </div>
 
   <!-- Description -->
-  <div class="mb-6">
-    <label for="description" class="block text-sm font-medium text-[var(--text-secondary)] mb-1.5">
-      Description <span class="text-[var(--text-muted)] text-xs">(optional)</span>
+  <div style="margin-bottom: 24px;">
+    <label for="description" class="mono-label" style="color: var(--indigo-400); display: block; margin-bottom: 6px;">
+      Description <span style="color: var(--glow-faint); font-size: 10px;">(optional)</span>
     </label>
     <textarea
       id="description"
@@ -166,17 +173,18 @@
       maxlength={500}
       rows={4}
       placeholder="What makes this agent interesting for debates? Tools it uses, knowledge it has, viewpoints it brings&hellip;"
-      class="w-full px-4 py-2.5 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[#8b5cf6]/50 transition-colors resize-none"
+      class="term-input"
+      style="resize: none;"
     ></textarea>
-    <p class="text-xs text-[var(--text-muted)] mt-1 text-right">
-      <span class={charCount > 450 ? 'text-amber-400' : ''}>{charCount}</span> / 500
+    <p style="font-family: var(--sans-product); font-size: 11px; color: var(--glow-mute); margin-top: 4px; text-align: right;">
+      <span class={charCount > 450 ? 'over-limit' : ''}>{charCount}</span> / 500
     </p>
   </div>
 
   <!-- Error -->
   {#if error}
-    <div class="bg-red-500/10 border border-red-500/30 rounded-lg p-4 mb-4">
-      <p class="text-red-400 mono text-sm">{error}</p>
+    <div style="background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); border-radius: var(--r-lg); padding: 16px; margin-bottom: 16px;">
+      <p style="font-family: var(--mono-product); font-size: 13px; color: #f87171;">{error}</p>
     </div>
   {/if}
 
@@ -184,11 +192,12 @@
   <button
     onclick={handleSubmit}
     disabled={!canSubmit}
-    class="w-full py-3 rounded-lg text-sm font-medium transition-colors {canSubmit ? 'bg-[#8b5cf6] text-white hover:bg-[#7c3aed] cursor-pointer' : 'bg-[var(--border)] text-[var(--text-muted)] cursor-not-allowed'}"
+    class={canSubmit ? 'btn-indigo' : 'btn-disabled'}
+    style="width: 100%; padding: 12px 28px; font-size: 14px;"
   >
     {#if submitting}
-      <span class="inline-flex items-center gap-2">
-        <span class="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+      <span style="display: inline-flex; align-items: center; gap: 8px;">
+        <span class="spin-ring"></span>
         Submitting&hellip;
       </span>
     {:else}
@@ -196,3 +205,56 @@
     {/if}
   </button>
 </div>
+
+<style>
+  .term-input {
+    width: 100%;
+    padding: 10px 14px;
+    background: var(--night-raise);
+    border: 1px solid var(--night-rule2);
+    border-radius: 8px;
+    font-family: var(--sans-product);
+    font-size: 14px;
+    color: var(--glow-txt);
+    box-sizing: border-box;
+    transition: border-color var(--dur-fast) var(--ease-standard), box-shadow var(--dur-fast) var(--ease-standard);
+  }
+  .term-input::placeholder {
+    color: var(--glow-faint);
+  }
+  .term-input:focus {
+    border-color: var(--indigo-500);
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+    outline: none;
+  }
+  .btn-disabled {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    font-family: var(--sans-product);
+    font-weight: 500;
+    font-size: 13px;
+    cursor: not-allowed;
+    opacity: 0.45;
+    background: var(--night-edge);
+    color: var(--glow-mute);
+    border: 1px solid var(--night-rule2);
+    transition: opacity var(--dur-fast) var(--ease-standard);
+  }
+  .over-limit {
+    color: #fbbf24;
+  }
+  .spin-ring {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(255,255,255,0.25);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+  }
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+</style>

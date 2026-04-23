@@ -76,8 +76,8 @@
   let height = $derived(TOP_PAD + bots.length * ROW_H + 16);
 
   function confidenceColour(c: number | null, abstained: boolean, absent: boolean): string {
-    if (absent) return '#1a1a22';
-    if (abstained || c == null) return '#333340';
+    if (absent) return '#0F0F17';
+    if (abstained || c == null) return '#1A1A26';
     // green → yellow → red as confidence falls
     const hue = Math.max(0, Math.min(120, (c / 100) * 120));
     return `hsl(${hue}, 55%, 38%)`;
@@ -85,14 +85,15 @@
 </script>
 
 <div
-  class="bg-[#0b0b11] border border-[var(--border)] rounded-xl p-5 overflow-auto"
+  class="card-term"
+  style="padding: 20px; overflow: auto;"
   aria-label="Bot positions across rounds"
 >
   <div class="mb-3">
-    <h3 class="text-xs mono uppercase tracking-wider text-[var(--text-muted)]">
+    <h3 class="tm-eyebrow" style="color: var(--indigo-400);">
       Positions & reversals
     </h3>
-    <p class="text-[11px] text-[var(--text-secondary)] mt-1 max-w-2xl">
+    <p style="font-family: var(--sans-product); font-size: 11px; color: var(--glow-dim); margin-top: 4px; max-width: 42rem;">
       Each row is a bot, each column a round. Cell colour is that bot's confidence in
       its own answer that round — greener is more certain, redder is less. A "↻" marks
       a round where the bot changed position. A red border marks a capitulation the
@@ -112,7 +113,7 @@
       <text
         x={LEFT_PAD + i * CELL_W + CELL_W / 2}
         y={20}
-        fill="#9ca3af"
+        fill="rgba(255,255,255,0.50)"
         font-size="10"
         text-anchor="middle"
       >
@@ -125,7 +126,7 @@
       <text
         x={LEFT_PAD - 10}
         y={TOP_PAD + bi * ROW_H + ROW_H / 2 + 4}
-        fill="#e4e4e7"
+        fill="rgba(255,255,255,0.92)"
         font-size="11"
         text-anchor="end"
       >
@@ -146,8 +147,8 @@
               : cell.changed
                 ? '#f59e0b'
                 : cell.absent
-                  ? '#1a1a22'
-                  : '#2a2a35'}
+                  ? '#0F0F17'
+                  : '#1A1A26'}
             stroke-width={cell.capitulation ? 2 : 1}
             rx="5"
           >
@@ -165,7 +166,7 @@
           <text
             x={LEFT_PAD + ri * CELL_W + CELL_W / 2}
             y={TOP_PAD + bi * ROW_H + ROW_H / 2 + 4}
-            fill="#fafafa"
+            fill="rgba(255,255,255,0.92)"
             font-size="12"
             font-weight="600"
             text-anchor="middle"
@@ -186,7 +187,7 @@
     {/each}
   </svg>
 
-  <div class="mt-4 flex flex-wrap gap-4 text-[10px] mono text-[var(--text-muted)]">
+  <div class="mt-4 flex flex-wrap gap-4" style="font-family: var(--mono-product); font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--glow-mute);">
     <div class="flex items-center gap-2">
       <span class="w-3 h-3 rounded" style="background: hsl(120,55%,38%);"></span>
       high confidence

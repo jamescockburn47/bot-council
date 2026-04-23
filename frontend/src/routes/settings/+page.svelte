@@ -1,3 +1,22 @@
+<style>
+  .prompts-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--sans-product);
+    font-size: 14px;
+    color: var(--glow-dim);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    transition: color var(--dur-fast) var(--ease-standard);
+  }
+  .prompts-toggle:hover {
+    color: var(--glow-txt);
+  }
+</style>
+
 <script lang="ts">
   let showPrompts = $state(false);
 
@@ -10,58 +29,68 @@
   ] as const;
 </script>
 
-<div class="max-w-4xl">
-  <h1 class="mono text-2xl font-bold mb-2">Settings</h1>
+<div style="max-width: 56rem;">
+  <!-- Header -->
+  <div style="margin-bottom: 2rem;">
+    <p class="tm-eyebrow" style="color: var(--indigo-400); margin-bottom: 6px;">Workspace · Settings</p>
+    <h1 style="font-family: var(--sans-product); font-weight: 800; font-size: 32px; color: var(--glow-txt); margin: 0;">
+      Settings
+    </h1>
+  </div>
 
   <!-- Banner -->
-  <div class="bg-[#8b5cf6]/10 border border-[#8b5cf6]/30 rounded-lg p-4 mb-8">
-    <p class="text-sm text-[#a78bfa]">
+  <div class="card-term" style="padding: 16px; margin-bottom: 2rem; border-color: rgba(99,102,241,0.3);">
+    <p style="font-family: var(--sans-product); font-size: 14px; color: var(--glow-dim); margin: 0;">
       Protocol configuration is read-only in this release. Changes require backend deployment.
     </p>
   </div>
 
   <!-- Protocol Parameters -->
-  <section class="mb-8">
-    <h2 class="mono text-lg font-bold text-[var(--text-primary)] mb-4">Protocol Parameters</h2>
-    <div class="bg-[var(--surface)] border border-[var(--border)] rounded-lg divide-y divide-[var(--border)]">
-      {#each [
-        { label: 'Rounds', value: '5' },
-        { label: 'Quorum', value: '3 bots minimum' },
-        { label: 'Response timeout', value: '5 minutes' },
-        { label: 'Max retries', value: '2' },
-        { label: 'Synthesis model', value: 'claude-opus-4-6' },
-        { label: 'Synthesis temperature', value: '0.0' },
-      ] as param}
-        <div class="flex items-center justify-between px-5 py-3">
-          <span class="text-sm text-[var(--text-secondary)]">{param.label}</span>
-          <span class="mono text-sm text-[var(--text-primary)]">{param.value}</span>
-        </div>
-      {/each}
+  <section style="margin-bottom: 2rem;">
+    <div class="card-term-lg">
+      <p class="tm-eyebrow" style="color: var(--indigo-400); margin-bottom: 16px;">Protocol Parameters</p>
+      <div style="display: flex; flex-direction: column; gap: 0;">
+        {#each [
+          { label: 'Rounds', value: '5' },
+          { label: 'Quorum', value: '3 bots minimum' },
+          { label: 'Response timeout', value: '5 minutes' },
+          { label: 'Max retries', value: '2' },
+          { label: 'Synthesis model', value: 'claude-opus-4-6' },
+          { label: 'Synthesis temperature', value: '0.0' },
+        ] as param}
+          <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--night-rule2);">
+            <span style="font-family: var(--sans-product); font-size: 14px; color: var(--glow-dim);">{param.label}</span>
+            <span style="font-family: var(--mono-product); font-size: 13px; color: var(--glow-txt); accent-color: var(--indigo-500);">{param.value}</span>
+          </div>
+        {/each}
+      </div>
     </div>
   </section>
 
   <!-- Constitutional Roles -->
-  <section class="mb-8">
-    <h2 class="mono text-lg font-bold text-[var(--text-primary)] mb-4">Constitutional Roles</h2>
-    <div class="overflow-x-auto">
-      <table class="w-full text-sm bg-[var(--surface)] border border-[var(--border)] rounded-lg">
-        <thead>
-          <tr class="border-b border-[var(--border)]">
-            <th class="text-left py-3 px-5 text-xs mono text-[var(--text-muted)] font-normal">Role</th>
-            <th class="text-left py-3 px-5 text-xs mono text-[var(--text-muted)] font-normal">Description</th>
-            <th class="text-left py-3 px-5 text-xs mono text-[var(--text-muted)] font-normal">Enforcement Rule</th>
-          </tr>
-        </thead>
-        <tbody>
-          {#each ROLES as role}
-            <tr class="border-b border-[var(--border)] last:border-0">
-              <td class="py-3 px-5 mono text-xs text-[#8b5cf6] whitespace-nowrap">{role.name}</td>
-              <td class="py-3 px-5 text-[var(--text-secondary)]">{role.description}</td>
-              <td class="py-3 px-5 text-[var(--text-muted)] text-xs">{role.enforcement}</td>
+  <section style="margin-bottom: 2rem;">
+    <div class="card-term-lg">
+      <p class="tm-eyebrow" style="color: var(--indigo-400); margin-bottom: 16px;">Constitutional Roles</p>
+      <div style="overflow-x: auto;">
+        <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+          <thead>
+            <tr style="border-bottom: 1px solid var(--night-rule2);">
+              <th class="mono-label" style="text-align: left; padding: 10px 0 10px 0; padding-right: 20px;">Role</th>
+              <th class="mono-label" style="text-align: left; padding: 10px 20px;">Description</th>
+              <th class="mono-label" style="text-align: left; padding: 10px 0 10px 20px;">Enforcement Rule</th>
             </tr>
-          {/each}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {#each ROLES as role}
+              <tr style="border-bottom: 1px solid var(--night-rule2);">
+                <td style="padding: 12px 20px 12px 0; font-family: var(--mono-product); font-size: 13px; color: var(--indigo-400); white-space: nowrap;">{role.name}</td>
+                <td style="padding: 12px 20px; font-family: var(--sans-product); font-size: 14px; color: var(--glow-dim);">{role.description}</td>
+                <td style="padding: 12px 0 12px 20px; font-family: var(--sans-product); font-size: 13px; color: var(--glow-mute);">{role.enforcement}</td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
     </div>
   </section>
 
@@ -69,14 +98,14 @@
   <section>
     <button
       onclick={() => { showPrompts = !showPrompts; }}
-      class="flex items-center gap-2 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+      class="prompts-toggle"
     >
-      <span class="mono text-xs">{showPrompts ? '\u25BC' : '\u25B6'}</span>
+      <span style="font-family: var(--mono-product); font-size: 11px;">{showPrompts ? '▼' : '▶'}</span>
       Prompt Templates
     </button>
     {#if showPrompts}
-      <div class="mt-3 bg-[var(--surface)] border border-[var(--border)] rounded-lg p-5">
-        <p class="text-sm text-[var(--text-muted)]">
+      <div class="card-term" style="margin-top: 12px; padding: 20px;">
+        <p style="font-family: var(--sans-product); font-size: 14px; color: var(--glow-mute); line-height: 1.7; margin: 0;">
           Prompt templates are defined in the backend orchestrator. Each round uses a structured
           prompt that includes the bot's constitutional role, the debate topic, prior responses
           (anonymised), and round-specific instructions. Templates are not user-configurable in

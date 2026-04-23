@@ -38,7 +38,7 @@ pub async fn run_round4(
     bots: &[BotRow],
     bot_tokens: &HashMap<String, String>,
     role_assignments: &HashMap<String, Role>,
-    full_context: Vec<RoundContext>,
+    pseudonym_map: &HashMap<String, String>,
     models_config: &ModelsConfig,
     timeout_secs: u64,
 ) -> Result<(), String> {
@@ -51,6 +51,33 @@ pub async fn run_round4(
         .filter(|r| !r.abstained)
         .map(|r| (r.bot_id.clone(), r.response_json.clone()))
         .collect();
+
+    // Build per-bot own-track context (R0..=R3 for that bot). Sized to
+    // give each bot its own prior reasoning for the final-position
+    // steelman + position_change reflection without flooding the
+    // prompt with peer responses — synthesis owns the meta-view, not
+    // the bot. See the 2026-04-23 lean-context design: letting the
+    // final-round prompt carry the full transcript pushed per-bot
+    // context into the collapse zone for weaker implementations.
+    let all_prior = queries_phase1::get_all_responses(pool, debate_id)
+        .await
+        .map_err(|e| format!("db: {e}"))?;
+    let mut own_track_by_bot: HashMap<String, Vec<RoundContext>> = HashMap::new();
+    for r in &all_prior {
+        if r.abstained || r.round_number > 3 {
+            continue;
+        }
+        let pseudonym = pseudonym_map.get(&r.bot_id).cloned().unwrap_or_default();
+        own_track_by_bot
+            .entry(r.bot_id.clone())
+            .or_default()
+            .push(RoundContext {
+                pseudonym,
+                round: r.round_number,
+                response: r.response_json.clone(),
+                confidence: r.confidence,
+            });
+    }
 
     let topic = topic.to_string();
     let futures: Vec<_> = bots
@@ -67,7 +94,7 @@ pub async fn run_round4(
                 .unwrap_or(Role::Proponent);
             let prompt = prompts::round4_prompt(&topic);
             let retry_prompt = simplified_retry_prompt(&topic, 4);
-            let context = full_context.clone();
+            let context = own_track_by_bot.get(&bot.id).cloned().unwrap_or_default();
             let r0_text = r0_by_bot.get(&bot.id).cloned();
             let bot_id = bot.id.clone();
             async move {

@@ -70,7 +70,13 @@ pub async fn run_round3(
 }
 
 /// Crux-engagement R3: every bot receives the same claim + source quote
-/// and engages it directly, with R0+R1+R2 provided as prior context.
+/// and engages it directly. Context is intentionally empty — the crux
+/// prompt is self-contained (claim + source pseudonym + verbatim quote),
+/// and passing every prior response for every bot pushed later-round
+/// context size into territory that broke weaker bots (observed 2026-04-23
+/// live debate: 3 of 4 bots collapsed in R3/R4 when context exceeded 40k
+/// chars). Synthesis layer handles meta-commentary about the debate —
+/// the bot's job here is a substantive engagement with one claim.
 ///
 /// Mirrors `run_round1`'s resilient dispatch: one simplified retry on
 /// failure, R0-carry-forward if both attempts fail, genuine abstention
@@ -107,23 +113,6 @@ async fn run_round3_crux(
         .map(|r| (r.bot_id.clone(), r.response_json.clone()))
         .collect();
 
-    // Build prior-round context (R0 + R1 + R2) so the bot has full history
-    // when engaging the crux. Mirrors the `full_context` assembly used for
-    // R4 in multi_round.rs.
-    let prior = queries_phase1::get_all_responses(pool, debate_id)
-        .await
-        .map_err(|e| format!("db: {e}"))?;
-    let prior_context: Vec<RoundContext> = prior
-        .iter()
-        .filter(|r| !r.abstained && r.round_number <= 2)
-        .map(|r| RoundContext {
-            pseudonym: pseudonym_map.get(&r.bot_id).cloned().unwrap_or_default(),
-            round: r.round_number,
-            response: r.response_json.clone(),
-            confidence: r.confidence,
-        })
-        .collect();
-
     let prompt = prompts::round3_crux_prompt(
         topic,
         &crux.claim,
@@ -146,7 +135,7 @@ async fn run_round3_crux(
                 .unwrap_or(Role::Proponent);
             let prompt = prompt.clone();
             let retry_prompt = simplified_retry_prompt(&topic, 3);
-            let context = prior_context.clone();
+            let context: Vec<RoundContext> = Vec::new();
             let r0_text = r0_by_bot.get(&bot.id).cloned();
             let bot_id = bot.id.clone();
             async move {

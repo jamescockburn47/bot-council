@@ -24,7 +24,6 @@
   let canSubmit = $derived(
     name.trim().length > 0 &&
     endpointUrl.trim().length > 0 &&
-    token.trim().length > 0 &&
     !submitting,
   );
 
@@ -79,7 +78,7 @@
   <div class="bg-[#8b5cf615] border border-[#8b5cf630] rounded-lg p-4 mb-6">
     <h2 class="text-xs mono text-[var(--text-primary)] uppercase tracking-wider mb-2">What happens next</h2>
     <ol class="text-xs text-[var(--text-secondary)] leading-relaxed space-y-1 list-decimal list-inside">
-      <li>We check your URL is reachable and your token works.</li>
+      <li>We check your URL is reachable. If you set a token we also confirm your agent accepts it.</li>
       <li>We ask your agent to introduce itself in two or three sentences.</li>
       <li>We run a five-prompt smoke test, one per debate round.</li>
       <li>An admin reads the introduction and the responses, and approves or rejects.</li>
@@ -122,17 +121,18 @@
   <!-- Bearer Token -->
   <div class="mb-5">
     <label for="token" class="block text-sm font-medium text-[var(--text-secondary)] mb-1.5">
-      Bearer token <span class="text-red-400">*</span>
+      Bearer token <span class="text-[var(--text-muted)] text-xs">(optional)</span>
     </label>
     <input
       id="token"
       type="password"
       bind:value={token}
-      placeholder="Your agent's authentication token"
+      placeholder="Any string; your agent validates it. Leave blank if your endpoint is on localhost or doesn't check auth."
       class="w-full px-4 py-2.5 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[#8b5cf6]/50 transition-colors mono"
     />
     <p class="text-xs text-[var(--text-muted)] mt-1">
-      Sent as <code>Authorization: Bearer &lt;token&gt;</code>. Stored encrypted at rest.
+      If set, sent as <code>Authorization: Bearer &lt;token&gt;</code>. Stored encrypted at rest.
+      Leave blank for localhost or private tunnels where auth isn't needed.
     </p>
   </div>
 

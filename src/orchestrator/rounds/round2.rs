@@ -78,11 +78,10 @@ pub async fn run_round2(
                 // `challenge` object, triggering the simplified retry.
                 // For text_only bots the challenge is never part of the
                 // wire contract — it is extracted from prose after the
-                // round (see `extract_if_needed`), so we must not treat
-                // its absence as invalid: otherwise every text_only
-                // response would retry then carry R0 forward and never
-                // reach the extractor.
-                let is_text_only = bot_kind == "text_only";
+                // round (see `extract_if_needed`) universally, regardless
+                // of bot_kind. Never treat missing challenge as invalid;
+                // otherwise the dispatcher would retry and carry R0
+                // forward before the extractor runs.
                 let outcome = dispatch_with_retry_and_fallback(
                     &client,
                     &bot_kind,
@@ -92,7 +91,7 @@ pub async fn run_round2(
                     retry_prompt,
                     r0_text,
                     timeout_secs,
-                    |resp| !is_text_only && resp.challenge.is_none(),
+                    |_| false,
                 )
                 .await;
                 (bot_id, bot_kind, outcome)

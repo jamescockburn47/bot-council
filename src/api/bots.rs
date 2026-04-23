@@ -576,20 +576,24 @@ pub async fn create_bot(
     if req.endpoint_url.is_empty() {
         return Err(AppError::BadRequest("endpoint_url is required".into()));
     }
-    // HTTPS enforcement. Allow http://localhost and 127.0.0.1 only in debug builds.
+    // URL scheme: require https:// for public endpoints; permit http:// for
+    // loopback addresses so a bot co-hosted on the same box as the council
+    // (e.g. localhost:3000) can register through the normal path without
+    // extra TLS setup.
     if !req.endpoint_url.starts_with("https://") {
-        let localhost_ok = cfg!(debug_assertions)
-            && (req.endpoint_url.starts_with("http://localhost")
-                || req.endpoint_url.starts_with("http://127.0.0.1"));
+        let localhost_ok = req.endpoint_url.starts_with("http://localhost")
+            || req.endpoint_url.starts_with("http://127.0.0.1")
+            || req.endpoint_url.starts_with("http://[::1]");
         if !localhost_ok {
             return Err(AppError::BadRequest(
-                "endpoint_url must use https://".into(),
+                "endpoint_url must use https:// (http:// accepted only for loopback addresses)"
+                    .into(),
             ));
         }
     }
-    if req.token.is_empty() {
-        return Err(AppError::BadRequest("token is required".into()));
-    }
+    // Token is optional. Bots behind private tunnels or on localhost typically
+    // don't need one; public bots may still set one for LLM-budget protection.
+    // Dispatch skips the Authorization header when token_ciphertext is NULL.
     match req.bot_kind.as_str() {
         "external" | "text_only" => {}
         other => {
@@ -732,107 +736,29 @@ fn validate_smoke_json(json: serde_json::Value) -> Result<(), String> {
     validate_smoke_json_for_round(&json, 0)
 }
 
-/// Round-aware smoke validator.
+/// Smoke validator: the bot returned non-empty prose in either `response`
+/// or `text`.
 ///
-/// Round 0: only `response: string` required.
-/// Round 2:    `challenge: {claim_targeted, counter_evidence, type ∈
-///             factual|logical|premise}` required (mandatory per
-///             orchestrator spec).
-/// Round 4:    `position_change: {changed:bool, from_summary,
-///             to_summary, reason}` required (mandatory per orchestrator
-///             spec).
+/// Historically this enforced a round-specific structured schema on external
+/// bots (mandatory `challenge` object on round 2, `position_change` on
+/// round 4). That distinction is gone: every response is prose, and the
+/// orchestrator's extractor pulls structured fields out of the prose with
+/// source-quote verification. A bot that abstains or returns gibberish
+/// still fails (empty body); a bot that returns a substantive prose
+/// answer passes, regardless of which structured fields its author chose
+/// to emit.
 ///
-/// `confidence` is OPTIONAL on all rounds — if present it must be an
-/// integer 0-100 (type-checked, no hard failure on absence). It was
-/// briefly required here but removed (2026-04-22) because the value
-/// does not drive any downstream decision; peer scoring uses a
-/// separate signal (see src/orchestrator/mod.rs::run_peer_scoring).
-///
-/// If a bot cannot populate the round 2 / round 4 required fields at
-/// approval time it would abstain in every real debate — the whole
-/// reason bots have been silently abstaining after approval. Enforcing
-/// here catches it before they go live.
-fn validate_smoke_json_for_round(json: &serde_json::Value, round: i64) -> Result<(), String> {
-    let response_ok = match json.get("response") {
-        Some(serde_json::Value::String(text)) if !text.trim().is_empty() => Ok(()),
-        Some(serde_json::Value::String(_)) => Err("'response' field is empty".to_string()),
-        Some(other) => Err(format!(
-            "'response' field has wrong type: expected string, got {other}"
-        )),
-        None => Err("response JSON missing 'response' field".to_string()),
-    };
-    response_ok?;
-
-    // Confidence: optional. Type-check when present so an author who
-    // DID return the field gets a useful error if they used the wrong
-    // shape (e.g. 0.7 instead of 70). Missing is fine.
-    if let Some(v) = json.get("confidence") {
-        match v {
-            serde_json::Value::Null => {}
-            serde_json::Value::Number(n) if n.is_i64() => {
-                let x = n.as_i64().unwrap();
-                if !(0..=100).contains(&x) {
-                    return Err(format!(
-                        "'confidence' out of 0-100 range (got {x}) — schema_invalid_value"
-                    ));
-                }
-            }
-            serde_json::Value::Number(n) => {
-                return Err(format!(
-                    "'confidence' present but not an integer (got {n}) — use 70, not 0.7"
-                ));
-            }
-            other => {
-                return Err(format!(
-                    "'confidence' wrong type: expected integer 0-100 or null, got {other}"
-                ));
-            }
-        }
+/// `round` is kept on the signature for log-site compatibility — it no
+/// longer influences validation.
+fn validate_smoke_json_for_round(json: &serde_json::Value, _round: i64) -> Result<(), String> {
+    let text = json
+        .get("response")
+        .or_else(|| json.get("text"))
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "response body missing 'response' or 'text' string field".to_string())?;
+    if text.trim().is_empty() {
+        return Err("'response' field is empty".into());
     }
-
-    if round == 2 {
-        let ch = json.get("challenge").ok_or_else(|| {
-            "round 2 requires a 'challenge' object with fields {claim_targeted, counter_evidence, type}".to_string()
-        })?;
-        let obj = ch
-            .as_object()
-            .ok_or_else(|| "'challenge' must be a JSON object".to_string())?;
-        for k in ["claim_targeted", "counter_evidence"] {
-            match obj.get(k) {
-                Some(serde_json::Value::String(_)) => {}
-                _ => return Err(format!("'challenge.{k}' must be a non-empty string")),
-            }
-        }
-        let t = obj
-            .get("type")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| "'challenge.type' must be a string".to_string())?;
-        if !matches!(t, "factual" | "logical" | "premise") {
-            return Err(format!(
-                "'challenge.type' must be factual|logical|premise (got {t:?})"
-            ));
-        }
-    }
-
-    if round == 4 {
-        let pc = json.get("position_change").ok_or_else(|| {
-            "round 4 requires a 'position_change' object with fields {changed, from_summary, to_summary, reason}".to_string()
-        })?;
-        let obj = pc
-            .as_object()
-            .ok_or_else(|| "'position_change' must be a JSON object".to_string())?;
-        match obj.get("changed") {
-            Some(serde_json::Value::Bool(_)) => {}
-            _ => return Err("'position_change.changed' must be a boolean".to_string()),
-        }
-        for k in ["from_summary", "to_summary", "reason"] {
-            match obj.get(k) {
-                Some(serde_json::Value::String(_)) => {}
-                _ => return Err(format!("'position_change.{k}' must be a string")),
-            }
-        }
-    }
-
     Ok(())
 }
 
@@ -851,7 +777,7 @@ async fn send_text_only_smoke_probe(
     });
     let mut request = client
         .post(endpoint_url)
-        .timeout(std::time::Duration::from_secs(60));
+        .timeout(std::time::Duration::from_secs(180));
     if let Some(t) = token {
         if !t.is_empty() {
             request = request.header("authorization", format!("Bearer {t}"));
@@ -892,7 +818,7 @@ async fn send_introduction_probe(
     });
     let mut request = client
         .post(endpoint_url)
-        .timeout(std::time::Duration::from_secs(60));
+        .timeout(std::time::Duration::from_secs(180));
     if let Some(t) = token {
         if !t.is_empty() {
             request = request.header("authorization", format!("Bearer {t}"));
@@ -934,7 +860,7 @@ async fn send_smoke_probe(
     for attempt in 1..=2 {
         let mut request = client
             .post(endpoint_url)
-            .timeout(std::time::Duration::from_secs(60));
+            .timeout(std::time::Duration::from_secs(180));
         if let Some(token) = token {
             if !token.is_empty() {
                 request = request.header("authorization", format!("Bearer {token}"));
@@ -1003,7 +929,7 @@ pub(crate) async fn smoke_test_bot(
         // addresses (for co-hosted bots) are not routed via any proxy env.
         .no_proxy()
         .connect_timeout(std::time::Duration::from_secs(5))
-        .timeout(std::time::Duration::from_secs(60))
+        .timeout(std::time::Duration::from_secs(180))
         .build()
         .map_err(|e| format!("failed to build smoke-test client: {e}"))?;
 

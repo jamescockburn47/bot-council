@@ -68,16 +68,12 @@ pub async fn create_debate(
     // (>=3) is still met.
     let preflight_checks = selected_bots.iter().map(|bot| async {
         let started = std::time::Instant::now();
-        if bot.token_ciphertext.is_none() {
-            return (
-                bot.id.clone(),
-                Some(format!(
-                    "{} ({}): bot has no encrypted token — please re-submit",
-                    bot.name, bot.id
-                )),
-                started.elapsed().as_millis(),
-            );
-        }
+        // Token is optional — NULL token means "no Authorization header sent".
+        // Localhost/private bots don't need one; public bots can still set
+        // one at submission for LLM-budget protection against random internet
+        // callers. Dispatch already no-op's the auth header when token is
+        // empty, so preflight just needs to verify reachability.
+        //
         // `false` — preflight is a reachability check, not an approval.
         // The introduction was captured once at approval time; no need to
         // re-fire the intro probe on every debate.

@@ -237,13 +237,18 @@ All routes mounted under `/api/*` in production. Tests use the un-prefixed route
 - **Admin bearer token** (`APP__AUTH__ADMIN_TOKEN`): CLI / emergency / bootstrap-first-admin path. Sends `Authorization: Bearer <token>` — identity is `Admin { user_id: None, source: BearerToken }`.
 - **Promotion**: `POST /api/admins` with a Clerk user_id. First admin bootstrapped by bearer token before the user has admin rights via any other path. **Already done** — 4 admins in DB as of 2026-04-18.
 
-## Current state (2026-04-22)
+## Current state (2026-04-23)
 
 **Live architecture**: single-origin EVO fronted by Cloudflare Tunnel. Vercel fully retired (both the bot-council frontend project and the lqcouncil-api-proxy project removed).
 
-**Bot modes**: the `bots.bot_kind` column (default `external`) gates dispatch and smoke-test behaviour. Two values today:
-- `external` — legacy contract. Bot exposes `POST /debate` speaking the full `DebateRoundRequest`/`DebateRoundResponse` schema. Used by the three pre-existing bots (Oscar, LQClaw, Akechi). `/bots/submit` UI no longer submits this kind; admin bearer path still can.
-- `text_only` — default for new submissions. Bot exposes a URL that accepts `{prompt, session_id}` and returns `{text}`. Before approval the smoke test sends an introduction prompt (stored on `bots.introduction`) plus five round-shaped text probes; admin reviews the introduction as the primary agent-vs-wrapper signal. In rounds 2 and 4 the orchestrator extracts structured fields (`challenge`, `position_change`) from the bot's prose via MiniMax with source-quote substring verification as the anti-hallucination guardrail. Per-field provenance lands in `responses.extraction_metadata` and surfaces in the transcript UI as "extracted" badges with the source quote inline. Full design: `docs/superpowers/specs/2026-04-22-text-only-bot-mode-design.md`.
+**Bot contract (unified)**: every bot receives a prompt and returns prose. Structured fields (`challenge`, `position_change`, `steelman`, `crux_engagement`) are extracted from prose by MiniMax with source-quote verification — whether or not the bot authored them on the wire. `bot_kind` still exists as a column with values `external` and `text_only`, but it no longer gates smoke validation or extraction; the distinction is purely a note on which wire-shape the bot expects (external = full `DebateRoundRequest`, text_only = flat `{prompt, session_id} → {text}`). Both wire shapes continue to work.
+- Token is optional at submission; NULL token means "dispatch sends no Authorization header". Public bots may still set one for LLM-budget protection.
+- Endpoint URL accepts `https://…` or `http://localhost*` / `http://127.0.0.1*` / `http://[::1]*`. Public endpoints must use HTTPS.
+- Smoke validator checks a single thing: the bot returned non-empty prose in `response` or `text`. No per-round structured schema enforcement.
+- Smoke per-request timeout is 180s (was 60s) so tool-heavy research fits.
+- Preflight runs the smoke test with whatever token is stored (or none); failures other than reachability no longer exist.
+
+Design: `docs/superpowers/specs/2026-04-23-unified-bot-contract-design.md` (extends `2026-04-22-text-only-bot-mode-design.md`; the strict external path described there is retired).
 
 **LLM routing**: all analyser + final-synthesis calls hit **MiniMax-M2.7 at `https://api.minimax.io`** (OpenAI-compatible API, Bearer auth). Env file has `APP__MODELS__ANALYSIS_BASE_URL`, `APP__MODELS__FINAL_SYNTHESIS_BASE_URL`, and `APP__MODELS__MINIMAX_BASE_URL` all pointing at api.minimax.io, and `APP__MODELS__MINIMAX_API_KEY` set. `APP__MODELS__FINAL_SYNTHESIS_WARMUP_ENABLED=false` (not needed for a hosted API). The historic Anthropic + CometAPI keys zeroed 2026-04-20 remain zeroed. `config/default.toml` defaults still point at the local llama-server for analysis + final_synthesis, so if MiniMax is down the rollback is "unset the `APP__MODELS__*_BASE_URL` overrides, restart bot-council, llama-server picks up the traffic" — provided the local llama-server on `:8086` is running.
 

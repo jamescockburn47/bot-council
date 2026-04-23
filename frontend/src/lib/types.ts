@@ -85,6 +85,17 @@ export interface TranscriptResponse {
   rounds: TranscriptRound[];
   anonymisation_log: AnonymisationEntry[];
   divergence_analyses: DivergenceEntry[];
+  /** The single most-divergent claim selected between R2 and R3 and injected
+   *  into every bot's R3 prompt. Absent on debates where crux selection was
+   *  skipped (pre-crux debates, or selector failure that fell back to the
+   *  legacy cross-examination format). */
+  crux?: CruxData;
+}
+
+export interface CruxData {
+  claim: string;
+  source_pseudonym: string;
+  source_quote: string;
 }
 
 export interface TranscriptRound {
@@ -103,14 +114,27 @@ export interface TranscriptEntry {
   abstained: boolean;
   validation_reasoning: string | null;
   /** Per-field extraction provenance for text-only bots.
-   *  Keyed by field name ("challenge" | "position_change").
+   *  Keyed by field name ("challenge" | "position_change" | "steelman").
    *  Absent or null for bots that authored structured fields directly. */
   extraction_metadata: ExtractionMetadata | null;
+  /** When populated, this response was carried forward from an earlier
+   *  round (typically R0) because the bot failed to respond in the current
+   *  round. Null when the bot responded directly. */
+  fallback_from_round?: number | null;
 }
 
 export interface ExtractionMetadata {
   challenge?: ExtractionProvenance | null;
   position_change?: ExtractionProvenance | null;
+  /** R4-only extraction of the steelman (strongest version of the opposing
+   *  argument). `steelman` text is present only when `source === 'extracted'`. */
+  steelman?: SteelmanProvenance | null;
+}
+
+export interface SteelmanProvenance extends ExtractionProvenance {
+  /** The extracted 2–3 sentence steelman text. Null when extraction failed
+   *  or was not attempted (e.g. external bot → source = 'authored'). */
+  steelman?: string | null;
 }
 
 export interface ExtractionProvenance {

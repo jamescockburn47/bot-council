@@ -570,29 +570,24 @@ pub async fn create_bot(
     auth: AuthIdentity,
     Json(req): Json<CreateBotRequest>,
 ) -> AppResult<(StatusCode, Json<BotResponse>)> {
-    let simple_mode = state.settings().debate.test_mode_simple;
-
     if req.name.is_empty() {
         return Err(AppError::BadRequest("name is required".into()));
     }
     if req.endpoint_url.is_empty() {
         return Err(AppError::BadRequest("endpoint_url is required".into()));
     }
-    // HTTPS enforcement. In simple test mode, HTTP endpoints are allowed.
-    // Outside test mode, allow http://localhost and 127.0.0.1 only in debug builds.
+    // HTTPS enforcement. Allow http://localhost and 127.0.0.1 only in debug builds.
     if !req.endpoint_url.starts_with("https://") {
-        if !simple_mode {
-            let localhost_ok = cfg!(debug_assertions)
-                && (req.endpoint_url.starts_with("http://localhost")
-                    || req.endpoint_url.starts_with("http://127.0.0.1"));
-            if !localhost_ok {
-                return Err(AppError::BadRequest(
-                    "endpoint_url must use https://".into(),
-                ));
-            }
+        let localhost_ok = cfg!(debug_assertions)
+            && (req.endpoint_url.starts_with("http://localhost")
+                || req.endpoint_url.starts_with("http://127.0.0.1"));
+        if !localhost_ok {
+            return Err(AppError::BadRequest(
+                "endpoint_url must use https://".into(),
+            ));
         }
     }
-    if req.token.is_empty() && !simple_mode {
+    if req.token.is_empty() {
         return Err(AppError::BadRequest("token is required".into()));
     }
     match req.bot_kind.as_str() {
@@ -614,11 +609,7 @@ pub async fn create_bot(
                 .map_err(|_| AppError::Internal(anyhow::anyhow!("token encryption failed")))?,
         )
     };
-    let status = if auth.is_admin() || (simple_mode && auth.user_id().is_some()) {
-        "active"
-    } else {
-        "pending"
-    };
+    let status = if auth.is_admin() { "active" } else { "pending" };
     let row = queries::insert_bot(
         state.db(),
         id.as_str(),

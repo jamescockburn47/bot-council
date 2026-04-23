@@ -107,7 +107,7 @@ pub fn is_effective_abstention_response(text: &str) -> bool {
         .any(|marker| normalized.contains(marker))
 }
 
-/// Run the configured adversarial debate protocol (5-round standard or 3-round simple mode).
+/// Run the 5-round adversarial debate protocol.
 pub async fn run_multi_round_debate(
     pool: &SqlitePool,
     client: &ClientWithMiddleware,
@@ -121,7 +121,6 @@ pub async fn run_multi_round_debate(
 ) -> Result<(), String> {
     let id = debate_id.as_str();
     let timeout = debate_config.default_timeout_secs;
-    let simple_mode = debate_config.test_mode_simple;
 
     // Build maps from debate_bots table
     let debate_bots = queries_phase1::get_debate_bots_with_roles(pool, id)
@@ -184,12 +183,7 @@ pub async fn run_multi_round_debate(
             &event_tx,
             DebateEvent::RoundStarted {
                 round_number: 0,
-                name: if simple_mode {
-                    "Opening"
-                } else {
-                    round_name(0)
-                }
-                .to_string(),
+                name: round_name(0).to_string(),
             },
         );
         let r0 = rounds::round0::run_round0(
@@ -255,12 +249,7 @@ pub async fn run_multi_round_debate(
             &event_tx,
             DebateEvent::RoundStarted {
                 round_number: 1,
-                name: if simple_mode {
-                    "Rebuttal"
-                } else {
-                    round_name(1)
-                }
-                .to_string(),
+                name: round_name(1).to_string(),
             },
         );
         rounds::round1::run_round1(
@@ -300,7 +289,7 @@ pub async fn run_multi_round_debate(
         })
         .collect();
 
-    // === ROUND 2 — Structured Rebuttal (standard) / Final Position (simple mode) ===
+    // === ROUND 2 — Structured Rebuttal ===
     if resume_round <= 2 {
         queries::update_debate_status(pool, id, "round_2")
             .await
@@ -310,12 +299,7 @@ pub async fn run_multi_round_debate(
             &event_tx,
             DebateEvent::RoundStarted {
                 round_number: 2,
-                name: if simple_mode {
-                    "Final Position"
-                } else {
-                    round_name(2)
-                }
-                .to_string(),
+                name: round_name(2).to_string(),
             },
         );
         rounds::round2::run_round2(
@@ -329,8 +313,6 @@ pub async fn run_multi_round_debate(
             round1_context.clone(),
             models_config,
             timeout,
-            debate_config.max_retries,
-            !simple_mode,
         )
         .await?;
         state_machine::complete_round(pool, id, 2).await?;
@@ -340,24 +322,6 @@ pub async fn run_multi_round_debate(
                 .map_err(|e| format!("db: {e}"))?;
             emit_round_responses(&event_tx, 2, &responses, &pseudonym_map, &role_assignments);
         }
-    }
-
-    if simple_mode {
-        return run_divergence_and_synthesis(
-            pool,
-            id,
-            topic,
-            models_config,
-            debate_config,
-            bots,
-            bot_tokens,
-            &pseudonym_map,
-            &r0_responses,
-            2,
-            &participant_map_text,
-            &event_tx,
-        )
-        .await;
     }
 
     // Build Round 2 response map for pairing
@@ -375,7 +339,54 @@ pub async fn run_multi_round_debate(
         })
         .collect();
 
-    // === ROUND 3 — Cross-Examination ===
+    // === CRUX SELECTION (between R2 and R3) ===
+    // Pick the single most-divergent R1 claim. If MiniMax returns a
+    // valid + substring-verified selection, R3 runs the crux-engagement
+    // prompt; otherwise we fall back to legacy cross-examination so R3
+    // still produces adversarial engagement.
+    let r1_entries: Vec<crate::analyser::crux::R1Entry> = r1_responses
+        .iter()
+        .filter(|r| !r.abstained)
+        .filter_map(|r| {
+            let pseudonym = pseudonym_map.get(&r.bot_id).cloned()?;
+            let r0_text = r0_responses
+                .iter()
+                .find(|r0| r0.bot_id == r.bot_id && !r0.abstained)
+                .map(|r0| r0.response_json.clone())
+                .unwrap_or_default();
+            Some(crate::analyser::crux::R1Entry {
+                pseudonym,
+                r0: r0_text,
+                r1: r.response_json.clone(),
+            })
+        })
+        .collect();
+    let crux_result = crate::analyser::crux::select_crux(models_config, topic, &r1_entries).await;
+    if let Ok(ref c) = crux_result {
+        let aid = uuid::Uuid::new_v4().to_string();
+        let input = serde_json::to_string(&r1_entries).unwrap_or_default();
+        let result = serde_json::to_string(c).unwrap_or_default();
+        // intentional: log and continue if insert fails — R3 should
+        // still dispatch even if we can't persist the analysis row.
+        let _ = queries_phase1::insert_analysis(
+            pool,
+            &aid,
+            id,
+            None,
+            "crux_selection",
+            &input,
+            &result,
+            models_config.effective_analysis_model(),
+        )
+        .await;
+    } else if let Err(e) = &crux_result {
+        tracing::warn!(
+            error = ?e,
+            "crux selection failed; R3 will use cross-examination fallback"
+        );
+    }
+
+    // === ROUND 3 — Crux Engagement (legacy cross-exam if selection failed) ===
     if resume_round <= 3 {
         queries::update_debate_status(pool, id, "round_3")
             .await
@@ -400,6 +411,7 @@ pub async fn run_multi_round_debate(
             &reverse_pseudonym_map,
             &round2_responses,
             models_config,
+            crux_result.as_ref().ok(),
             timeout,
         )
         .await?;
@@ -425,6 +437,15 @@ pub async fn run_multi_round_debate(
             response: r.response_json.clone(),
             confidence: r.confidence,
         })
+        .collect();
+
+    // Preserve R3 responses by bot_id so the divergence analyser can
+    // classify each bot's crux_shift (R1→R3 movement on the selected
+    // crux claim). Empty if R3 was skipped / fully abstained.
+    let r3_text_by_bot: HashMap<String, String> = all_prior
+        .iter()
+        .filter(|r| r.round_number == 3 && !r.abstained)
+        .map(|r| (r.bot_id.clone(), r.response_json.clone()))
         .collect();
 
     // === ROUND 4 — Final Position ===
@@ -463,6 +484,11 @@ pub async fn run_multi_round_debate(
     }
 
     // === DIVERGENCE ANALYSIS ===
+    // Pass the selected crux (if crux selection succeeded) and each bot's
+    // R3 text so `analyse_divergence` can populate `crux_shift` per-bot.
+    // None of the three inputs (r0/r3/crux) are required; when any is
+    // missing the divergence record simply omits `crux_shift`.
+    let crux_claim_owned = crux_result.as_ref().ok().map(|c| c.claim.clone());
     run_divergence_and_synthesis(
         pool,
         id,
@@ -475,6 +501,9 @@ pub async fn run_multi_round_debate(
         &r0_responses,
         4,
         &participant_map_text,
+        crux_claim_owned.as_deref(),
+        crux_result.as_ref().ok(),
+        &r3_text_by_bot,
         &event_tx,
     )
     .await
@@ -482,6 +511,12 @@ pub async fn run_multi_round_debate(
 
 /// Post-final-round: run divergence analysis per bot, run peer scoring
 /// across participating bots, then run final synthesis.
+///
+/// `crux_claim` is `Some` only when crux selection between R2 and R3
+/// succeeded; `r3_text_by_bot` is empty if R3 fully abstained. Both feed
+/// the per-bot `crux_shift` classification in `analyse_divergence`.
+/// `crux` (the full `CruxSelection`) is also threaded into the synthesis
+/// prompt so the synthesiser can emit a `crux_outcome` summary.
 #[allow(clippy::too_many_arguments)]
 async fn run_divergence_and_synthesis(
     pool: &SqlitePool,
@@ -495,6 +530,9 @@ async fn run_divergence_and_synthesis(
     r0_responses: &[crate::db::models::ResponseRow],
     final_round_number: i64,
     participant_map_text: &str,
+    crux_claim: Option<&str>,
+    crux: Option<&crate::analyser::crux::CruxSelection>,
+    r3_text_by_bot: &HashMap<String, String>,
     event_tx: &Option<broadcast::Sender<DebateEvent>>,
 ) -> Result<(), String> {
     queries::update_debate_status(pool, debate_id, "analysing")
@@ -520,11 +558,21 @@ async fn run_divergence_and_synthesis(
                 .position_change_json
                 .clone()
                 .unwrap_or_else(|| "{}".into());
+            let r3_text = r3_text_by_bot.get(&bot_id).cloned();
+            let crux_claim_owned = crux_claim.map(|s| s.to_string());
             let config = models_config.clone();
             async move {
                 (
                     bot_id,
-                    analyse_divergence(&config, &r0_resp, &final_text, &pc_json).await,
+                    analyse_divergence(
+                        &config,
+                        &r0_resp,
+                        &final_text,
+                        &pc_json,
+                        crux_claim_owned.as_deref(),
+                        r3_text.as_deref(),
+                    )
+                    .await,
                 )
             }
         })
@@ -680,6 +728,7 @@ async fn run_divergence_and_synthesis(
         &precomputed_json,
         &divergence_json,
         &grounding_evidence_json,
+        crux,
         debate_config.synthesis_temperature,
     )
     .await

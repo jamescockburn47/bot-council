@@ -210,6 +210,15 @@ async fn resynth_one(
     let divergence_json = serde_json::to_string(&div_json).unwrap_or("[]".to_string());
     let grounding_evidence_json = serde_json::to_string(&grounding_rows).unwrap_or_default();
 
+    // Rebuild the selected crux (if any) from the stored `crux_selection`
+    // analysis row. Older debates pre-date crux selection and simply have
+    // no such row — `None` flows through and the synthesis prompt omits
+    // the crux-outcome section.
+    let crux_rows = queries_phase1::get_analyses(pool, debate_id, Some("crux_selection")).await?;
+    let crux: Option<crate::analyser::crux::CruxSelection> = crux_rows
+        .iter()
+        .find_map(|row| serde_json::from_str(&row.result_json).ok());
+
     // Call the synthesiser with whatever the running process has for
     // model routing. Warmup intentionally skipped — MiniMax doesn't need
     // it and we've disabled it in env anyway.
@@ -221,6 +230,7 @@ async fn resynth_one(
         &precomputed_json,
         &divergence_json,
         &grounding_evidence_json,
+        crux.as_ref(),
         debate_config.synthesis_temperature,
     )
     .await

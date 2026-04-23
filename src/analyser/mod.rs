@@ -1,4 +1,5 @@
 pub mod challenge;
+pub mod crux;
 pub mod divergence;
 pub mod pairing;
 

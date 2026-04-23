@@ -207,8 +207,6 @@ pub struct DebateConfig {
     pub max_retries: u32,
     pub quorum: usize,
     pub synthesis_temperature: f64,
-    #[serde(default)]
-    pub test_mode_simple: bool,
 }
 
 /// Sentry error-tracking configuration. Empty DSN disables Sentry entirely.
@@ -274,5 +272,25 @@ impl Settings {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn debate_config_does_not_expose_simple_mode() {
+        // Struct-literal initialiser acts as a compile-time guarantee: if
+        // `test_mode_simple` is ever re-added to `DebateConfig`, this line
+        // fails to compile (missing-field error) — catching the regression
+        // before any runtime behaviour diverges.
+        let debate = DebateConfig {
+            default_timeout_secs: 300,
+            max_retries: 2,
+            quorum: 3,
+            synthesis_temperature: 0.3,
+        };
+        assert_eq!(debate.default_timeout_secs, 300);
     }
 }

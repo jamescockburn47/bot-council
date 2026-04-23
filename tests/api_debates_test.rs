@@ -197,41 +197,6 @@ async fn create_debate_without_auth_returns_401() {
 }
 
 #[tokio::test]
-async fn simple_mode_initializes_three_rounds_only() {
-    let (mut app, pool) = common::test_app_simple_mode().await;
-    let (bot_ids, _servers) = seed_bots(&mut app).await;
-
-    let body = json!({
-        "topic": "Test simple mode round count",
-        "bot_ids": bot_ids
-    });
-    let req = common::admin_auth(
-        Request::builder()
-            .method("POST")
-            .uri("/debates")
-            .header("content-type", "application/json"),
-    )
-    .body(Body::from(serde_json::to_string(&body).unwrap()))
-    .unwrap();
-
-    let response = app.oneshot(req).await.unwrap();
-    assert_eq!(response.status(), StatusCode::CREATED);
-    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let json: Value = serde_json::from_slice(&bytes).unwrap();
-    let debate_id = json["id"].as_str().unwrap();
-
-    let (round_count,): (i64,) =
-        sqlx::query_as("SELECT COUNT(*) AS count FROM rounds WHERE debate_id = ?")
-            .bind(debate_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-    assert_eq!(round_count, 3);
-}
-
-#[tokio::test]
 async fn create_debate_skips_unreachable_bots_when_quorum_still_met() {
     let (mut app, _pool) = common::test_app().await;
     let (mut bot_ids, _servers) = seed_bots(&mut app).await;
@@ -473,4 +438,36 @@ async fn list_debates_test_view_includes_only_operator_test_topics() {
             .iter()
             .any(|t| t == "Should AI-generated evidence be admissible in court?")
     );
+}
+
+#[tokio::test]
+async fn debate_creation_rejects_null_token_bot_always() {
+    let (app, pool) = common::test_app().await;
+    // Seed a bot with token_ciphertext = NULL plus two bots with real ciphertext so quorum is otherwise met.
+    sqlx::query(
+        "INSERT INTO bots (id, name, endpoint_url, status, token_ciphertext, bot_kind) \
+         VALUES ('nulltok', 'NoToken', 'http://example.invalid/debate', 'active', NULL, 'external')",
+    ).execute(&pool).await.unwrap();
+    for i in 0..2 {
+        sqlx::query(&format!(
+            "INSERT INTO bots (id, name, endpoint_url, status, token_ciphertext, bot_kind) \
+             VALUES ('real{i}', 'Real{i}', 'http://example.invalid/debate', 'active', x'DEADBEEF', 'external')"
+        )).execute(&pool).await.unwrap();
+    }
+    let body = serde_json::json!({
+        "topic": "smoke",
+        "bot_ids": ["nulltok", "real0", "real1"]
+    });
+    let req = common::admin_auth(
+        axum::http::Request::builder()
+            .method("POST")
+            .uri("/debates")
+            .header("content-type", "application/json"),
+    )
+    .body(axum::body::Body::from(body.to_string()))
+    .unwrap();
+    let resp = tower::ServiceExt::oneshot(app, req).await.unwrap();
+    assert_eq!(resp.status(), 400);
+    let body = axum::body::to_bytes(resp.into_body(), 4096).await.unwrap();
+    assert!(String::from_utf8_lossy(&body).contains("no encrypted token"));
 }

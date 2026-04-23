@@ -186,6 +186,21 @@ pub struct TranscriptResponse {
     pub rounds: Vec<TranscriptRound>,
     pub anonymisation_log: Vec<AnonymisationEntry>,
     pub divergence_analyses: Vec<DivergenceEntry>,
+    /// The single most-divergent claim selected between R2 and R3. Injected
+    /// into the R3 crux prompt so every bot engages the same point. Absent
+    /// on debates where crux selection was skipped (e.g. pre-crux debates,
+    /// or failure modes that fell back to the legacy cross-examination
+    /// format).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub crux: Option<CruxDto>,
+}
+
+/// Crux selection exposed on the transcript for frontend rendering.
+#[derive(Debug, Serialize)]
+pub struct CruxDto {
+    pub claim: String,
+    pub source_pseudonym: String,
+    pub source_quote: String,
 }
 
 /// A single round in the transcript.
@@ -211,6 +226,12 @@ pub struct TranscriptEntry {
     /// JSON shape: { "challenge"?: { source, quote }, "position_change"?: { source, quote } }.
     /// Null for bots that authored their structured fields directly.
     pub extraction_metadata: Option<serde_json::Value>,
+    /// When populated, this response was carried forward from an earlier
+    /// round because the bot failed to respond in the current round. The
+    /// value is the source round number (typically `0`). Null when the bot
+    /// responded in this round directly.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fallback_from_round: Option<i64>,
 }
 
 /// Anonymisation log entry mapping pseudonym to role.

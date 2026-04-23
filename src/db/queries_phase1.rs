@@ -250,13 +250,14 @@ pub async fn insert_response_full(
     retry_count: i64,
     abstained: bool,
     extraction_metadata: Option<&str>,
+    fallback_from_round: Option<i64>,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
         "INSERT INTO responses \
          (id, debate_id, round_number, bot_id, response_json, confidence, \
           challenge_json, position_change_json, valid, retry_count, abstained, \
-          extraction_metadata) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          extraction_metadata, fallback_from_round) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(id)
     .bind(debate_id)
@@ -270,6 +271,7 @@ pub async fn insert_response_full(
     .bind(retry_count)
     .bind(abstained)
     .bind(extraction_metadata)
+    .bind(fallback_from_round)
     .execute(pool)
     .await?;
     Ok(())

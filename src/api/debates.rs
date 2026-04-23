@@ -41,7 +41,6 @@ pub async fn create_debate(
     Json(req): Json<CreateDebateRequest>,
 ) -> AppResult<(StatusCode, Json<DebateResponse>)> {
     let preflight_started = std::time::Instant::now();
-    let simple_mode = state.settings().debate.test_mode_simple;
     if req.topic.is_empty() {
         return Err(AppError::BadRequest("topic is required".into()));
     }
@@ -69,7 +68,7 @@ pub async fn create_debate(
     // (>=3) is still met.
     let preflight_checks = selected_bots.iter().map(|bot| async {
         let started = std::time::Instant::now();
-        if !simple_mode && bot.token_ciphertext.is_none() {
+        if bot.token_ciphertext.is_none() {
             return (
                 bot.id.clone(),
                 Some(format!(
@@ -178,7 +177,7 @@ pub async fn create_debate(
     .map_err(|e| AppError::Internal(anyhow::anyhow!(e)))?;
 
     // Init round state machine
-    let total_rounds = if simple_mode { 3 } else { 5 };
+    let total_rounds = 5;
     orchestrator::state_machine::init_rounds(state.db(), debate_id.as_str(), total_rounds)
         .await
         .map_err(|e| AppError::Internal(anyhow::anyhow!(e)))?;

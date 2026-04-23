@@ -155,7 +155,7 @@
   </h2>
   <div class="space-y-3 mb-8">
     {#each transcript.rounds as round (round.round_number)}
-      <RoundAccordion {round} {roleMap} />
+      <RoundAccordion {round} {roleMap} crux={transcript.crux ?? null} />
     {/each}
   </div>
 

@@ -52,30 +52,30 @@
         maintainAspectRatio: false,
         scales: {
           x: {
-            grid: { color: 'rgba(31,31,47,0.8)' },
-            ticks: { color: '#8888A0', font: { family: 'monospace', size: 11 } },
+            grid: { color: 'rgba(28,25,23,0.10)' },
+            ticks: { color: '#78716C', font: { family: 'monospace', size: 11 } },
           },
           y: {
             min: 0,
             max: 100,
-            grid: { color: 'rgba(31,31,47,0.8)' },
-            ticks: { color: '#8888A0', font: { family: 'monospace', size: 11 } },
+            grid: { color: 'rgba(28,25,23,0.10)' },
+            ticks: { color: '#78716C', font: { family: 'monospace', size: 11 } },
           },
         },
         plugins: {
           legend: {
             labels: {
-              color: '#8888A0',
+              color: '#78716C',
               font: { family: 'monospace', size: 11 },
               usePointStyle: true,
               pointStyle: 'circle',
             },
           },
           tooltip: {
-            backgroundColor: '#0F0F17',
-            titleColor: '#E4E4EF',
-            bodyColor: '#8888A0',
-            borderColor: 'rgba(31,31,47,0.8)',
+            backgroundColor: '#FFFFFF',
+            titleColor: '#1C1917',
+            bodyColor: '#78716C',
+            borderColor: 'rgba(28,25,23,0.15)',
             borderWidth: 1,
           },
         },

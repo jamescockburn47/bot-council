@@ -76,8 +76,8 @@
   let height = $derived(TOP_PAD + bots.length * ROW_H + 16);
 
   function confidenceColour(c: number | null, abstained: boolean, absent: boolean): string {
-    if (absent) return '#0F0F17';
-    if (abstained || c == null) return '#1A1A26';
+    if (absent) return '#F3EDE4';
+    if (abstained || c == null) return '#F3EDE4';
     // green → yellow → red as confidence falls
     const hue = Math.max(0, Math.min(120, (c / 100) * 120));
     return `hsl(${hue}, 55%, 38%)`;
@@ -113,7 +113,7 @@
       <text
         x={LEFT_PAD + i * CELL_W + CELL_W / 2}
         y={20}
-        fill="rgba(255,255,255,0.50)"
+        fill="#44403C"
         font-size="10"
         text-anchor="middle"
       >
@@ -126,7 +126,7 @@
       <text
         x={LEFT_PAD - 10}
         y={TOP_PAD + bi * ROW_H + ROW_H / 2 + 4}
-        fill="rgba(255,255,255,0.92)"
+        fill="#1C1917"
         font-size="11"
         text-anchor="end"
       >
@@ -147,8 +147,8 @@
               : cell.changed
                 ? '#f59e0b'
                 : cell.absent
-                  ? '#0F0F17'
-                  : '#1A1A26'}
+                  ? '#F3EDE4'
+                  : '#F3EDE4'}
             stroke-width={cell.capitulation ? 2 : 1}
             rx="5"
           >
@@ -166,7 +166,7 @@
           <text
             x={LEFT_PAD + ri * CELL_W + CELL_W / 2}
             y={TOP_PAD + bi * ROW_H + ROW_H / 2 + 4}
-            fill="rgba(255,255,255,0.92)"
+            fill="#1C1917"
             font-size="12"
             font-weight="600"
             text-anchor="middle"
@@ -187,7 +187,7 @@
     {/each}
   </svg>
 
-  <div class="mt-4 flex flex-wrap gap-4" style="font-family: var(--mono-product); font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--glow-mute);">
+  <div class="mt-4 flex flex-wrap gap-4" style="font-family: var(--mono-product); font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; color: #78716C;">
     <div class="flex items-center gap-2">
       <span class="w-3 h-3 rounded" style="background: hsl(120,55%,38%);"></span>
       high confidence

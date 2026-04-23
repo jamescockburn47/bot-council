@@ -424,24 +424,12 @@ pub async fn run_multi_round_debate(
         }
     }
 
-    // Build full context for Round 4
-    let all_prior = queries_phase1::get_all_responses(pool, id)
-        .await
-        .map_err(|e| format!("db: {e}"))?;
-    let full_context: Vec<RoundContext> = all_prior
-        .iter()
-        .filter(|r| !r.abstained && r.round_number <= 3)
-        .map(|r| RoundContext {
-            pseudonym: pseudonym_map.get(&r.bot_id).cloned().unwrap_or_default(),
-            round: r.round_number,
-            response: r.response_json.clone(),
-            confidence: r.confidence,
-        })
-        .collect();
-
     // Preserve R3 responses by bot_id so the divergence analyser can
     // classify each bot's crux_shift (R1→R3 movement on the selected
     // crux claim). Empty if R3 was skipped / fully abstained.
+    let all_prior = queries_phase1::get_all_responses(pool, id)
+        .await
+        .map_err(|e| format!("db: {e}"))?;
     let r3_text_by_bot: HashMap<String, String> = all_prior
         .iter()
         .filter(|r| r.round_number == 3 && !r.abstained)
@@ -461,6 +449,10 @@ pub async fn run_multi_round_debate(
                 name: round_name(4).to_string(),
             },
         );
+        // R4 builds its own per-bot own-track context internally; no
+        // `full_context` is threaded through. Synthesis owns the
+        // meta-view of the debate — bots produce substance on their
+        // own track.
         rounds::round4::run_round4(
             pool,
             client,
@@ -469,7 +461,7 @@ pub async fn run_multi_round_debate(
             bots,
             bot_tokens,
             &role_assignments,
-            full_context,
+            &pseudonym_map,
             models_config,
             timeout,
         )

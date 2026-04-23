@@ -148,22 +148,15 @@ pub fn round4_prompt(topic: &str) -> String {
          Your response must include, in this order:\n\n\
          1. **Steelman**: articulate the strongest version of the opposing argument \
             in 2-3 sentences. This must be the argument you find genuinely \
-            hardest to refute, stated with the charity its author would endorse.\n\
+            hardest to refute, stated with the charity its author would endorse. \
+            Draw on your own prior-round reasoning — you already identified the \
+            strongest opposition in Round 1.\n\
          2. **Final position**: clear, specific, and substantive.\n\
-         3. **Position change declaration**: did your position change from Round 0? \
-            If yes, state what changed, what it changed from, and the specific \
-            argument that caused the change. If no, state why the opposing \
-            arguments were insufficient.\n\
-         4. **Non-crux disagreements**: if you still hold disagreements beyond the \
-            Round 3 crux, state them — the crux is the debate's centre of mass, \
-            not its only point. A bot that lets other live disagreements fade \
-            into silence diminishes the synthesis.\n\n\
-         The council will extract the steelman and position_change structures \
-         from your prose; you do not need to emit raw JSON, but the following \
-         fields must be recoverable:\n\n\
-         - `steelman`: the 2-3 sentence strongest-opposing-argument articulation\n\
-         - `position_change`: {{ changed: bool, from_summary: string, \
-           to_summary: string, reason: string }}\n\n\
+         3. **Position change reflection**: in 1-2 sentences, did your position \
+            change from Round 0? If yes, what moved it? If no, say so. Keep it \
+            brief — this is a reflection, not a report.\n\n\
+         Write in prose. The council extracts the steelman and position_change \
+         structure from your text — no raw JSON required.\n\n\
          Do not soften your position for the sake of agreement. Minority \
          positions are preserved and valued in the synthesis.\n\n\
          Maintain your position unless the evidence compels otherwise. \
@@ -247,15 +240,19 @@ mod tests {
     }
 
     #[test]
-    fn round4_prompt_demands_steelman_and_off_crux_disagreements() {
+    fn round4_prompt_asks_for_steelman_position_and_reflection() {
         let p = round4_prompt("topic");
         assert!(p.contains("strongest version of the opposing argument"));
         assert!(p.contains("2-3 sentences") || p.contains("two to three sentences"));
         assert!(p.contains("steelman"));
         assert!(p.contains("position_change"));
-        assert!(p.contains("from_summary"));
-        assert!(p.contains("to_summary"));
-        assert!(p.contains("crux is the debate's centre of mass"));
-        assert!(p.contains("disagreements beyond"));
+        // The 2026-04-23 lean-context design dropped the from_summary /
+        // to_summary / reason structured requirement in favour of a 1-2
+        // sentence prose reflection. The extractor still recovers the
+        // structured shape from prose; the bot no longer has to emit it.
+        assert!(p.contains("Position change reflection") || p.contains("reflection"));
+        // Non-crux disagreements are no longer asked of the bot — synthesis
+        // tracks live_disagreements from peer content on its own.
+        assert!(!p.contains("disagreements beyond"));
     }
 }

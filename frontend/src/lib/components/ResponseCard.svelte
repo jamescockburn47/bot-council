@@ -63,9 +63,23 @@
   </div>
 
   {#if !entry.abstained}
-    <p class="text-sm text-[var(--text-secondary)] whitespace-pre-wrap leading-relaxed">
-      {entry.response}
-    </p>
+    {#if carriedFromRound != null}
+      <!-- Carry-forward responses are NOT the bot's engagement with this
+           round — they're the bot's round-{carriedFromRound} position
+           preserved so the synthesis layer can still cite a voice.
+           Rendering the R0 prose verbatim here was misleading (reads as
+           substantive participation). Show a placeholder instead; the
+           bot's R{carriedFromRound} answer is a click away on its own
+           round card. -->
+      <p class="text-xs text-[var(--text-muted)] italic leading-relaxed">
+        {entry.pseudonym} did not substantively respond in this round.
+        Their round-{carriedFromRound} position is preserved for synthesis.
+      </p>
+    {:else}
+      <p class="text-sm text-[var(--text-secondary)] whitespace-pre-wrap leading-relaxed">
+        {entry.response}
+      </p>
+    {/if}
   {/if}
 
   {#if entry.challenge}

@@ -188,6 +188,10 @@ export interface SynthesisResponse {
 
 export interface SynthesisData {
   topic: string;
+  /** Four-sentence plain-prose outcome summary about the debate's
+   *  conclusion on the topic. Empty on older rows synthesised before
+   *  the field existed — the frontend hides the block when empty. */
+  executive_summary?: string;
   consensus_points: ConsensusPoint[];
   live_disagreements: Disagreement[];
   flagged_capitulations: Capitulation[];

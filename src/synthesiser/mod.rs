@@ -309,10 +309,21 @@ fn build_synthesis_prompt(
          - Return exactly one valid JSON object. No markdown, no code fences, no prose outside JSON.\n\
          - Use only pseudonyms from <participant-map> in supporting_bots/bots/bot fields.\n\
         - Keep evidence, best_argument, and key_argument short and specific (one claim + citation).\n\
-        - Build synthesis with this priority: arguments map -> disagreements -> minority positions -> overall outcome.\n\
+        - Build synthesis with this priority: executive_summary -> arguments map -> disagreements -> minority positions -> overall outcome.\n\
         - An empty section is acceptable ONLY if the transcript genuinely contains no content that maps to it (e.g. no bot shifted position → flagged_capitulations can be empty). If the transcript has real content, every applicable section MUST be populated.\n\
          - Do not include synthetic placeholders like \"TBD\", \"unknown source\", or uncited claims.\n\
         - meta_observations must start with \"Conclusion:\" then use these exact section headings and order: \"Summary of arguments\", \"Key disagreements\", \"Minority positions\", \"Overall outcome\", \"Bot behaviour notes\".\n\n\
+         EXECUTIVE SUMMARY RULES (STRICT — this is the first field and the reader will see it before anything else):\n\
+         1. Exactly FOUR sentences. Count them. No fewer, no more.\n\
+         2. Every sentence MUST end with terminal punctuation (\".\", \"?\", or \"!\"). No trailing ellipses, no dangling clauses, no mid-clause cut-offs.\n\
+         3. Plain prose. No bullet points, no dashes acting as list markers, no numbered lists, no headings.\n\
+         4. The subject is the DEBATE'S OUTCOME on the TOPIC — what the debate actually concluded. Tell a reader who has NOT followed the transcript where the debate landed: what (if anything) was agreed, the central unresolved disagreement, and how the balance of argument fell.\n\
+         5. Do NOT mention bot pseudonyms, round numbers, confidence scores, abstentions, or anything about how the bots behaved. Bot behaviour belongs in meta_observations, not here.\n\
+         6. Do NOT include bracketed citations like [Agent A, Round 2]. This is prose for a reader, not a footnoted memo.\n\
+         7. Do NOT hedge with \"the synthesis found\" or \"this debate discussed\". Make direct, substantive claims about the subject matter.\n\
+         8. Neutral register — plain declarative sentences. No rhetorical flourishes, no \"ultimately,\" \"in conclusion,\" or similar filler.\n\n\
+         Example of the tone/length we want (topic: \"Should jury trials in civil cases be abolished?\"):\n\
+         \"The debate concluded that outright abolition of civil jury trials is neither constitutionally feasible in the common-law jurisdictions discussed nor empirically justified by the quality-of-decision evidence. A narrower reform path — reserving juries for cases above a complexity or value threshold — drew broad but not unanimous support as a workable compromise. The central unresolved disagreement was whether the legitimacy function of lay juries can be matched by any panel of specialist fact-finders, or whether it is constitutive of civil justice in a way that no institutional substitute reproduces. On balance, the reform case was the better defended, but the abolitionist premise that juries systematically underperform on accuracy was not established.\"\n\n\
          HEADLINE RULES (applies to every consensus_point, disagreement side, and minority_position):\n\
          - `headline` is a graph-node label shown to the user at normal zoom. It MUST be 3–6 words, keyword-style, no trailing punctuation.\n\
          - The headline is the SUBSTANCE of the claim — what is being asserted — NOT meta-information about who agrees.\n\
@@ -332,6 +343,7 @@ fn build_synthesis_prompt(
          OUTPUT SCHEMA (return valid JSON):\n\
          {{\n\
            \"topic\": \"string\",\n\
+           \"executive_summary\": \"EXACTLY 4 full sentences. Plain prose. About the debate's outcome on the topic — no bot names, no citations, no truncation.\",\n\
            \"consensus_points\": [{{ \"headline\": \"3-6 word label\", \"point\": \"string\", \"supporting_bots\": [\"pseudonym\"], \"evidence\": \"string [citations]\" }}],\n\
            \"live_disagreements\": [{{ \"issue\": \"string\", \"side_a\": {{ \"headline\": \"3-6 word label\", \"position\": \"string\", \"bots\": [\"pseudonym\"], \"best_argument\": \"string [citation]\" }}, \"side_b\": {{ \"headline\": \"3-6 word label\", \"position\": \"string\", \"bots\": [\"pseudonym\"], \"best_argument\": \"string [citation]\" }} }}],\n\
            \"flagged_capitulations\": [{{ \"bot\": \"pseudonym\", \"from\": \"string\", \"to\": \"string\", \"justification_adequate\": bool, \"flag_reason\": \"string\" }}],\n\
@@ -690,6 +702,7 @@ fn conservative_fallback(topic: &str, precomputed_json: &str) -> SynthesisOutput
 
     SynthesisOutput {
         topic: topic.to_string(),
+        executive_summary: String::new(),
         consensus_points: Vec::new(),
         live_disagreements: Vec::new(),
         flagged_capitulations: Vec::new(),
@@ -712,6 +725,11 @@ fn salvage_loose_output(
     if let Some(loose_topic) = loose.get("topic").and_then(|v| v.as_str()) {
         if !loose_topic.trim().is_empty() {
             output.topic = loose_topic.to_string();
+        }
+    }
+    if let Some(summary) = loose.get("executive_summary").and_then(|v| v.as_str()) {
+        if !summary.trim().is_empty() {
+            output.executive_summary = summary.trim().to_string();
         }
     }
     let meta = loose
@@ -1550,6 +1568,7 @@ mod tests {
         trajectories.insert("Agent A".to_string(), vec![Some(70), Some(72), Some(75)]);
         let synthesis = SynthesisOutput {
             topic: "t".into(),
+            executive_summary: String::new(),
             consensus_points: vec![],
             live_disagreements: vec![LiveDisagreement {
                 issue: "Whether identity certificates improve trust".into(),

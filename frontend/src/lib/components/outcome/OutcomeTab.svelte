@@ -127,6 +127,23 @@
     </p>
   </div>
 {:else}
+  {#if synthesis.synthesis.executive_summary && synthesis.synthesis.executive_summary.trim()}
+    <section
+      class="card-term-lg"
+      style="margin-bottom: 24px;"
+      aria-label="Debate outcome summary"
+    >
+      <h3 class="tm-eyebrow" style="color: var(--indigo-400); margin-bottom: 8px;">
+        Outcome
+      </h3>
+      <p
+        style="font-family: var(--serif-editorial); font-size: 17px; line-height: 1.55; color: var(--glow-txt); white-space: pre-wrap;"
+      >
+        {synthesis.synthesis.executive_summary}
+      </p>
+    </section>
+  {/if}
+
   <DivergenceHeadline synthesis={synthesis.synthesis} />
 
   <!-- Sub-tabs: Arguments (3D map) / Positions (reversal matrix). -->

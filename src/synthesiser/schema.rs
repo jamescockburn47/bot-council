@@ -18,6 +18,14 @@ pub struct SynthesisOutput {
     /// default rarely fires for this field specifically.
     #[serde(default)]
     pub topic: String,
+    /// Four-sentence plain-prose outcome summary for a reader who has
+    /// not followed the debate. About the DEBATE'S CONCLUSION on the
+    /// TOPIC — not about bot behaviour, not truncated, no citations,
+    /// no pseudonyms. Added in 2026-04 so rendered first in the UI.
+    /// Defaults to empty for older rows synthesised before the field
+    /// existed; the frontend hides the block when empty.
+    #[serde(default)]
+    pub executive_summary: String,
     /// Points on which all participants explicitly agreed.
     #[serde(default)]
     pub consensus_points: Vec<ConsensusPoint>,

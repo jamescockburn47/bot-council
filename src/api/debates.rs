@@ -90,16 +90,17 @@ pub async fn create_debate(
     // hard outer budget guarantees the handler returns a clean 400 to the
     // admin before Cloudflare's 100s timeout fires a 524.
     let preflight_budget = std::time::Duration::from_secs(45);
-    let preflight_results =
-        match tokio::time::timeout(preflight_budget, join_all(preflight_checks)).await {
-            Ok(results) => results,
-            Err(_) => {
-                return Err(AppError::BadRequest(format!(
-                    "debate preflight exceeded {}s budget — one or more selected bots are unreachable or very slow. Try again or deselect the slow bot.",
-                    preflight_budget.as_secs()
-                )));
-            }
-        };
+    let preflight_results = match tokio::time::timeout(preflight_budget, join_all(preflight_checks))
+        .await
+    {
+        Ok(results) => results,
+        Err(_) => {
+            return Err(AppError::BadRequest(format!(
+                "debate preflight exceeded {}s budget — one or more selected bots are unreachable or very slow. Try again or deselect the slow bot.",
+                preflight_budget.as_secs()
+            )));
+        }
+    };
     let failing_bot_ids: std::collections::HashSet<String> = preflight_results
         .iter()
         .filter_map(|(bot_id, failure, _)| failure.as_ref().map(|_| bot_id.clone()))

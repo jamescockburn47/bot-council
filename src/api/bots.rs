@@ -958,10 +958,7 @@ pub(crate) async fn preflight_probe_bot(
         .await
         .map_err(|e| format!("preflight request failed: {e}"))?;
     if !response.status().is_success() {
-        return Err(format!(
-            "preflight bot returned HTTP {}",
-            response.status()
-        ));
+        return Err(format!("preflight bot returned HTTP {}", response.status()));
     }
     let json: serde_json::Value = response
         .json()

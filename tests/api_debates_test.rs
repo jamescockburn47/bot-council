@@ -546,7 +546,11 @@ async fn test_create_debate_excludes_unreachable_bot() {
         .unwrap();
     let json_body: Value = serde_json::from_slice(&body).unwrap();
     let bots = json_body["bots"].as_array().unwrap();
-    assert_eq!(bots.len(), 3, "dead bot must be excluded, found bots: {bots:?}");
+    assert_eq!(
+        bots.len(),
+        3,
+        "dead bot must be excluded, found bots: {bots:?}"
+    );
     let bot_id_set: std::collections::HashSet<_> =
         bots.iter().map(|b| b["bot_id"].as_str().unwrap()).collect();
     assert!(

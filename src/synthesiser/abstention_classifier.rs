@@ -13,7 +13,7 @@
 //! propagating an error and tanking synthesis.
 
 use crate::config::ModelsConfig;
-use crate::orchestrator::multi_round::is_effective_abstention_response;
+use crate::orchestrator::multi_round::{ABSTENTION_CHAR_CEILING, is_effective_abstention_response};
 use crate::synthesiser::{
     LocalChatCompletionRequest, LocalChatMessage, LocalResponseFormat, call_model_json,
 };
@@ -58,13 +58,27 @@ RESPONSE:\n---\n{snippet}\n---"
 pub async fn classify_one(config: &ModelsConfig, text: &str) -> AbstentionClassification {
     let regex_decision = is_effective_abstention_response(text);
 
-    // Short-circuit empty / trivially-short responses: the regex is
-    // authoritative and cheap, don't spend an LLM call.
     let trimmed = text.trim();
+
+    // Short-circuit empty responses: the regex is authoritative and
+    // cheap, don't spend an LLM call.
     if trimmed.is_empty() {
         return AbstentionClassification {
             effective_abstention: true,
             reason: "empty response".into(),
+        };
+    }
+
+    // Length ceiling: responses over ~800 chars are substantive even if
+    // they contain marker phrases. A long cross-examination that quotes
+    // a peer's provider-failure notice would otherwise get mis-flagged
+    // as the quoter's own abstention (observed on Clint's R3 quoting
+    // Scalia's R0 wrapper message). Skip the LLM call — the answer is
+    // already known.
+    if trimmed.chars().count() > ABSTENTION_CHAR_CEILING {
+        return AbstentionClassification {
+            effective_abstention: false,
+            reason: String::new(),
         };
     }
 

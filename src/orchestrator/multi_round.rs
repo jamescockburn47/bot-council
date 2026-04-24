@@ -88,10 +88,25 @@ fn is_conservative_empty_synthesis(s: &serde_json::Value) -> bool {
 /// Exposed so the resynth CLI uses the same markers as the live
 /// orchestrator (drift between the two produced empty-synthesis
 /// regressions during the MiniMax rerun).
+/// Responses longer than this cannot be classified as effective abstentions,
+/// even if they contain marker phrases. Empirically genuine substantive
+/// responses run 1000+ chars while wrapper-emitted failure notices are
+/// under ~250 chars; the 800-char ceiling is comfortable headroom for
+/// both. Stops long substantive responses that *quote* a peer's failure
+/// notice (e.g. a challenge that quotes the opponent's provider-failure
+/// notice in cross-examination) from being miscategorised as abstentions.
+pub const ABSTENTION_CHAR_CEILING: usize = 800;
+
 pub fn is_effective_abstention_response(text: &str) -> bool {
     let normalized = text.trim().to_lowercase();
     if normalized.is_empty() {
         return true;
+    }
+    // A response above the ceiling is definitively substantive even if
+    // it contains a marker phrase — almost certainly quoting or referring
+    // to another bot's failure, not reporting its own.
+    if normalized.chars().count() > ABSTENTION_CHAR_CEILING {
+        return false;
     }
     let fallback_markers = [
         "(abstained)",

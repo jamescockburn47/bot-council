@@ -1236,7 +1236,8 @@ fn build_behavior_notes(
     agents.sort();
     let mut lines = Vec::new();
     for agent in agents {
-        let entries = grouped.get(&agent).cloned().unwrap_or_default();
+        let mut entries = grouped.get(&agent).cloned().unwrap_or_default();
+        entries.sort_by_key(|e| e.round);
         let responded = entries
             .iter()
             .filter(|e| !e.abstained && !e.effective_abstained && e.valid)
@@ -1253,6 +1254,30 @@ fn build_behavior_notes(
         lines.push(format!(
             "- {label}: responded={responded}, abstained/effective-abstained={abstained}, invalid={invalid}."
         ));
+        // For abstaining bots, surface the bot's own wrapper text from the
+        // earliest gap round — this is the actionable diagnostic the bot
+        // operator needs to fix the failure (provider error, upstream
+        // timeout, rate limit, empty-response, etc.).
+        if abstained > 0 {
+            if let Some(first_gap) = entries
+                .iter()
+                .find(|e| e.abstained || e.effective_abstained)
+            {
+                let signal: String = first_gap
+                    .response
+                    .trim()
+                    .replace('\n', " ")
+                    .chars()
+                    .take(240)
+                    .collect();
+                if !signal.is_empty() {
+                    lines.push(format!(
+                        "  Wrapper signal (first gap, Round {}): \"{}\". Operator: check upstream model availability / API key / rate limits in this bot's wrapper.",
+                        first_gap.round, signal
+                    ));
+                }
+            }
+        }
     }
     lines.join("\n")
 }

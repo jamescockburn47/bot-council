@@ -214,15 +214,26 @@ async fn mock_minimax_server() -> MockServer {
     // extractor's JSON shape doesn't fit SynthesisOutput. `minority_positions`
     // appears only in the synthesis prompt's OUTPUT SCHEMA block and nowhere
     // in any extractor / validator / divergence / pairing prompt.
+    // NOTE: at least one populated structural field is required now that
+    // `run_synthesis` retries-on-empty when all arrays come back empty
+    // (MiniMax-M2.7 flakiness mitigation, 2026-04). With all three empty
+    // the synthesiser would fire two additional attempts, blowing the
+    // `.expect(1)` assertion below.
     let synthesis_output = json!({
         "choices": [{"message": {"content": json!({
             "topic": "preflight checks",
-            "consensus_points": [],
+            "executive_summary": "The debate considered whether preflight checks are worth the cost. Participants weighed incident-reduction claims against deployment overhead. On balance the reform case drew more support than full removal. The central unresolved issue was the correct evidentiary threshold for 'worth the cost'.",
+            "consensus_points": [{
+                "point": "Preflight checks reduce incident volume when well-scoped.",
+                "headline": "Scoped preflight reduces incidents",
+                "supporting_bots": ["Agent A"],
+                "evidence": "Agent A, Round 1 cited incident-reduction data."
+            }],
             "live_disagreements": [],
             "flagged_capitulations": [],
             "minority_positions": [],
             "confidence_trajectories": {},
-            "meta_observations": "test synthesis"
+            "meta_observations": "Conclusion: test synthesis."
         }).to_string()}}]
     });
     Mock::given(method("POST"))

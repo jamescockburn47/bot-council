@@ -127,7 +127,16 @@ git switch -c claude/<topic> origin/main
 
 Never implement on `master` or stale feature branches. One PR per logical change. Squash-merge with `--delete-branch`. Many small PRs over one large one.
 
-Multiple git worktrees exist on the dev machine (historical). The one on `main` is `..../worktrees/reverent-goldwasser` — use that for running `ship.sh`. Worktree cleanup via `scripts/branch-cleanup.ps1`.
+### Worktree & folder hygiene — BINDING
+
+- **Single repo root on disk.** The only top-level checkout is `Desktop/LQ projects/Bot council/`. Never create sibling `Bot council-*` folders (e.g. `Bot council-mainfix`); any isolated work goes in `.claude/worktrees/<name>/` off the main checkout so `git worktree list` stays authoritative.
+- **`reverent-goldwasser` is the ship anchor.** It stays parked on `main`. `ship.sh` runs from there — do not rename, relocate, or switch its branch.
+- **`.claude/worktrees/*` are ephemeral.** Claude Code spawns them per session. They must be pruned regularly; stale worktrees cause drift bugs and obscure which branch is real.
+- **Prune commands:**
+  - `scripts/worktree-prune.sh` → dry-run lists stale session worktrees.
+  - `scripts/worktree-prune.sh --yes` → removes them, keeping `reverent-goldwasser`, the current worktree, and anything with an open PR on its branch.
+  - `scripts/branch-cleanup.ps1` → separately, cleans up local branches whose upstream is `[gone]`.
+- **End-of-session habit.** After merging a PR, either delete the session worktree (`git worktree remove <path>`) or run the prune script. Do not let `.claude/worktrees/` drift beyond 3-4 live entries.
 
 ## GitHub Workflow — BINDING
 
@@ -217,7 +226,7 @@ All routes mounted under `/api/*` in production. Tests use the un-prefixed route
 | PATCH | /api/bots/{id}/approve\|reject\|deactivate\|reactivate | RequireAdmin | State transitions |
 | PATCH | /api/bots/{id}/test | RequireAdmin | Manual bot smoke-test |
 | GET | /api/debates | RequireAuth | List debates |
-| POST | /api/debates | RequireAdmin | Create + run (synchronous preflight ~100s for 5 bots) |
+| POST | /api/debates | RequireAdmin | Create + run. Preflight is a single reachability probe per bot (25s per-request timeout, 45s outer budget) so the handler returns well inside Cloudflare's 100s edge budget. Full 5-round schema validation stays at approval time. |
 | GET | /api/debates/{id} | RequireAuth | Debate detail |
 | GET | /api/debates/{id}/transcript | RequireAuth | Round-by-round transcript. TranscriptEntry carries optional `extraction_metadata` keyed by field (`challenge`, `position_change`) with `{source, quote}` provenance for text-only bots. |
 | GET | /api/debates/{id}/synthesis | RequireAuth | Final synthesis JSON |

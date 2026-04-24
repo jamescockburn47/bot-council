@@ -66,26 +66,15 @@ pub async fn create_debate(
     // upfront rather than failing later via quorum loss. We allow debates to
     // proceed with whichever selected bots pass preflight as long as quorum
     // (>=3) is still met.
+    //
+    // Preflight uses `preflight_probe_bot` — one lightweight probe per bot
+    // (25s per-request timeout). The full 5-round gauntlet ran at approval
+    // time; running it again here was the source of HTTP 524s because any
+    // slow round blocked the request past Cloudflare's 100s edge timeout.
     let preflight_checks = selected_bots.iter().map(|bot| async {
         let started = std::time::Instant::now();
-        // Token is optional — NULL token means "no Authorization header sent".
-        // Localhost/private bots don't need one; public bots can still set
-        // one at submission for LLM-budget protection against random internet
-        // callers. Dispatch already no-op's the auth header when token is
-        // empty, so preflight just needs to verify reachability.
-        //
-        // `false` — preflight is a reachability check, not an approval.
-        // The introduction was captured once at approval time; no need to
-        // re-fire the intro probe on every debate.
-        let failure = match bot_checks::smoke_test_bot(
-            state.http_client(),
-            bot,
-            state.bot_token_key(),
-            false,
-        )
-        .await
-        {
-            Ok(_) => None,
+        let failure = match bot_checks::preflight_probe_bot(bot, state.bot_token_key()).await {
+            Ok(()) => None,
             Err(reason) => Some(format!(
                 "{} ({}): {}",
                 bot.name,
@@ -95,7 +84,22 @@ pub async fn create_debate(
         };
         (bot.id.clone(), failure, started.elapsed().as_millis())
     });
-    let preflight_results = join_all(preflight_checks).await;
+
+    // Outer safety net: `preflight_probe_bot` already bounds each call at
+    // ~25s, and `join_all` runs them concurrently (~25s worst case), but a
+    // hard outer budget guarantees the handler returns a clean 400 to the
+    // admin before Cloudflare's 100s timeout fires a 524.
+    let preflight_budget = std::time::Duration::from_secs(45);
+    let preflight_results =
+        match tokio::time::timeout(preflight_budget, join_all(preflight_checks)).await {
+            Ok(results) => results,
+            Err(_) => {
+                return Err(AppError::BadRequest(format!(
+                    "debate preflight exceeded {}s budget — one or more selected bots are unreachable or very slow. Try again or deselect the slow bot.",
+                    preflight_budget.as_secs()
+                )));
+            }
+        };
     let failing_bot_ids: std::collections::HashSet<String> = preflight_results
         .iter()
         .filter_map(|(bot_id, failure, _)| failure.as_ref().map(|_| bot_id.clone()))

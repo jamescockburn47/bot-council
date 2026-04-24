@@ -897,6 +897,89 @@ async fn send_smoke_probe(
     validate_smoke_json_for_round(&json, round).map_err(|e| format!("{label} {e}"))
 }
 
+/// Lightweight reachability probe used by `debates::create_debate` preflight.
+///
+/// Fires **one** probe per bot with a tight per-request timeout (25s) and a
+/// 3s connect timeout, so a `join_all` across the selected bots stays well
+/// inside Cloudflare's 100s edge-timeout budget. Replaces the full 5-round
+/// `smoke_test_bot` gauntlet at debate-create time — that gauntlet already
+/// ran at approval time, when `pending` → `active` requires it; re-running
+/// it on every create_debate was both redundant and the source of HTTP 524s
+/// (preflight exceeded the edge timeout because any slow round blocked the
+/// whole request).
+///
+/// Validates only that the bot returned a non-empty `response` or `text`
+/// string. Schema-shape validation stays at approval time.
+pub(crate) async fn preflight_probe_bot(
+    bot: &BotRow,
+    key: &crate::api::bot_token_crypto::BotTokenKey,
+) -> Result<(), String> {
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .connect_timeout(std::time::Duration::from_secs(3))
+        .timeout(std::time::Duration::from_secs(25))
+        .build()
+        .map_err(|e| format!("failed to build preflight client: {e}"))?;
+
+    let token = if let Some(ciphertext) = bot.token_ciphertext.as_ref() {
+        Some(
+            crate::api::bot_token_crypto::decrypt(key, ciphertext).map_err(|_| {
+                "could not decrypt stored token (wrong key or corruption)".to_string()
+            })?,
+        )
+    } else {
+        None
+    };
+
+    let body = if bot.bot_kind == "text_only" {
+        serde_json::json!({
+            "session_id": "preflight-probe",
+            "prompt": "Preflight reachability check: reply with any non-empty text.",
+        })
+    } else {
+        serde_json::json!({
+            "session_id": "preflight-probe",
+            "round": 0,
+            "role": "proponent",
+            "context": [],
+            "prompt": "Preflight reachability check for round 0. Reply with JSON containing a non-empty 'response' string. No schema fields required."
+        })
+    };
+
+    let mut request = client.post(&bot.endpoint_url);
+    if let Some(t) = token.as_deref() {
+        if !t.is_empty() {
+            request = request.header("authorization", format!("Bearer {t}"));
+        }
+    }
+    let response = request
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("preflight request failed: {e}"))?;
+    if !response.status().is_success() {
+        return Err(format!(
+            "preflight bot returned HTTP {}",
+            response.status()
+        ));
+    }
+    let json: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("preflight response is not valid JSON: {e}"))?;
+    let text = json
+        .get("response")
+        .or_else(|| json.get("text"))
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| {
+            "preflight response missing 'response' or 'text' string field".to_string()
+        })?;
+    if text.trim().is_empty() {
+        return Err("preflight response is empty".into());
+    }
+    Ok(())
+}
+
 /// Send a multi-step smoke test to a bot endpoint.
 ///
 /// Runs the full 5-round gauntlet (round 0-4) with round-specific schema
@@ -913,8 +996,10 @@ async fn send_smoke_probe(
 ///   probe (not applicable to external bots), return `Ok(None)`.
 /// - `false` → skip the intro probe entirely regardless of `bot_kind`,
 ///   return `Ok(None)`. Used by `test_bot` (manual retest — keep it
-///   cheap and non-destructive) and `debates::create_debate` preflight
-///   (reachability check only; intro was already captured at approval).
+///   cheap and non-destructive).
+///
+/// `debates::create_debate` does NOT use this function — it uses
+/// `preflight_probe_bot` for a single lightweight reachability check.
 ///
 /// Invariant: a successful return is always `Ok(Some(..))` xor `Ok(None)` —
 /// `Some` is returned only when an introduction was actually captured.

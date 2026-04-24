@@ -159,20 +159,38 @@ async fn resynth_one(
 
     // Transcript lines + grounding rows (same construction as the
     // orchestrator's inline block — duplication accepted for
-    // standalone-ability).
+    // standalone-ability). Effective-abstention classification is the
+    // LLM-backed one so resynth and live flow stay consistent.
+    let response_texts: Vec<&str> = all_responses
+        .iter()
+        .map(|r| r.response_json.as_str())
+        .collect();
+    let classifications =
+        crate::synthesiser::abstention_classifier::classify_batch(models_config, &response_texts)
+            .await;
+
     let mut transcript_lines: Vec<String> = Vec::new();
     let mut grounding_rows: Vec<serde_json::Value> = Vec::new();
-    for resp in &all_responses {
+    for (resp, cls) in all_responses.iter().zip(classifications.iter()) {
         let pseudo = pseudonym_map.get(&resp.bot_id).cloned().unwrap_or_default();
-        let effective_abstained = is_effective_abstention_response(&resp.response_json);
-        grounding_rows.push(serde_json::json!({
+        let effective_abstained = cls.effective_abstention;
+        let mut row = serde_json::json!({
             "agent": pseudo,
             "round": resp.round_number,
             "abstained": resp.abstained,
             "effective_abstained": effective_abstained,
             "valid": resp.valid,
             "response": resp.response_json,
-        }));
+        });
+        if !cls.reason.is_empty() {
+            if let Some(obj) = row.as_object_mut() {
+                obj.insert(
+                    "abstention_reason".into(),
+                    serde_json::Value::String(cls.reason.clone()),
+                );
+            }
+        }
+        grounding_rows.push(row);
         if resp.abstained || effective_abstained {
             continue;
         }

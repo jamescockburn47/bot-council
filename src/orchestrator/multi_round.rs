@@ -101,6 +101,14 @@ pub fn is_effective_abstention_response(text: &str) -> bool {
         "cannot formulate",
         "no substantive response",
         "i abstain",
+        // Scalia's wrapper returned "I could not complete the upstream
+        // model call for this round. I am returning this explicit
+        // provider-failure notice so the debate transcript remains
+        // well-formed" — caught here so live flow retries on it
+        // instead of passing it through as a substantive round.
+        "could not complete the upstream",
+        "provider-failure notice",
+        "upstream model call failed",
     ];
     fallback_markers
         .iter()
@@ -628,19 +636,41 @@ async fn run_divergence_and_synthesis(
     let all_responses = queries_phase1::get_all_responses(pool, debate_id)
         .await
         .map_err(|e| format!("db: {e}"))?;
+
+    // Classify every response for effective abstention via MiniMax so the
+    // synthesiser sees correct flags — the regex fallback misses
+    // wrapper-generated phrases like "I could not complete the upstream
+    // model call". `classify_batch` runs in parallel and is infallible
+    // (degrades to regex decision on LLM failure).
+    let response_texts: Vec<&str> = all_responses
+        .iter()
+        .map(|r| r.response_json.as_str())
+        .collect();
+    let classifications =
+        synthesiser::abstention_classifier::classify_batch(models_config, &response_texts).await;
+
     let mut transcript_lines: Vec<String> = Vec::new();
     let mut grounding_rows: Vec<serde_json::Value> = Vec::new();
-    for resp in &all_responses {
+    for (resp, cls) in all_responses.iter().zip(classifications.iter()) {
         let pseudo = pseudonym_map.get(&resp.bot_id).cloned().unwrap_or_default();
-        let effective_abstained = is_effective_abstention_response(&resp.response_json);
-        grounding_rows.push(serde_json::json!({
+        let effective_abstained = cls.effective_abstention;
+        let mut row = serde_json::json!({
             "agent": pseudo,
             "round": resp.round_number,
             "abstained": resp.abstained,
             "effective_abstained": effective_abstained,
             "valid": resp.valid,
             "response": resp.response_json,
-        }));
+        });
+        if !cls.reason.is_empty() {
+            if let Some(obj) = row.as_object_mut() {
+                obj.insert(
+                    "abstention_reason".into(),
+                    serde_json::Value::String(cls.reason.clone()),
+                );
+            }
+        }
+        grounding_rows.push(row);
         if resp.abstained || effective_abstained {
             continue;
         }

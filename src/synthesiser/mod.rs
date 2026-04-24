@@ -1,3 +1,5 @@
+/// LLM-backed effective-abstention classifier (synthesis prep).
+pub mod abstention_classifier;
 /// Post-synthesis citation validation.
 pub mod citation_check;
 /// Pre-computation of structural debate data.
@@ -12,7 +14,7 @@ use crate::synthesiser::schema::SynthesisOutput;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::time::Duration;
 
 /// Retry count for local synthesis model calls.
@@ -68,67 +70,92 @@ pub async fn run_synthesis(
         hex::encode(hasher.finalize())
     };
 
-    let content = match call_local_synthesis_model(config, &system_prompt, temperature).await {
-        Ok(content) => content,
-        Err(e) => {
-            tracing::warn!(error = %e, "local synthesis model failed; using conservative fallback");
-            let mut fallback = conservative_fallback(topic, precomputed_json);
-            ensure_substantive_meta(
-                &mut fallback,
-                participant_map_text,
-                transcript_text,
-                grounding_evidence_json,
-            );
-            let canonical = serde_json::to_string(&fallback)
-                .map_err(|se| format!("failed to serialise fallback synthesis output: {se}"))?;
-            return Ok((canonical, prompt_hash));
-        }
-    };
+    // Retry-on-empty: MiniMax-M2.7 occasionally returns a shaped JSON with
+    // all-empty structural arrays (consensus/disagreements/minorities),
+    // which triggers our salvage path and writes a vapid stub. Empirically
+    // an immediate retry — often with slightly bumped temperature —
+    // produces correct content. We attempt up to 3 times before accepting
+    // the empty result (which itself still has the structural-salvage
+    // safety net downstream).
+    let transcript_has_substance = transcript_text.trim().len() > 500;
+    let max_attempts: u32 = 3;
+    let mut parsed: Option<SynthesisOutput> = None;
+    for attempt in 1..=max_attempts {
+        let attempt_temp = (temperature + 0.1 * f64::from(attempt - 1)).min(0.5);
+        let content = match call_local_synthesis_model(config, &system_prompt, attempt_temp).await {
+            Ok(c) => c,
+            Err(e) => {
+                if attempt < max_attempts {
+                    tracing::warn!(error = %e, attempt, "local synthesis model call failed; retrying");
+                    continue;
+                }
+                tracing::warn!(error = %e, attempts = attempt, "local synthesis model failed after retries; using conservative fallback");
+                let mut fallback = conservative_fallback(topic, precomputed_json);
+                ensure_substantive_meta(
+                    &mut fallback,
+                    participant_map_text,
+                    transcript_text,
+                    grounding_evidence_json,
+                );
+                let canonical = serde_json::to_string(&fallback)
+                    .map_err(|se| format!("failed to serialise fallback synthesis output: {se}"))?;
+                return Ok((canonical, prompt_hash));
+            }
+        };
 
-    // Canonicalise through the typed schema so malformed output is rejected
-    // early and downstream consumers always get predictable JSON.
-    //
-    // Parse as a loose Value first and reinject the known `topic` if the
-    // model omitted or nulled it — we gave the topic as prompt input, it
-    // would be daft to drop a whole synthesis because the model forgot to
-    // echo a field we already have in hand. MiniMax-M2.7 is particularly
-    // prone to omitting `topic` on shorter/thinner transcripts, which
-    // reliably triggered `missing field topic at line 1 column N` on the
-    // first bulk resynth run.
-    let parsed: SynthesisOutput = match serde_json::from_str::<serde_json::Value>(&content) {
-        Ok(mut value) => {
-            if let Some(obj) = value.as_object_mut() {
-                let topic_missing = match obj.get("topic") {
-                    None => true,
-                    Some(serde_json::Value::Null) => true,
-                    Some(serde_json::Value::String(s)) if s.trim().is_empty() => true,
-                    _ => false,
-                };
-                if topic_missing {
-                    obj.insert("topic".into(), serde_json::Value::String(topic.to_string()));
+        // Parse as a loose Value first and reinject the known `topic` if the
+        // model omitted or nulled it — MiniMax-M2.7 sometimes drops it.
+        let attempt_parsed = match serde_json::from_str::<serde_json::Value>(&content) {
+            Ok(mut value) => {
+                if let Some(obj) = value.as_object_mut() {
+                    let topic_missing = match obj.get("topic") {
+                        None => true,
+                        Some(serde_json::Value::Null) => true,
+                        Some(serde_json::Value::String(s)) if s.trim().is_empty() => true,
+                        _ => false,
+                    };
+                    if topic_missing {
+                        obj.insert("topic".into(), serde_json::Value::String(topic.to_string()));
+                    }
+                }
+                match serde_json::from_value::<SynthesisOutput>(value.clone()) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        tracing::warn!(error = %e, attempt, "non-schema JSON after topic-reinject; salvaging");
+                        salvage_loose_output(
+                            topic,
+                            participant_map_text,
+                            transcript_text,
+                            precomputed_json,
+                            grounding_evidence_json,
+                            &value,
+                        )
+                    }
                 }
             }
-            match serde_json::from_value::<SynthesisOutput>(value.clone()) {
-                Ok(parsed) => parsed,
-                Err(e) => {
-                    tracing::warn!(error = %e, "local synthesis returned non-schema JSON after topic-reinject; salvaging");
-                    salvage_loose_output(
-                        topic,
-                        participant_map_text,
-                        transcript_text,
-                        precomputed_json,
-                        grounding_evidence_json,
-                        &value,
-                    )
-                }
+            Err(e) => {
+                tracing::warn!(error = %e, attempt, "unparseable JSON; using fallback");
+                conservative_fallback(topic, precomputed_json)
             }
+        };
+
+        let is_structurally_empty = attempt_parsed.consensus_points.is_empty()
+            && attempt_parsed.live_disagreements.is_empty()
+            && attempt_parsed.minority_positions.is_empty();
+        if is_structurally_empty && transcript_has_substance && attempt < max_attempts {
+            tracing::warn!(
+                attempt,
+                next_temperature = (temperature + 0.1 * f64::from(attempt)).min(0.5),
+                "synthesis returned all-empty structural arrays despite substantive transcript; retrying"
+            );
+            continue;
         }
-        Err(e) => {
-            tracing::warn!(error = %e, "local synthesis returned unparseable JSON; using fallback");
-            conservative_fallback(topic, precomputed_json)
-        }
-    };
-    let mut parsed = parsed;
+
+        parsed = Some(attempt_parsed);
+        break;
+    }
+    let mut parsed =
+        parsed.expect("retry loop must either return early or produce a SynthesisOutput");
     // Hardening: if the model returned all-empty structured arrays but the
     // transcript contains substantive non-abstained content, derive one
     // minority_position per participating bot so the downstream argument
@@ -247,6 +274,59 @@ pub async fn wait_for_final_synthesis_ready(config: &ModelsConfig) -> FinalSynth
 ///
 /// When `crux` is `None` (crux selection failed or the debate pre-dates
 /// crux selection) the section is omitted entirely — no empty header.
+/// Build an at-a-glance abstention summary derived from grounding_evidence
+/// so the synthesiser sees which bots gapped which rounds without having
+/// to scan a 40-kB grounding array. `effective_abstained` was written by
+/// the LLM classifier at synthesis prep; `abstained` is a formal opt-out.
+fn derive_abstention_summary(grounding_evidence_json: &str) -> String {
+    let entries = parse_grounding_evidence(grounding_evidence_json);
+    if entries.is_empty() {
+        return "No grounding evidence available.".into();
+    }
+
+    let mut all_agents: BTreeSet<String> = BTreeSet::new();
+    let mut gap_rounds: BTreeMap<String, Vec<i64>> = BTreeMap::new();
+    for e in &entries {
+        if e.agent.trim().is_empty() {
+            continue;
+        }
+        all_agents.insert(e.agent.clone());
+        if e.abstained || e.effective_abstained {
+            gap_rounds.entry(e.agent.clone()).or_default().push(e.round);
+        }
+    }
+
+    if all_agents.is_empty() {
+        return "No grounding evidence available.".into();
+    }
+    if gap_rounds.is_empty() {
+        return "All participating bots engaged substantively in every round.".into();
+    }
+
+    let mut lines = Vec::new();
+    for agent in &all_agents {
+        match gap_rounds.get(agent) {
+            Some(rounds) => {
+                let mut rs = rounds.clone();
+                rs.sort();
+                rs.dedup();
+                let rounds_str = rs
+                    .iter()
+                    .map(|r| r.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                lines.push(format!(
+                    "{agent}: effectively abstained in round(s) {rounds_str} — treat these rounds as silence, not as substantive contributions."
+                ));
+            }
+            None => {
+                lines.push(format!("{agent}: engaged in every round."));
+            }
+        }
+    }
+    lines.join("\n")
+}
+
 fn build_synthesis_prompt(
     topic: &str,
     participant_map: &str,
@@ -256,6 +336,7 @@ fn build_synthesis_prompt(
     grounding_evidence: &str,
     crux: Option<&CruxSelection>,
 ) -> String {
+    let abstention_summary = derive_abstention_summary(grounding_evidence);
     let crux_section = match crux {
         Some(c) => format!(
             "## Crux outcome\n\n\
@@ -313,17 +394,14 @@ fn build_synthesis_prompt(
         - An empty section is acceptable ONLY if the transcript genuinely contains no content that maps to it (e.g. no bot shifted position → flagged_capitulations can be empty). If the transcript has real content, every applicable section MUST be populated.\n\
          - Do not include synthetic placeholders like \"TBD\", \"unknown source\", or uncited claims.\n\
         - meta_observations must start with \"Conclusion:\" then use these exact section headings and order: \"Summary of arguments\", \"Key disagreements\", \"Minority positions\", \"Overall outcome\", \"Bot behaviour notes\".\n\n\
-         EXECUTIVE SUMMARY RULES (STRICT — this is the first field and the reader will see it before anything else):\n\
-         1. Exactly FOUR sentences. Count them. No fewer, no more.\n\
-         2. Every sentence MUST end with terminal punctuation (\".\", \"?\", or \"!\"). No trailing ellipses, no dangling clauses, no mid-clause cut-offs.\n\
-         3. Plain prose. No bullet points, no dashes acting as list markers, no numbered lists, no headings.\n\
-         4. The subject is the DEBATE'S OUTCOME on the TOPIC — what the debate actually concluded. Tell a reader who has NOT followed the transcript where the debate landed: what (if anything) was agreed, the central unresolved disagreement, and how the balance of argument fell.\n\
-         5. Do NOT mention bot pseudonyms, round numbers, confidence scores, abstentions, or anything about how the bots behaved. Bot behaviour belongs in meta_observations, not here.\n\
-         6. Do NOT include bracketed citations like [Agent A, Round 2]. This is prose for a reader, not a footnoted memo.\n\
-         7. Do NOT hedge with \"the synthesis found\" or \"this debate discussed\". Make direct, substantive claims about the subject matter.\n\
-         8. Neutral register — plain declarative sentences. No rhetorical flourishes, no \"ultimately,\" \"in conclusion,\" or similar filler.\n\n\
-         Example of the tone/length we want (topic: \"Should jury trials in civil cases be abolished?\"):\n\
-         \"The debate concluded that outright abolition of civil jury trials is neither constitutionally feasible in the common-law jurisdictions discussed nor empirically justified by the quality-of-decision evidence. A narrower reform path — reserving juries for cases above a complexity or value threshold — drew broad but not unanimous support as a workable compromise. The central unresolved disagreement was whether the legitimacy function of lay juries can be matched by any panel of specialist fact-finders, or whether it is constitutive of civil justice in a way that no institutional substitute reproduces. On balance, the reform case was the better defended, but the abolitionist premise that juries systematically underperform on accuracy was not established.\"\n\n\
+         EXECUTIVE_SUMMARY requirements (plain prose, four sentences):\n\
+         - Four full sentences of plain prose about the debate's OUTCOME on the TOPIC. No bullets, no lists, no headings.\n\
+         - Tell a reader who has NOT followed the transcript where the debate landed: what was agreed, the central unresolved disagreement, and how the balance of argument fell.\n\
+         - No bot pseudonyms, no round numbers, no bracketed citations, no confidence scores. Bot behaviour belongs in meta_observations, not here.\n\
+         - Every sentence ends with terminal punctuation. No trailing ellipses or dangling clauses.\n\n\
+         ABSTENTION HANDLING:\n\
+         - The <abstention-summary> block names exactly which bots gapped which rounds. When writing meta_observations \"Bot behaviour notes\" and the outcome narrative, reflect these gaps accurately — never describe a bot as having argued, conceded, or proposed anything in a round they skipped.\n\
+         - If a bot effectively abstained in a majority of rounds, say so in \"Bot behaviour notes\" and do not include that bot's name in consensus_points.supporting_bots for rounds they missed.\n\n\
          HEADLINE RULES (applies to every consensus_point, disagreement side, and minority_position):\n\
          - `headline` is a graph-node label shown to the user at normal zoom. It MUST be 3–6 words, keyword-style, no trailing punctuation.\n\
          - The headline is the SUBSTANCE of the claim — what is being asserted — NOT meta-information about who agrees.\n\
@@ -335,6 +413,7 @@ fn build_synthesis_prompt(
          - Bad examples (reject these patterns): \"All 4 participants agree\" (meta-info), \"Consensus on liability\" (vague + meta), \"Disagreement about AI impact\" (describes the disagreement instead of stating either side's position), \"Position that AI will replace lawyers\" (filler stem \"position that\").\n\n\
          TOPIC: {topic}\n\n\
          <participant-map>\n{participant_map}\n</participant-map>\n\n\
+         <abstention-summary>\n{abstention_summary}\n</abstention-summary>\n\n\
          <grounding-evidence>\n{grounding_evidence}\n</grounding-evidence>\n\n\
          <debate-transcript>\n{transcript}\n</debate-transcript>\n\n\
          <structural-data>\n{precomputed}\n</structural-data>\n\n\
@@ -356,22 +435,22 @@ fn build_synthesis_prompt(
 
 /// Serialisable OpenAI-compatible chat request body.
 #[derive(Debug, Serialize)]
-struct LocalChatCompletionRequest {
-    model: String,
-    temperature: f64,
-    top_k: i32,
-    seed: u32,
-    cache_prompt: bool,
-    reasoning_format: String,
-    response_format: LocalResponseFormat,
-    messages: Vec<LocalChatMessage>,
+pub(crate) struct LocalChatCompletionRequest {
+    pub model: String,
+    pub temperature: f64,
+    pub top_k: i32,
+    pub seed: u32,
+    pub cache_prompt: bool,
+    pub reasoning_format: String,
+    pub response_format: LocalResponseFormat,
+    pub messages: Vec<LocalChatMessage>,
 }
 
 /// A single message in the local chat request.
 #[derive(Debug, Serialize)]
-struct LocalChatMessage {
-    role: String,
-    content: String,
+pub(crate) struct LocalChatMessage {
+    pub role: String,
+    pub content: String,
 }
 
 /// Top-level response from the local chat completion API.
@@ -394,11 +473,11 @@ struct LocalChatChoiceMessage {
 
 /// Output format constraint for llama.cpp's OpenAI-compatible endpoint.
 #[derive(Debug, Serialize)]
-struct LocalResponseFormat {
+pub(crate) struct LocalResponseFormat {
     #[serde(rename = "type")]
-    format_type: String,
+    pub format_type: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    schema: Option<serde_json::Value>,
+    pub schema: Option<serde_json::Value>,
 }
 
 /// Call the local synthesis model on EVO.
@@ -428,7 +507,7 @@ async fn call_local_synthesis_model(
     call_model_json(config, &request, false).await
 }
 
-async fn call_model_json(
+pub(crate) async fn call_model_json(
     config: &ModelsConfig,
     request: &LocalChatCompletionRequest,
     warmup_probe: bool,

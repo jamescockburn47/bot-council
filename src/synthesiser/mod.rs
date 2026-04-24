@@ -278,6 +278,13 @@ pub async fn wait_for_final_synthesis_ready(config: &ModelsConfig) -> FinalSynth
 /// so the synthesiser sees which bots gapped which rounds without having
 /// to scan a 40-kB grounding array. `effective_abstained` was written by
 /// the LLM classifier at synthesis prep; `abstained` is a formal opt-out.
+///
+/// For each abstaining bot, also captures a short verbatim quote of their
+/// first non-substantive response — this is the actionable signal the bot
+/// operator needs to diagnose the failure (e.g. wrapper-emitted "could
+/// not complete the upstream model call"). The synthesis prompt
+/// instructs the model to surface this verbatim under
+/// `meta_observations` "Bot behaviour notes" so the operator sees it.
 fn derive_abstention_summary(grounding_evidence_json: &str) -> String {
     let entries = parse_grounding_evidence(grounding_evidence_json);
     if entries.is_empty() {
@@ -286,6 +293,7 @@ fn derive_abstention_summary(grounding_evidence_json: &str) -> String {
 
     let mut all_agents: BTreeSet<String> = BTreeSet::new();
     let mut gap_rounds: BTreeMap<String, Vec<i64>> = BTreeMap::new();
+    let mut first_gap_quote: BTreeMap<String, (i64, String)> = BTreeMap::new();
     for e in &entries {
         if e.agent.trim().is_empty() {
             continue;
@@ -293,6 +301,21 @@ fn derive_abstention_summary(grounding_evidence_json: &str) -> String {
         all_agents.insert(e.agent.clone());
         if e.abstained || e.effective_abstained {
             gap_rounds.entry(e.agent.clone()).or_default().push(e.round);
+            let quote: String = e
+                .response
+                .trim()
+                .replace('\n', " ")
+                .chars()
+                .take(240)
+                .collect();
+            first_gap_quote
+                .entry(e.agent.clone())
+                .and_modify(|existing| {
+                    if e.round < existing.0 {
+                        *existing = (e.round, quote.clone());
+                    }
+                })
+                .or_insert((e.round, quote));
         }
     }
 
@@ -315,9 +338,19 @@ fn derive_abstention_summary(grounding_evidence_json: &str) -> String {
                     .map(|r| r.to_string())
                     .collect::<Vec<_>>()
                     .join(", ");
-                lines.push(format!(
-                    "{agent}: effectively abstained in round(s) {rounds_str} — treat these rounds as silence, not as substantive contributions."
-                ));
+                let quote = first_gap_quote
+                    .get(agent)
+                    .map(|(_, q)| q.as_str())
+                    .unwrap_or("");
+                if quote.is_empty() {
+                    lines.push(format!(
+                        "{agent}: effectively abstained in round(s) {rounds_str} — treat these rounds as silence, not as substantive contributions."
+                    ));
+                } else {
+                    lines.push(format!(
+                        "{agent}: effectively abstained in round(s) {rounds_str}. Self-reported signal (verbatim, for the bot operator to diagnose): \"{quote}\""
+                    ));
+                }
             }
             None => {
                 lines.push(format!("{agent}: engaged in every round."));
@@ -401,7 +434,8 @@ fn build_synthesis_prompt(
          - Every sentence ends with terminal punctuation. No trailing ellipses or dangling clauses.\n\n\
          ABSTENTION HANDLING:\n\
          - The <abstention-summary> block names exactly which bots gapped which rounds. When writing meta_observations \"Bot behaviour notes\" and the outcome narrative, reflect these gaps accurately — never describe a bot as having argued, conceded, or proposed anything in a round they skipped.\n\
-         - If a bot effectively abstained in a majority of rounds, say so in \"Bot behaviour notes\" and do not include that bot's name in consensus_points.supporting_bots for rounds they missed.\n\n\
+         - If a bot effectively abstained in a majority of rounds, say so in \"Bot behaviour notes\" and do not include that bot's name in consensus_points.supporting_bots for rounds they missed.\n\
+         - When <abstention-summary> includes a verbatim self-reported signal for an abstaining bot, quote that signal directly in \"Bot behaviour notes\" (one sentence, in the format: `<Agent X> wrapper reported: \"<verbatim quote>\".`) and add one short operator-facing line suggesting where to look (e.g. \"Operator: check upstream model availability / API key / rate limits.\"). The signal text is what the bot's wrapper itself emitted on each gap round and is the actionable fingerprint the bot's owner needs to fix the failure.\n\n\
          HEADLINE RULES (applies to every consensus_point, disagreement side, and minority_position):\n\
          - `headline` is a graph-node label shown to the user at normal zoom. It MUST be 3–6 words, keyword-style, no trailing punctuation.\n\
          - The headline is the SUBSTANCE of the claim — what is being asserted — NOT meta-information about who agrees.\n\

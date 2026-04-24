@@ -478,3 +478,83 @@ async fn debate_creation_does_not_reject_null_token_bot_at_preflight() {
         "token-null must not be a preflight failure reason: {body_str}"
     );
 }
+
+/// Regression: when one of the selected bots is unreachable, preflight must
+/// exclude it (not hang waiting for the 5-round gauntlet). Before the fix,
+/// `create_debate` ran the full smoke gauntlet per bot; a single slow bot
+/// could push the request past Cloudflare's 100s edge timeout and surface
+/// as HTTP 524 to the admin. The lightweight `preflight_probe_bot` keeps
+/// total preflight well under the outer 45s budget.
+#[tokio::test]
+async fn test_create_debate_excludes_unreachable_bot() {
+    let (mut app, _pool) = common::test_app().await;
+    let (mut bot_ids, _servers) = seed_bots(&mut app).await;
+
+    // Bind an ephemeral port then drop the listener — the port is guaranteed
+    // to refuse connections for the duration of the test, so the preflight
+    // probe will fast-fail with ECONNREFUSED rather than sitting on the
+    // 25s timeout.
+    let dead_port = {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+        port
+    };
+    let dead_url = format!("http://127.0.0.1:{dead_port}/debate");
+
+    let body = json!({ "name": "DeadBot", "endpoint_url": dead_url, "token": "dead" });
+    let req = common::admin_auth(
+        Request::builder()
+            .method("POST")
+            .uri("/bots")
+            .header("content-type", "application/json"),
+    )
+    .body(Body::from(serde_json::to_string(&body).unwrap()))
+    .unwrap();
+    let resp = app.clone().oneshot(req).await.unwrap();
+    let body_bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json_body: Value = serde_json::from_slice(&body_bytes).unwrap();
+    let dead_id = json_body["id"].as_str().unwrap().to_string();
+    bot_ids.push(dead_id.clone());
+
+    let body = json!({
+        "topic": "Preflight excludes unreachable bots cleanly",
+        "bot_ids": bot_ids,
+    });
+    let req = common::admin_auth(
+        Request::builder()
+            .method("POST")
+            .uri("/debates")
+            .header("content-type", "application/json"),
+    )
+    .body(Body::from(serde_json::to_string(&body).unwrap()))
+    .unwrap();
+    let started = std::time::Instant::now();
+    let response = app.oneshot(req).await.unwrap();
+    let elapsed = started.elapsed();
+
+    assert_eq!(response.status(), StatusCode::CREATED);
+    assert!(
+        elapsed < std::time::Duration::from_secs(30),
+        "preflight took {elapsed:?}; expected <30s for 3 healthy bots + 1 fast-refused connection"
+    );
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json_body: Value = serde_json::from_slice(&body).unwrap();
+    let bots = json_body["bots"].as_array().unwrap();
+    assert_eq!(
+        bots.len(),
+        3,
+        "dead bot must be excluded, found bots: {bots:?}"
+    );
+    let bot_id_set: std::collections::HashSet<_> =
+        bots.iter().map(|b| b["bot_id"].as_str().unwrap()).collect();
+    assert!(
+        !bot_id_set.contains(dead_id.as_str()),
+        "dead bot id {dead_id} should not be in the debate roster"
+    );
+}

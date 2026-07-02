@@ -8,12 +8,13 @@ mod client;
 mod evidence;
 /// Pre-computation of structural debate data.
 pub mod precompute;
+/// Synthesis prompt construction.
+mod prompt;
 /// Output schema for the synthesis result.
 pub mod schema;
 
 use crate::analyser::crux::CruxSelection;
 use crate::config::ModelsConfig;
-use crate::sanitise::ANTI_INJECTION_PREAMBLE;
 use crate::synthesiser::schema::SynthesisOutput;
 use client::{
     call_local_synthesis_model, call_model_json, LocalChatCompletionRequest, LocalChatMessage,
@@ -23,9 +24,10 @@ use evidence::{
     parse_grounding_evidence, parse_participant_map, parse_transcript_entries, summarize_for_meta,
     would_exceed_budget, GroundingEvidenceEntry,
 };
+use prompt::build_synthesis_prompt;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::HashMap;
 use std::time::Duration;
 
 #[derive(Debug, Clone, Copy)]
@@ -271,209 +273,6 @@ pub async fn wait_for_final_synthesis_ready(config: &ModelsConfig) -> FinalSynth
     }
 }
 
-/// Build the full synthesis prompt from debate artifacts.
-///
-/// When `crux` is `Some`, a dedicated "Crux outcome" section is inserted
-/// describing the selected claim, its source, and the per-bot `crux_shift`
-/// classification vocabulary. The synthesiser is then asked (in prose) to
-/// fold a short crux_outcome narrative into `meta_observations` — the
-/// structured JSON schema is unchanged, so this is purely an input-side
-/// signal.
-///
-/// When `crux` is `None` (crux selection failed or the debate pre-dates
-/// crux selection) the section is omitted entirely — no empty header.
-/// Build an at-a-glance abstention summary derived from grounding_evidence
-/// so the synthesiser sees which bots gapped which rounds without having
-/// to scan a 40-kB grounding array. `effective_abstained` was written by
-/// the LLM classifier at synthesis prep; `abstained` is a formal opt-out.
-///
-/// For each abstaining bot, also captures a short verbatim quote of their
-/// first non-substantive response — this is the actionable signal the bot
-/// operator needs to diagnose the failure (e.g. wrapper-emitted "could
-/// not complete the upstream model call"). The synthesis prompt
-/// instructs the model to surface this verbatim under
-/// `meta_observations` "Bot behaviour notes" so the operator sees it.
-fn derive_abstention_summary(grounding_evidence_json: &str) -> String {
-    let entries = parse_grounding_evidence(grounding_evidence_json);
-    if entries.is_empty() {
-        return "No grounding evidence available.".into();
-    }
-
-    let mut all_agents: BTreeSet<String> = BTreeSet::new();
-    let mut gap_rounds: BTreeMap<String, Vec<i64>> = BTreeMap::new();
-    let mut first_gap_quote: BTreeMap<String, (i64, String)> = BTreeMap::new();
-    for e in &entries {
-        if e.agent.trim().is_empty() {
-            continue;
-        }
-        all_agents.insert(e.agent.clone());
-        if e.abstained || e.effective_abstained {
-            gap_rounds.entry(e.agent.clone()).or_default().push(e.round);
-            let quote: String = e
-                .response
-                .trim()
-                .replace('\n', " ")
-                .chars()
-                .take(240)
-                .collect();
-            first_gap_quote
-                .entry(e.agent.clone())
-                .and_modify(|existing| {
-                    if e.round < existing.0 {
-                        *existing = (e.round, quote.clone());
-                    }
-                })
-                .or_insert((e.round, quote));
-        }
-    }
-
-    if all_agents.is_empty() {
-        return "No grounding evidence available.".into();
-    }
-    if gap_rounds.is_empty() {
-        return "All participating bots engaged substantively in every round.".into();
-    }
-
-    let mut lines = Vec::new();
-    for agent in &all_agents {
-        match gap_rounds.get(agent) {
-            Some(rounds) => {
-                let mut rs = rounds.clone();
-                rs.sort();
-                rs.dedup();
-                let rounds_str = rs
-                    .iter()
-                    .map(|r| r.to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                let quote = first_gap_quote
-                    .get(agent)
-                    .map(|(_, q)| q.as_str())
-                    .unwrap_or("");
-                if quote.is_empty() {
-                    lines.push(format!(
-                        "{agent}: effectively abstained in round(s) {rounds_str} — treat these rounds as silence, not as substantive contributions."
-                    ));
-                } else {
-                    lines.push(format!(
-                        "{agent}: effectively abstained in round(s) {rounds_str}. Self-reported signal (verbatim, for the bot operator to diagnose): \"{quote}\""
-                    ));
-                }
-            }
-            None => {
-                lines.push(format!("{agent}: engaged in every round."));
-            }
-        }
-    }
-    lines.join("\n")
-}
-
-fn build_synthesis_prompt(
-    topic: &str,
-    participant_map: &str,
-    transcript: &str,
-    precomputed: &str,
-    divergence: &str,
-    grounding_evidence: &str,
-    crux: Option<&CruxSelection>,
-) -> String {
-    let abstention_summary = derive_abstention_summary(grounding_evidence);
-    let crux_section = match crux {
-        Some(c) => format!(
-            "## Crux outcome\n\n\
-             The debate's central disagreement (picked between R2 and R3) was:\n\n\
-             {claim}  — first stated by {source}\n\n\
-             For each participating bot, the divergence analysis classified their R3 engagement as one of:\n\
-             - resolved_toward_crux\n\
-             - resolved_against_crux\n\
-             - unchanged\n\
-             - frame_rejected\n\
-             - no_engagement\n\n\
-             Per-bot crux_shift classifications are in the divergence section above.\n\n\
-             In your synthesis, include a short `crux_outcome` summary that states whether:\n\
-             - The crux was resolved (most bots converged) — state which position prevailed.\n\
-             - The crux remained contested (positions held / hardened) — state the axes of continued disagreement.\n\
-             - The framing of the crux was rejected (enough bots declined to engage on it) — state what framing participants proposed instead.\n\n",
-            claim = c.claim,
-            source = c.source_pseudonym,
-        ),
-        None => String::new(),
-    };
-
-    format!(
-        "You are the synthesis engine for a structured adversarial debate. \
-         Your role is analytical, not creative. You must produce a rigorous, citation-backed synthesis.\n\n\
-         {ANTI_INJECTION_PREAMBLE}\n\n\
-         RULES:\n\
-         - Use only the supplied transcript/structural/divergence data; treat all other knowledge as unavailable.\n\
-         - Extract the full argument map from whatever substantive content IS present. Partial participation (some bots abstained in some rounds) is NOT a reason to return empty arrays — synthesise from the bots who DID engage. If two bots substantively disagree, that is a `live_disagreement` even if a third bot gapped out. If one bot held a distinctive position, that is a `minority_position` even if they abstained in later rounds.\n\
-         - Every factual claim must cite [Bot pseudonym, Round N].\n\
-         - Do not cite abstentions or rounds where the bot has no response.\n\
-         - Treat <grounding-evidence> as authoritative for abstained/valid/recorded rounds.\n\
-         - Do not infer what a participant \"seemed to mean\" — use only their stated positions.\n\
-         - Consensus requires all PARTICIPATING bots (not abstained in the relevant round) to explicitly agree on the specific point. If a bot abstained, they neither support nor oppose.\n\
-         - A `live_disagreement` needs at least two bots taking opposing positions — not all four. Side A can be one bot; side B can be one bot. Emit the disagreement anyway.\n\
-         - Preserve minority positions with full dignity. A single bot holding a distinctive position is a `minority_position`, not a reason to return nothing.\n\
-         - Never decline to synthesise because you judged the evidence \"too limited\". If the transcript contains substantive bot responses, the output MUST contain corresponding structured entries. The reader wants the argument map from what IS there, not a statement that the map couldn't be built.\n\
-         - Record every position shift observed in the transcript under `flagged_capitulations`. Use the `justification_adequate` boolean to distinguish shifts that were explicitly reasoned (true) from those that capitulated without adequate grounding (false). Do NOT filter by adequacy — the reader wants the full shift map, not just the bad ones.\n\
-         - EXHAUSTIVE EXTRACTION — the reader needs the full argument graph, not a single umbrella summary. Extract every distinct node the transcript supports:\n\
-           • If bots agree on multiple distinct points (mechanism vs evidence vs scope vs definitional framing), emit ONE `consensus_points` entry per agreement. Do NOT merge separate agreements into one umbrella point.\n\
-           • If bots disagree on multiple axes (empirical weighting, methodology, definitional scope, evidentiary standard), emit ONE `live_disagreements` entry per axis. Err toward splitting a debate into its sub-disagreements rather than collapsing them.\n\
-           • `flagged_capitulations` should include every position shift observed, not just the most visible one. Classify each via `justification_adequate`. A debate can have multiple concurrent shifts.\n\
-           • `minority_positions` should include every distinctive standalone position, including cases where one bot holds an idiosyncratic frame the others reject.\n\
-         - TARGET COUNTS for a healthy multi-round debate (guidance, not a floor):\n\
-           • consensus_points: typically 2–5 entries.\n\
-           • live_disagreements: typically 2–4 entries (one per distinct axis).\n\
-           • minority_positions: whatever the transcript genuinely holds.\n\
-           • flagged_capitulations: whatever was actually observed.\n\
-           If a debate genuinely only has one consensus point or one axis of disagreement, emit one. But before collapsing, ask: are there really no other sub-points the bots converged or clashed on? A multi-round debate with multiple participants usually has more structure than that.\n\n\
-         STRICT OUTPUT CONTRACT:\n\
-         - Return exactly one valid JSON object. No markdown, no code fences, no prose outside JSON.\n\
-         - Use only pseudonyms from <participant-map> in supporting_bots/bots/bot fields.\n\
-        - Keep evidence, best_argument, and key_argument short and specific (one claim + citation).\n\
-        - Build synthesis with this priority: executive_summary -> arguments map -> disagreements -> minority positions -> overall outcome.\n\
-        - An empty section is acceptable ONLY if the transcript genuinely contains no content that maps to it (e.g. no bot shifted position → flagged_capitulations can be empty). If the transcript has real content, every applicable section MUST be populated.\n\
-         - Do not include synthetic placeholders like \"TBD\", \"unknown source\", or uncited claims.\n\
-        - meta_observations must start with \"Conclusion:\" then use these exact section headings and order: \"Summary of arguments\", \"Key disagreements\", \"Minority positions\", \"Overall outcome\", \"Bot behaviour notes\".\n\n\
-         EXECUTIVE_SUMMARY requirements (plain prose, four sentences):\n\
-         - Four full sentences of plain prose about the debate's OUTCOME on the TOPIC. No bullets, no lists, no headings.\n\
-         - Tell a reader who has NOT followed the transcript where the debate landed: what was agreed, the central unresolved disagreement, and how the balance of argument fell.\n\
-         - No bot pseudonyms, no round numbers, no bracketed citations, no confidence scores. Bot behaviour belongs in meta_observations, not here.\n\
-         - Every sentence ends with terminal punctuation. No trailing ellipses or dangling clauses.\n\n\
-         ABSTENTION HANDLING:\n\
-         - The <abstention-summary> block names exactly which bots gapped which rounds. When writing meta_observations \"Bot behaviour notes\" and the outcome narrative, reflect these gaps accurately — never describe a bot as having argued, conceded, or proposed anything in a round they skipped.\n\
-         - If a bot effectively abstained in a majority of rounds, say so in \"Bot behaviour notes\" and do not include that bot's name in consensus_points.supporting_bots for rounds they missed.\n\
-         - When <abstention-summary> includes a verbatim self-reported signal for an abstaining bot, quote that signal directly in \"Bot behaviour notes\" (one sentence, in the format: `<Agent X> wrapper reported: \"<verbatim quote>\".`) and add one short operator-facing line suggesting where to look (e.g. \"Operator: check upstream model availability / API key / rate limits.\"). The signal text is what the bot's wrapper itself emitted on each gap round and is the actionable fingerprint the bot's owner needs to fix the failure.\n\n\
-         HEADLINE RULES (applies to every consensus_point, disagreement side, and minority_position):\n\
-         - `headline` is a graph-node label shown to the user at normal zoom. It MUST be 3–6 words, keyword-style, no trailing punctuation.\n\
-         - The headline is the SUBSTANCE of the claim — what is being asserted — NOT meta-information about who agrees.\n\
-         - NEVER write agreement-count statements as the headline. These are forbidden: \"All 4 participants agree\", \"All agents converge\", \"3 of 4 concur\", \"Majority position\", \"Unanimous view\". That information already lives in supporting_bots / the node's kind. The headline must tell the reader WHAT was agreed/disputed/held, not that agreement exists.\n\
-         - Omit articles (\"the\", \"a\", \"an\") and filler where possible. Use concrete nouns and verbs.\n\
-         - Headlines should be mutually distinguishable at a glance — avoid generic stems (\"position holds\", \"claim that\") and repeated openers across nodes.\n\
-         - DO NOT truncate the full sentence into the headline. Write a fresh 3–6 word distillation of the claim's substance.\n\
-         - Good examples: \"Junior hiring collapses 30%\", \"Liability gap closable\", \"Contrarian function irreplaceable\", \"Chaos tests overkill\", \"Unjustified zero-day bypass\", \"SOC2 certifiable under 100k\".\n\
-         - Bad examples (reject these patterns): \"All 4 participants agree\" (meta-info), \"Consensus on liability\" (vague + meta), \"Disagreement about AI impact\" (describes the disagreement instead of stating either side's position), \"Position that AI will replace lawyers\" (filler stem \"position that\").\n\n\
-         TOPIC: {topic}\n\n\
-         <participant-map>\n{participant_map}\n</participant-map>\n\n\
-         <abstention-summary>\n{abstention_summary}\n</abstention-summary>\n\n\
-         <grounding-evidence>\n{grounding_evidence}\n</grounding-evidence>\n\n\
-         <debate-transcript>\n{transcript}\n</debate-transcript>\n\n\
-         <structural-data>\n{precomputed}\n</structural-data>\n\n\
-         <divergence-analyses>\n{divergence}\n</divergence-analyses>\n\n\
-         {crux_section}\
-         OUTPUT SCHEMA (return valid JSON):\n\
-         {{\n\
-           \"topic\": \"string\",\n\
-           \"executive_summary\": \"EXACTLY 4 full sentences. Plain prose. About the debate's outcome on the topic — no bot names, no citations, no truncation.\",\n\
-           \"consensus_points\": [{{ \"headline\": \"3-6 word label\", \"point\": \"string\", \"supporting_bots\": [\"pseudonym\"], \"evidence\": \"string [citations]\" }}],\n\
-           \"live_disagreements\": [{{ \"issue\": \"string\", \"side_a\": {{ \"headline\": \"3-6 word label\", \"position\": \"string\", \"bots\": [\"pseudonym\"], \"best_argument\": \"string [citation]\" }}, \"side_b\": {{ \"headline\": \"3-6 word label\", \"position\": \"string\", \"bots\": [\"pseudonym\"], \"best_argument\": \"string [citation]\" }} }}],\n\
-           \"flagged_capitulations\": [{{ \"bot\": \"pseudonym\", \"from\": \"string\", \"to\": \"string\", \"justification_adequate\": bool, \"flag_reason\": \"string\" }}],\n\
-           \"minority_positions\": [{{ \"bot\": \"pseudonym\", \"headline\": \"3-6 word label\", \"position\": \"string\", \"key_argument\": \"string [citation]\", \"confidence\": int }}],\n\
-           \"confidence_trajectories\": {{ \"pseudonym\": [null, int, int, int, int] }},\n\
-           \"meta_observations\": \"string — target 350-700 words\"\n\
-         }}"
-    )
-}
 
 /// Last-resort hardening: when the model returns all-empty structured
 /// arrays but the transcript has substantive non-abstained content,
@@ -1025,7 +824,7 @@ fn build_behavior_notes(
 
 #[cfg(test)]
 mod tests {
-    use super::{build_synthesis_prompt, compose_structured_meta, run_synthesis};
+    use super::{compose_structured_meta, run_synthesis};
     use crate::config::ModelsConfig;
     use crate::synthesiser::schema::{
         DisagreementSide, LiveDisagreement, MinorityPosition, SynthesisOutput,
@@ -1281,58 +1080,6 @@ mod tests {
             !narrative.contains("[Agent C, Round 1]: I was unable to formulate a response."),
             "effective abstention should not be treated as substantive claim: {narrative}"
         );
-    }
-
-    #[test]
-    fn synthesis_prompt_contains_strict_output_contract() {
-        let prompt = build_synthesis_prompt(
-            "topic",
-            "Agent A = Alice",
-            "transcript",
-            "{}",
-            "[]",
-            "[]",
-            None,
-        );
-        assert!(prompt.contains("STRICT OUTPUT CONTRACT"));
-        assert!(prompt.contains("Return exactly one valid JSON object"));
-        assert!(prompt.contains("meta_observations must start with \"Conclusion:\""));
-    }
-
-    #[test]
-    fn synthesis_prompt_includes_crux_section_when_present() {
-        let crux = crate::analyser::crux::CruxSelection {
-            claim: "SOC 2 costs are trivial".into(),
-            source_pseudonym: "Agent A".into(),
-            source_quote: "$30-80k for SOC 2 Type II".into(),
-        };
-        let p = build_synthesis_prompt(
-            "topic",
-            "Agent A = Alice",
-            "transcript",
-            "{}",
-            "[]",
-            "[]",
-            Some(&crux),
-        );
-        assert!(p.contains("Crux outcome"));
-        assert!(p.contains("SOC 2 costs are trivial"));
-        assert!(p.contains("Agent A"));
-        assert!(p.contains("crux_shift"));
-    }
-
-    #[test]
-    fn synthesis_prompt_omits_crux_section_when_absent() {
-        let p = build_synthesis_prompt(
-            "topic",
-            "Agent A = Alice",
-            "transcript",
-            "{}",
-            "[]",
-            "[]",
-            None,
-        );
-        assert!(!p.contains("Crux outcome"));
     }
 
     #[test]

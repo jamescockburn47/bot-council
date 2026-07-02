@@ -77,6 +77,7 @@ fn parse_candidate_response(value: &serde_json::Value) -> Option<DebateRoundResp
         confidence,
         challenge,
         position_change,
+        ingest_kind: Default::default(),
     })
 }
 
@@ -235,6 +236,7 @@ mod tests {
             confidence: None,
             challenge: None,
             position_change: None,
+            ingest_kind: Default::default(),
         };
         normalise_response(&mut raw);
         assert_eq!(raw.response, "Final stance");
@@ -249,6 +251,7 @@ mod tests {
             confidence: None,
             challenge: None,
             position_change: None,
+            ingest_kind: Default::default(),
         };
         normalise_response(&mut raw);
         assert_eq!(raw.response, "Alias response field");

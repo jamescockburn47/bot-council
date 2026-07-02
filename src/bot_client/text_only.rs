@@ -6,9 +6,9 @@
 //! with only `response` populated; all structured fields are left None.
 
 use super::DebateRoundResponse;
-use crate::sanitise::MAX_RESPONSE_BYTES;
+use super::ingest;
 use reqwest_middleware::ClientWithMiddleware;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 #[derive(Debug, Serialize)]
 struct TextOnlyRequest<'a> {
@@ -16,14 +16,11 @@ struct TextOnlyRequest<'a> {
     prompt: &'a str,
 }
 
-#[derive(Debug, Deserialize)]
-struct TextOnlyResponse {
-    text: String,
-}
-
 /// Send a text-only prompt to a bot and translate the response into the
-/// shared `DebateRoundResponse` type. Structured fields are always None;
-/// post-round extraction populates them when required.
+/// shared `DebateRoundResponse` type. Response parsing is lenient (the
+/// ingest ladder): anything prose-shaped counts; oversize is truncated,
+/// never rejected. Structured fields are always None; post-round
+/// extraction populates them when required.
 pub async fn send_text_only_request(
     client: &ClientWithMiddleware,
     endpoint_url: &str,
@@ -49,20 +46,13 @@ pub async fn send_text_only_request(
         .bytes()
         .await
         .map_err(|e| format!("failed to read response body: {e}"))?;
-    if bytes.len() > MAX_RESPONSE_BYTES {
-        return Err(format!(
-            "response body too large: {} bytes (limit {})",
-            bytes.len(),
-            MAX_RESPONSE_BYTES
-        ));
-    }
-    let parsed: TextOnlyResponse =
-        serde_json::from_slice(&bytes).map_err(|e| format!("invalid response body: {e}"))?;
+    let ingested = ingest::ingest_prose(&bytes);
     Ok(DebateRoundResponse {
-        response: parsed.text,
+        response: ingested.text,
         confidence: None,
         challenge: None,
         position_change: None,
+        ingest_kind: ingested.kind,
     })
 }
 
@@ -117,14 +107,48 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn malformed_json_is_propagated() {
+    async fn raw_text_body_is_salvaged() {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
-            .respond_with(ResponseTemplate::new(200).set_body_string("not json"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("not json but still prose"))
             .mount(&server)
             .await;
         let client = build_http_client(&test_http_config());
         let out = send_text_only_request(&client, &server.uri(), "", "sess-1", "Prompt").await;
-        assert!(out.unwrap_err().contains("invalid response body"));
+        let resp = out.unwrap();
+        assert_eq!(resp.response, "not json but still prose");
+        assert_eq!(resp.ingest_kind, ingest::IngestKind::SalvagedRaw);
+    }
+
+    #[tokio::test]
+    async fn response_field_accepted_as_clean() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "response": "external-shape prose"
+            })))
+            .mount(&server)
+            .await;
+        let client = build_http_client(&test_http_config());
+        let out = send_text_only_request(&client, &server.uri(), "", "sess-1", "Prompt").await;
+        let resp = out.unwrap();
+        assert_eq!(resp.response, "external-shape prose");
+        assert_eq!(resp.ingest_kind, ingest::IngestKind::Clean);
+    }
+
+    #[tokio::test]
+    async fn oversize_body_truncates_never_rejects() {
+        let server = MockServer::start().await;
+        let big = "y".repeat(2 * crate::sanitise::MAX_RESPONSE_BYTES);
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(big))
+            .mount(&server)
+            .await;
+        let client = build_http_client(&test_http_config());
+        let out = send_text_only_request(&client, &server.uri(), "", "sess-1", "Prompt").await;
+        let resp = out.unwrap();
+        assert_eq!(resp.ingest_kind, ingest::IngestKind::Truncated);
+        assert!(!resp.response.is_empty());
+        assert!(resp.response.len() <= crate::sanitise::MAX_RESPONSE_BYTES);
     }
 }

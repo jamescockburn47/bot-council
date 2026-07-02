@@ -419,6 +419,7 @@ mod tests {
             confidence: None,
             challenge: None,
             position_change: None,
+            ingest_kind: Default::default(),
         }
     }
 

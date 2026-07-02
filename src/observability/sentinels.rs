@@ -70,12 +70,22 @@ pub const META_STARTS_WITH_CONCLUSION: Sentinel = Sentinel {
     statement: "meta_observations starts with \"Conclusion:\".",
 };
 
+/// ING-001 — lenient ingest is total (bot-lifecycle spec Part 2): any
+/// response body yields a stored result with a closed-set kind, never a
+/// dispatch error. The runtime check guards the closed set so a new kind
+/// cannot ship without being inventoried here.
+pub const ING_NEVER_REJECTS: Sentinel = Sentinel {
+    id: "ING-001",
+    statement: "Ingest is total: any response body yields a stored result with a closed-set kind, never a dispatch error.",
+};
+
 /// All sentinels this crate defines (inventoried in docs/sentinels.md).
-pub const SENTINELS: [Sentinel; 4] = [
+pub const SENTINELS: [Sentinel; 5] = [
     EXTRACTION_SOURCE_CLOSED_SET,
     EXTRACTED_IMPLIES_VERIFIED_QUOTE,
     CRUX_REACHES_ARTIFACT,
     META_STARTS_WITH_CONCLUSION,
+    ING_NEVER_REJECTS,
 ];
 
 /// Check the extraction sentinels for one provenance record against the
@@ -113,6 +123,20 @@ pub fn check_provenance(provenance: &FieldProvenance, raw_response: &str) -> Vec
         }
     }
     out
+}
+
+/// Check the ingest sentinel: the persisted kind must come from the
+/// closed set (see [`ING_NEVER_REJECTS`]).
+#[must_use]
+pub fn check_ingest_kind(kind: &str) -> Vec<Violation> {
+    if matches!(kind, "clean" | "salvaged_field" | "salvaged_raw" | "truncated") {
+        Vec::new()
+    } else {
+        vec![Violation::of(
+            &ING_NEVER_REJECTS,
+            format!("unknown ingest kind {kind:?}"),
+        )]
+    }
 }
 
 /// Check the artifact sentinels on a synthesis result. `crux_selected` is
@@ -154,13 +178,13 @@ pub fn log_violations(context: &str, violations: &[Violation]) {
 
 /// Render the committed inventory (docs/sentinels.md). A freshness test
 /// compares this against the file; regenerate with:
-/// `cargo test sentinels::tests::regen_inventory -- --ignored`
+/// `cargo test --test sentinels_test regen_inventory -- --ignored`
 #[must_use]
 pub fn render_inventory() -> String {
     let mut s = String::from(
         "# Sentinel Inventory\n\n\
          GENERATED FILE — do not edit by hand. Regenerate with:\n\
-         `cargo test sentinels::tests::regen_inventory -- --ignored`\n\
+         `cargo test --test sentinels_test regen_inventory -- --ignored`\n\
          (a test fails when this file is stale).\n\n\
          A sentinel is a named runtime invariant. Violations surface as data\n\
          and warn-level logs with the stable ID — never panics, never blocked\n\
@@ -171,112 +195,4 @@ pub fn render_inventory() -> String {
         s.push_str(&format!("| {} | {} |\n", sentinel.id, sentinel.statement));
     }
     s
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::synthesiser::schema::{Issue, IssueStatus};
-
-    fn provenance(source: &'static str, quote: Option<&str>) -> FieldProvenance {
-        FieldProvenance {
-            field: "challenge",
-            source,
-            quote: quote.map(str::to_string),
-        }
-    }
-
-    #[test]
-    fn authored_and_failed_pass() {
-        assert!(check_provenance(&provenance("authored", None), "text").is_empty());
-        assert!(check_provenance(&provenance("extraction_failed", None), "text").is_empty());
-    }
-
-    #[test]
-    fn unknown_source_violates_ext_001() {
-        let v = check_provenance(&provenance("guessed", None), "text");
-        assert!(v.iter().any(|v| v.sentinel_id == "EXT-001"));
-    }
-
-    #[test]
-    fn extracted_with_verbatim_quote_passes() {
-        let raw = "the claim that preflight checks help is wrong";
-        let v = check_provenance(&provenance("extracted", Some("preflight checks help")), raw);
-        assert!(v.is_empty());
-    }
-
-    #[test]
-    fn extracted_with_fabricated_quote_violates_ext_002() {
-        let v = check_provenance(
-            &provenance("extracted", Some("never said this")),
-            "the actual response",
-        );
-        assert!(v.iter().any(|v| v.sentinel_id == "EXT-002"));
-    }
-
-    #[test]
-    fn extracted_without_quote_violates_ext_002() {
-        let v = check_provenance(&provenance("extracted", None), "text");
-        assert!(v.iter().any(|v| v.sentinel_id == "EXT-002"));
-    }
-
-    fn artifact(issues: Vec<Issue>, meta: &str) -> SessionArtifact {
-        SessionArtifact {
-            topic: "t".into(),
-            headline: String::new(),
-            executive_summary: String::new(),
-            issues,
-            meta_observations: meta.into(),
-        }
-    }
-
-    fn issue(is_crux: bool) -> Issue {
-        Issue {
-            issue: "q".into(),
-            headline: String::new(),
-            is_crux,
-            status: IssueStatus::Split,
-            positions: vec![],
-            movement: vec![],
-        }
-    }
-
-    #[test]
-    fn crux_present_and_conclusion_pass() {
-        let a = artifact(vec![issue(true), issue(false)], "Conclusion: fine.");
-        assert!(check_artifact(&a, true).is_empty());
-    }
-
-    #[test]
-    fn missing_crux_violates_syn_001() {
-        let a = artifact(vec![issue(false)], "Conclusion: fine.");
-        let v = check_artifact(&a, true);
-        assert!(v.iter().any(|v| v.sentinel_id == "SYN-001"));
-        // No crux selected => no requirement.
-        assert!(check_artifact(&a, false).is_empty());
-    }
-
-    #[test]
-    fn bad_meta_violates_syn_002() {
-        let a = artifact(vec![issue(true)], "it went fine");
-        let v = check_artifact(&a, true);
-        assert!(v.iter().any(|v| v.sentinel_id == "SYN-002"));
-    }
-
-    #[test]
-    fn inventory_is_fresh() {
-        let committed = include_str!("../../docs/sentinels.md");
-        assert_eq!(
-            committed,
-            render_inventory(),
-            "docs/sentinels.md is stale — run `cargo test sentinels::tests::regen_inventory -- --ignored`"
-        );
-    }
-
-    #[test]
-    #[ignore = "writes docs/sentinels.md; run explicitly to regenerate"]
-    fn regen_inventory() {
-        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/docs/sentinels.md");
-        std::fs::write(path, render_inventory()).expect("write inventory");
-    }
 }

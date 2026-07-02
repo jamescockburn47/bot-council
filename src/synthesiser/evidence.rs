@@ -51,6 +51,8 @@ pub(crate) fn parse_grounding_evidence(
 
 /// Parse transcript lines in format `[Agent X, Round N]: response`.
 pub(crate) fn parse_transcript_entries(transcript_text: &str) -> Vec<TranscriptEntry> {
+    #[allow(clippy::expect_used)]
+    // const pattern, compile-time known-valid; exercised by every test run
     let re =
         Regex::new(r"(?m)^\[(?P<agent>[^\],]+), Round (?P<round>\d+)\]: ").expect("valid regex");
     let mut marks = Vec::new();

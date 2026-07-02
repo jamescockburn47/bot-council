@@ -15,6 +15,8 @@ const SENSITIVE_PATTERN: &str =
 
 fn sensitive() -> &'static Regex {
     static R: OnceLock<Regex> = OnceLock::new();
+    #[allow(clippy::expect_used)]
+    // const pattern, compile-time known-valid; exercised by every test run
     R.get_or_init(|| Regex::new(SENSITIVE_PATTERN).expect("valid regex"))
 }
 

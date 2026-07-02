@@ -1,8 +1,8 @@
 //! Deterministic, evidence-grounded meta_observations composition.
 
 use crate::synthesiser::evidence::{
-    parse_grounding_evidence, parse_participant_map, parse_transcript_entries, summarize_for_meta,
-    GroundingEvidenceEntry,
+    GroundingEvidenceEntry, parse_grounding_evidence, parse_participant_map,
+    parse_transcript_entries, summarize_for_meta,
 };
 use crate::synthesiser::schema::{IssueStatus, SessionArtifact};
 use std::collections::HashMap;
@@ -303,12 +303,8 @@ mod tests {
         ])
         .to_string();
 
-        let meta = compose_structured_meta(
-            &artifact,
-            "Agent A = Alice\nAgent C = Cara",
-            "",
-            &evidence,
-        );
+        let meta =
+            compose_structured_meta(&artifact, "Agent A = Alice\nAgent C = Cara", "", &evidence);
         assert!(meta.starts_with("Conclusion:"));
         assert!(meta.contains("Summary of arguments:"));
         assert!(meta.contains("[crux]"));

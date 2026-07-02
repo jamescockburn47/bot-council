@@ -19,11 +19,11 @@ use crate::analyser::crux::CruxSelection;
 use crate::config::ModelsConfig;
 use crate::synthesiser::schema::SessionArtifact;
 use client::{
-    call_local_synthesis_model, call_model_json, LocalChatCompletionRequest, LocalChatMessage,
-    LocalResponseFormat,
+    LocalChatCompletionRequest, LocalChatMessage, LocalResponseFormat, call_local_synthesis_model,
+    call_model_json,
 };
 use evidence::{
-    parse_grounding_evidence, parse_transcript_entries, summarize_for_meta, GroundingEvidenceEntry,
+    GroundingEvidenceEntry, parse_grounding_evidence, parse_transcript_entries, summarize_for_meta,
 };
 use prompt::build_synthesis_prompt;
 use sha2::{Digest, Sha256};
@@ -269,7 +269,6 @@ pub async fn wait_for_final_synthesis_ready(config: &ModelsConfig) -> FinalSynth
         .await;
     }
 }
-
 
 /// Last-resort hardening: when the model returns an empty issue map but the
 /// transcript has substantive non-abstained content, emit one Split issue

@@ -176,17 +176,33 @@ async fn mount_minimax(server: &MockServer) {
                 "crux_shift": "frame_rejected"
             }),
         ),
-        // Final synthesis — `minority_positions` only appears in
-        // `build_synthesis_prompt`'s OUTPUT SCHEMA block.
+        // Final synthesis — `is_crux` only appears in
+        // `build_synthesis_prompt`'s OUTPUT SCHEMA block (not in any
+        // extractor / validator / divergence / pairing prompt). The mock
+        // must carry a populated issue: an empty issues array would trip
+        // run_synthesis's retry-on-empty loop.
         (
-            "minority_positions",
+            "is_crux",
             json!({
                 "topic": "runtime preflight checks",
-                "consensus_points": [],
-                "live_disagreements": [],
-                "flagged_capitulations": [],
-                "minority_positions": [],
-                "confidence_trajectories": {},
+                "headline": "Council split on preflight value.",
+                "executive_summary": "The debate considered whether preflight checks are worth the cost. Participants weighed incident-reduction claims against deployment overhead. On balance the reform case drew more support than full removal. The central unresolved issue was the correct evidentiary threshold for worth.",
+                "issues": [{
+                    "issue": "Whether preflight checks are worth their cost",
+                    "headline": "Preflight cost-benefit threshold",
+                    "is_crux": false,
+                    "status": "split",
+                    "positions": [{
+                        "stance": "Preflight checks reduce incident volume when well-scoped.",
+                        "headline": "Scoped preflight reduces incidents",
+                        "bots": ["Agent A"],
+                        "best_argument": "Incident data supports scoping [Agent A, Round 1]",
+                        "evidence": "Agent A, Round 1 cited incident-reduction data.",
+                        "final_confidence": 70,
+                        "frame_rejection": false
+                    }],
+                    "movement": []
+                }],
                 "meta_observations": "Conclusion: test synthesis."
             }),
         ),

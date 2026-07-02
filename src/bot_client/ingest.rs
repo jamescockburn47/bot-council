@@ -75,12 +75,20 @@ pub fn ingest_prose(bytes: &[u8]) -> Ingested {
                     .filter_map(|f| obj.get(*f).and_then(|v| v.as_str()))
                     .find(|s| !s.trim().is_empty())
                     .map(str::to_string)
-                    .or_else(|| openai_content(&obj));
+                    .or_else(|| openai_content(&obj))
+                    // Unrecognised object: the first non-empty string value
+                    // anywhere at depth 1 is the best prose candidate.
+                    .or_else(|| {
+                        obj.values()
+                            .filter_map(|v| v.as_str())
+                            .find(|s| !s.trim().is_empty())
+                            .map(str::to_string)
+                    });
                 match salvaged {
                     Some(s) => (s, IngestKind::SalvagedField),
-                    // Unrecognised object: treat the raw body as prose so a
-                    // human can still read whatever the bot sent.
-                    None => (body.clone(), IngestKind::SalvagedRaw),
+                    // A parsed object with no prose-bearing string field
+                    // has no prose: empty text = abstention downstream.
+                    None => (String::new(), IngestKind::SalvagedRaw),
                 }
             }
         }
@@ -89,14 +97,6 @@ pub fn ingest_prose(bytes: &[u8]) -> Ingested {
     };
 
     let text = strip_wrappers(&raw_text);
-    // An unrecognised JSON object with no prose-bearing field reads as its
-    // own JSON text; if that is effectively empty punctuation soup like
-    // `{}`, report empty text so dispatch treats it as abstention.
-    let text = if kind == IngestKind::SalvagedRaw && is_json_noise(&text) {
-        String::new()
-    } else {
-        text
-    };
     if truncated {
         kind = IngestKind::Truncated;
     }
@@ -157,12 +157,6 @@ fn strip_wrappers(text: &str) -> String {
     s.trim().to_string()
 }
 
-/// True when salvaged-raw text is just JSON punctuation with no letters —
-/// e.g. `{}` or `{"a":1}` carries no prose worth storing as an answer.
-fn is_json_noise(text: &str) -> bool {
-    text.trim().is_empty() || !text.chars().any(char::is_alphabetic) || text.trim() == "{}"
-}
-
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
@@ -216,10 +210,16 @@ mod tests {
     }
 
     #[test]
-    fn unrecognised_object_with_prose_reads_as_raw() {
+    fn unrecognised_object_first_string_value_is_salvaged() {
         let r = ingest_prose(br#"{"verdict": "the argument fails on causation"}"#);
-        assert_eq!(r.kind, IngestKind::SalvagedRaw);
-        assert!(r.text.contains("causation"));
+        assert_eq!(r.kind, IngestKind::SalvagedField);
+        assert_eq!(r.text, "the argument fails on causation");
+    }
+
+    #[test]
+    fn proseless_object_yields_empty_text() {
+        let r = ingest_prose(br#"{"n": 1}"#);
+        assert!(r.text.is_empty());
     }
 
     #[test]

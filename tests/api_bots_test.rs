@@ -310,7 +310,7 @@ async fn test_bot_endpoint_returns_ok_false_for_unreachable_bot() {
 }
 
 #[tokio::test]
-async fn test_bot_endpoint_fails_when_round1_payload_not_supported() {
+async fn test_bot_endpoint_fails_when_no_prose_recoverable() {
     let (app, pool) = common::test_app().await;
     let bot_server = MockServer::start().await;
     Mock::given(method("POST"))
@@ -324,8 +324,10 @@ async fn test_bot_endpoint_fails_when_round1_payload_not_supported() {
     Mock::given(method("POST"))
         .and(path("/debate"))
         .and(body_string_contains("Smoke test round 1"))
+        // Lenient ingest salvages any prose-bearing body, so a smoke
+        // failure now requires a body with NO recoverable prose at all.
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "unexpected": "shape"
+            "unexpected": 42
         })))
         .mount(&bot_server)
         .await;
@@ -355,7 +357,10 @@ async fn test_bot_endpoint_fails_when_round1_payload_not_supported() {
     let json: Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["ok"], false);
     let msg = json["message"].as_str().unwrap();
-    assert!(msg.contains("response"), "unexpected message: {msg}");
+    assert!(
+        msg.contains("no readable prose"),
+        "unexpected message: {msg}"
+    );
 }
 
 #[tokio::test]

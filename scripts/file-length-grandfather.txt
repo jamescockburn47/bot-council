@@ -12,9 +12,9 @@ frontend/src/routes/security/+page.svelte 333
 src/api/bots.rs 1466
 src/api/debates.rs 401
 src/db/queries.rs 806
-src/orchestrator/extraction.rs 517
+src/orchestrator/extraction.rs 537
 src/orchestrator/multi_round.rs 993
 src/resynth.rs 326
-src/synthesiser/citation_check.rs 365
+src/synthesiser/citation_check.rs 367
 src/synthesiser/meta.rs 329
-src/synthesiser/mod.rs 672
+src/synthesiser/mod.rs 677

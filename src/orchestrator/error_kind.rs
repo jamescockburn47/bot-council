@@ -36,7 +36,10 @@ pub fn from_client_error(raw: &str) -> ErrorClassification {
             detail: trim_detail(raw),
         };
     }
-    if lower.contains("dns error") || lower.contains("failed to lookup") || lower.contains("name resolution") {
+    if lower.contains("dns error")
+        || lower.contains("failed to lookup")
+        || lower.contains("name resolution")
+    {
         return ErrorClassification {
             kind: "dns",
             detail: trim_detail(raw),
@@ -52,6 +55,15 @@ pub fn from_client_error(raw: &str) -> ErrorClassification {
         if (500..600).contains(&status) {
             return ErrorClassification {
                 kind: "http_5xx",
+                detail: format!("HTTP {status}"),
+            };
+        }
+        // Credential rejection is its own kind — a 401/403 used to fall
+        // into the generic 4xx (and, worse, historic rows show it as
+        // schema_missing_field), hiding the actual fix from the owner.
+        if status == 401 || status == 403 {
+            return ErrorClassification {
+                kind: "auth",
                 detail: format!("HTTP {status}"),
             };
         }
@@ -89,7 +101,10 @@ pub fn from_client_error(raw: &str) -> ErrorClassification {
             detail: trim_detail(raw),
         };
     }
-    if lower.contains("invalid response body") || lower.contains("not valid json") || lower.contains("expected value") {
+    if lower.contains("invalid response body")
+        || lower.contains("not valid json")
+        || lower.contains("expected value")
+    {
         return ErrorClassification {
             kind: "json_parse",
             detail: trim_detail(raw),
@@ -161,7 +176,8 @@ mod tests {
 
     #[test]
     fn classifies_dns() {
-        let c = from_client_error("connection failed: dns error: failed to lookup address information");
+        let c =
+            from_client_error("connection failed: dns error: failed to lookup address information");
         assert_eq!(c.kind, "dns");
     }
 
@@ -179,15 +195,30 @@ mod tests {
     }
 
     #[test]
-    fn classifies_http_401() {
+    fn classifies_http_401_as_auth() {
         let c = from_client_error("bot returned HTTP 401 Unauthorized");
-        assert_eq!(c.kind, "http_4xx");
+        assert_eq!(c.kind, "auth");
         assert_eq!(c.detail, "HTTP 401");
     }
 
     #[test]
+    fn classifies_http_403_as_auth() {
+        let c = from_client_error("bot returned HTTP 403 Forbidden");
+        assert_eq!(c.kind, "auth");
+    }
+
+    #[test]
+    fn classifies_http_404_as_generic_4xx() {
+        let c = from_client_error("bot returned HTTP 404 Not Found");
+        assert_eq!(c.kind, "http_4xx");
+        assert_eq!(c.detail, "HTTP 404");
+    }
+
+    #[test]
     fn classifies_missing_field() {
-        let c = from_client_error("invalid response body: missing field `response` at line 1 column 10");
+        let c = from_client_error(
+            "invalid response body: missing field `response` at line 1 column 10",
+        );
         assert_eq!(c.kind, "schema_missing_field");
         assert_eq!(c.detail, "response");
     }
@@ -206,7 +237,9 @@ mod tests {
 
     #[test]
     fn classifies_invalid_type() {
-        let c = from_client_error("invalid response body: invalid type: integer `5`, expected a string at line 1 column 15");
+        let c = from_client_error(
+            "invalid response body: invalid type: integer `5`, expected a string at line 1 column 15",
+        );
         assert_eq!(c.kind, "schema_invalid_type");
     }
 

@@ -1,4 +1,5 @@
 use crate::api::auth::{AuthIdentity, RequireAdmin};
+use crate::api::bot_validation::validate_smoke_json_for_round;
 use crate::api::dto::{
     BotAnalyticsResponse, BotDebateAnalytics, BotHealthCheckResponse, BotPerformanceSummary,
     BotResponse, CreateBotRequest, RejectBotRequest, UserInfoResponse,
@@ -730,36 +731,6 @@ pub(crate) fn classify_smoke_test_error(raw: &str) -> String {
     } else {
         format!("Smoke test failed: {raw}")
     }
-}
-
-fn validate_smoke_json(json: serde_json::Value) -> Result<(), String> {
-    validate_smoke_json_for_round(&json, 0)
-}
-
-/// Smoke validator: the bot returned non-empty prose in either `response`
-/// or `text`.
-///
-/// Historically this enforced a round-specific structured schema on external
-/// bots (mandatory `challenge` object on round 2, `position_change` on
-/// round 4). That distinction is gone: every response is prose, and the
-/// orchestrator's extractor pulls structured fields out of the prose with
-/// source-quote verification. A bot that abstains or returns gibberish
-/// still fails (empty body); a bot that returns a substantive prose
-/// answer passes, regardless of which structured fields its author chose
-/// to emit.
-///
-/// `round` is kept on the signature for log-site compatibility — it no
-/// longer influences validation.
-fn validate_smoke_json_for_round(json: &serde_json::Value, _round: i64) -> Result<(), String> {
-    let text = json
-        .get("response")
-        .or_else(|| json.get("text"))
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| "response body missing 'response' or 'text' string field".to_string())?;
-    if text.trim().is_empty() {
-        return Err("'response' field is empty".into());
-    }
-    Ok(())
 }
 
 /// Smoke probe for text-only bots. Sends a `/hook`-shape body and validates

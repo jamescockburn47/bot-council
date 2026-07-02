@@ -127,6 +127,10 @@ pub async fn run_round4(
     // Iterate sequentially because the Success arm may hit MiniMax for
     // text_only extraction; per-round bot count is small (typically 5).
     for (bot_id, bot_kind, outcome) in results {
+        let ingest_kind = match &outcome {
+            DispatchOutcome::Success { response, .. } => Some(response.ingest_kind.as_str()),
+            _ => None,
+        };
         let (
             response_text,
             confidence,
@@ -217,6 +221,7 @@ pub async fn run_round4(
             abstained,
             extraction_metadata_json.as_deref(),
             fallback_from_round,
+            ingest_kind,
         )
         .await
         .map_err(|e| format!("db error storing Round 4 response: {e}"))?;

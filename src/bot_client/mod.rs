@@ -6,6 +6,7 @@ use reqwest_retry::{RetryTransientMiddleware, policies::ExponentialBackoff};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
+pub mod ingest;
 pub mod position_scoring;
 pub mod text_only;
 pub use position_scoring::{
@@ -79,11 +80,17 @@ pub struct DebateRoundResponse {
     pub confidence: Option<i64>,
     pub challenge: Option<ChallengeField>,
     pub position_change: Option<PositionChangeField>,
+    /// Which ingest rung produced `response` (never on the wire).
+    #[serde(skip, default)]
+    pub ingest_kind: ingest::IngestKind,
 }
 
 /// Send a Phase 1 debate round request to a bot.
 ///
-/// Enforces a response body size limit to prevent DoS from oversized payloads.
+/// Response parsing is lenient (bot-lifecycle spec Part 2): the documented
+/// structured shape is tried first so `challenge`/`position_change` survive;
+/// anything else prose-shaped is salvaged via the ingest ladder. Oversize
+/// bodies are truncated by the ladder, never rejected.
 pub async fn send_debate_request(
     client: &ClientWithMiddleware,
     endpoint_url: &str,
@@ -106,15 +113,21 @@ pub async fn send_debate_request(
         .bytes()
         .await
         .map_err(|e| format!("failed to read response body: {e}"))?;
-    if body.len() > MAX_RESPONSE_BYTES {
-        return Err(format!(
-            "response body too large: {} bytes (limit {})",
-            body.len(),
-            MAX_RESPONSE_BYTES
-        ));
+    if body.len() <= MAX_RESPONSE_BYTES {
+        if let Ok(parsed) = serde_json::from_slice::<DebateRoundResponse>(&body) {
+            if !parsed.response.trim().is_empty() {
+                return Ok(parsed);
+            }
+        }
     }
-    serde_json::from_slice::<DebateRoundResponse>(&body)
-        .map_err(|e| format!("invalid response body: {e}"))
+    let ingested = ingest::ingest_prose(&body);
+    Ok(DebateRoundResponse {
+        response: ingested.text,
+        confidence: None,
+        challenge: None,
+        position_change: None,
+        ingest_kind: ingested.kind,
+    })
 }
 
 /// Dispatch a debate round request to a bot, routing based on `bot_kind`.

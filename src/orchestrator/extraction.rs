@@ -55,6 +55,15 @@ fn checked(provenance: FieldProvenance, raw_response: &str) -> FieldProvenance {
     provenance
 }
 
+/// The downgrade record every failure path shares.
+fn failed(field: &'static str) -> FieldProvenance {
+    FieldProvenance {
+        field,
+        source: "extraction_failed",
+        quote: None,
+    }
+}
+
 /// Result of the R3 crux-engagement extraction. Returned alongside the
 /// `FieldProvenance` so callers can persist both the provenance and the
 /// classified stance (when available) into `responses.extraction_metadata`.
@@ -112,11 +121,7 @@ pub async fn extract_crux_engagement(
     if bot_text.trim().is_empty() {
         return CruxEngagementExtraction {
             stance: None,
-            provenance: FieldProvenance {
-                field: field_name,
-                source: "extraction_failed",
-                quote: None,
-            },
+            provenance: failed(field_name),
         };
     }
     let prompt = format!(
@@ -135,11 +140,7 @@ pub async fn extract_crux_engagement(
             );
             return CruxEngagementExtraction {
                 stance: None,
-                provenance: FieldProvenance {
-                    field: field_name,
-                    source: "extraction_failed",
-                    quote: None,
-                },
+                provenance: failed(field_name),
             };
         }
     };
@@ -152,11 +153,7 @@ pub async fn extract_crux_engagement(
             );
             return CruxEngagementExtraction {
                 stance: None,
-                provenance: FieldProvenance {
-                    field: field_name,
-                    source: "extraction_failed",
-                    quote: None,
-                },
+                provenance: failed(field_name),
             };
         }
     };
@@ -166,11 +163,7 @@ pub async fn extract_crux_engagement(
         );
         return CruxEngagementExtraction {
             stance: None,
-            provenance: FieldProvenance {
-                field: field_name,
-                source: "extraction_failed",
-                quote: None,
-            },
+            provenance: failed(field_name),
         };
     }
     CruxEngagementExtraction {
@@ -236,11 +229,7 @@ pub async fn extract_steelman(
     if bot_text.trim().is_empty() {
         return SteelmanExtraction {
             steelman: None,
-            provenance: FieldProvenance {
-                field: field_name,
-                source: "extraction_failed",
-                quote: None,
-            },
+            provenance: failed(field_name),
         };
     }
     let prompt = format!(
@@ -260,11 +249,7 @@ pub async fn extract_steelman(
             );
             return SteelmanExtraction {
                 steelman: None,
-                provenance: FieldProvenance {
-                    field: field_name,
-                    source: "extraction_failed",
-                    quote: None,
-                },
+                provenance: failed(field_name),
             };
         }
     };
@@ -277,11 +262,7 @@ pub async fn extract_steelman(
             );
             return SteelmanExtraction {
                 steelman: None,
-                provenance: FieldProvenance {
-                    field: field_name,
-                    source: "extraction_failed",
-                    quote: None,
-                },
+                provenance: failed(field_name),
             };
         }
     };
@@ -289,11 +270,7 @@ pub async fn extract_steelman(
         tracing::warn!("steelman extractor quote not a verbatim substring; provenance downgraded");
         return SteelmanExtraction {
             steelman: None,
-            provenance: FieldProvenance {
-                field: field_name,
-                source: "extraction_failed",
-                quote: None,
-            },
+            provenance: failed(field_name),
         };
     }
     SteelmanExtraction {
@@ -388,23 +365,11 @@ pub async fn extract_if_needed(
                     &response.response,
                 )
             } else {
-                FieldProvenance {
-                    field: field_name,
-                    source: "extraction_failed",
-                    quote: None,
-                }
+                failed(field_name)
             }
         }
-        ExtractionOutcome::Absent => FieldProvenance {
-            field: field_name,
-            source: "extraction_failed",
-            quote: None,
-        },
-        ExtractionOutcome::Failed { .. } => FieldProvenance {
-            field: field_name,
-            source: "extraction_failed",
-            quote: None,
-        },
+        ExtractionOutcome::Absent => failed(field_name),
+        ExtractionOutcome::Failed { .. } => failed(field_name),
     }
 }
 
@@ -419,6 +384,7 @@ mod tests {
             confidence: None,
             challenge: None,
             position_change: None,
+            ingest_kind: Default::default(),
         }
     }
 

@@ -1,6 +1,7 @@
 pub mod admins;
 pub mod auth;
 pub mod bot_token_crypto;
+pub mod bot_validation;
 pub mod bots;
 pub mod compat;
 pub mod config_json;

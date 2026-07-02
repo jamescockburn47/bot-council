@@ -122,11 +122,3 @@ pub(crate) fn summarize_for_meta(text: &str, max_chars: usize) -> String {
     }
     format!("{trimmed}…")
 }
-
-pub(crate) fn would_exceed_budget(
-    current_chars: usize,
-    next_section: &str,
-    max_chars: usize,
-) -> bool {
-    current_chars + next_section.len() + 2 > max_chars
-}

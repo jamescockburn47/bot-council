@@ -61,8 +61,10 @@ database lists. That, not the volume of content, is the overwhelm.
 5. Generalise debates into **sessions** with per-mode protocol modules:
    `debate` (existing), `competition`, `research`. All three terminate in the
    same artifact schema.
+6. Add **session documents**: council-side parsing, BM25 retrieval, per-round
+   excerpt injection, and quote-verified doc-claim policing.
 
-Items 1–3 are the core; 4 and 5 are phased follow-ons sharing the schema.
+Items 1–3 are the core; 4–6 are phased follow-ons sharing the schema.
 
 ## Part 1 — Issue-centric artifact schema
 
@@ -295,6 +297,72 @@ capabilities contributing; user-selected over divide-and-conquer.
    itself stored alongside the artifact (new column on the session, decided in
    that mode's implementation plan).
 
+## Part 6 — Session documents
+
+Admin attaches documents (PDF/DOCX/TXT/MD) at session creation. Scale target:
+bundles of hundreds of pages (user-confirmed). The bot contract is untouched —
+bots receive quoted, pinned excerpts inside the prompt they already get.
+
+### Pipeline
+
+1. **Parse.** Council-side extraction to plain text with page/paragraph
+   anchors. New `documents` table (`id`, `session_id`, `filename`, `mime`,
+   `extracted_text`, `page_map JSON`, `created_at`); original bytes stored on
+   EVO disk with the path on the row.
+2. **Index.** Chunk (~1k chars, paragraph-aligned) and index with **BM25 via
+   tantivy** — pure Rust, deterministic, no external API in the failure
+   surface. Embeddings are explicitly deferred: doc-claim verification rates
+   (below) give an empirical signal if lexical retrieval quality ever limits
+   sessions, so the upgrade decision is evidence-based.
+3. **Inject per round.** Retrieval query shaped by round focus — R0: topic;
+   R2: the claims under rebuttal; R3: crux text; competition: rubric
+   criterion; research: the section under revision. Top-k excerpts, each with
+   a source pin (`[Bundle B, p.12, ¶3]`), injected into every bot's prompt.
+   Per-prompt excerpt budget ≈ 5k chars.
+4. **Frame as data.** Document text is untrusted input — a poisoned PDF is
+   the same threat as a poisoned peer response. Excerpts go inside the
+   existing `sanitise.rs` data-framing, never as bare prompt text.
+
+### Doc-claim verification
+
+Grounding discipline (user-confirmed): **bots use documents and their own
+knowledge freely; claims about the documents are policed.**
+
+Post-round, the extractor identifies each bot's claims about the documents
+with their supporting quotes; each quote is substring-verified against the
+document text (same machinery, and same provenance rule, as lesson 17):
+
+- Verified → claim renders with a clickable citation pin (drawer → excerpt
+  with highlight).
+- Failed → never silently dropped: transcript badge on the response, plus a
+  `doc_claim_failures` record per bot feeding synthesis, so misquoting the
+  bundle is a visible, attributable event in the artifact ("Agent B's
+  characterisation of clause 14 failed verification").
+
+Outside knowledge remains free and unverified. Only doc-claims are policed.
+
+### Baseline fairness extension
+
+When a session has both documents and the baseline toggle on, the baseline
+call receives the same top-k excerpts for the bare topic — otherwise the
+council beats the baseline merely by having been handed the documents, and
+the delta stops measuring council value.
+
+### Privacy
+
+Warning + operator judgement (user-confirmed for v1): the upload UI states
+plainly that excerpts will be sent to every participating bot's endpoint;
+roster selection remains the control. No per-bot trust flags, no redaction
+machinery in v1.
+
+### Artifact / UI touch-points
+
+- Documents panel on the session page: filenames, page counts, parse status.
+- `Position.evidence` carries doc citations with pins; issue cards show a
+  "grounded" marker when evidence cites the bundle.
+- Research mode is the biggest beneficiary: bundle → collaborative memo with
+  standing objections is the strongest doc-bearing use case.
+
 ## Phasing
 
 | Phase | Scope | Ships as |
@@ -302,10 +370,12 @@ capabilities contributing; user-selected over divide-and-conquer.
 | 1 | Artifact schema + synthesis prompt rewrite + resynth compatibility | One PR (backend) |
 | 2 | Reading-path UI + map rework (Layers 0–2, deletions, drawer takeaway) | One or two PRs (frontend; map may split out) |
 | 3 | Baseline comparison | One PR (backend + Layer 0 strip) |
-| 4 | Competition mode | Own implementation plan |
-| 5 | Research mode | Own implementation plan |
+| 4 | Session documents (parse, index, inject, verify) | Own implementation plan |
+| 5 | Competition mode | Own implementation plan |
+| 6 | Research mode | Own implementation plan |
 
-Phases 1–2 are the committed core. 3 is small and high-value. 4–5 each get a
+Phases 1–2 are the committed core. 3 is small and high-value. 4 is
+independently shippable against the debate mode alone. 5–6 each get a
 separate plan against this design; their protocols above are design-complete
 but implementation details (rubric UI, draft storage, turn scheduling) are
 deferred to those plans.
@@ -320,6 +390,12 @@ deferred to those plans.
 - Removing the Transcript tab or any forensic capability.
 - Divide-and-conquer research mode (explicitly not selected; revisit only with
   a concrete use case).
+- Embedding-based retrieval, per-bot document trust flags, redaction, and
+  document-level access control — all deferred; v1 is BM25 + operator
+  judgement.
+- A bot-pull document-search API (tool-capable bots querying the corpus
+  directly) — natural extension, deferred until injected-excerpt quality is
+  measured.
 
 ## Error handling
 
@@ -333,6 +409,9 @@ deferred to those plans.
 | Resynthesised historical debate fails to parse | Debate keeps prior stored synthesis JSON; frontend falls back to "synthesis not available" for the Outcome tab if the shape is unreadable, Transcript unaffected |
 | Competition: a bot fails its entry round | Entry marked absent; bot still critiques others (critique-only participant), noted in artifact |
 | Research: objection author abstains in later rounds | Objection stands (rules say only explicit withdrawal clears it) |
+| Document fails to parse (corrupt PDF, unsupported format) | Upload rejected with a per-file reason; session creation proceeds without that file only on explicit confirmation |
+| Retrieval returns nothing relevant for a round | Round dispatches without excerpts; noted in round metadata, never blocks dispatch |
+| Doc-claim quote fails verification | Claim flagged (transcript badge + `doc_claim_failures`), never silently dropped and never rendered as verified |
 
 ## Testing
 
@@ -351,7 +430,12 @@ deferred to those plans.
   before ship, per the deploy checklist.
 - **Baseline:** integration test with mocked model — delta items with
   verified quotes survive, fabricated-quote items dropped.
-- Modes (Phases 4–5): test plans belong to their implementation plans.
+- **Documents:** fixture-based parse tests (PDF/DOCX/TXT with known page
+  maps); retrieval unit tests (query → expected chunks); injection framing
+  test (excerpt containing instruction-shaped text stays inert inside the
+  data frame); doc-claim verification tests mirroring the extractor's
+  fabricated-quote cases.
+- Modes (Phases 5–6): test plans belong to their implementation plans.
 
 ## Risks
 
@@ -369,7 +453,14 @@ deferred to those plans.
 - **Baseline gaming/optics.** A weak baseline flatters the council. The
   fairness rule (bare topic, same length guidance, no roles) is in the spec
   precisely so the comparison survives sceptical scrutiny.
-- **Two new modes with one live user community.** Phases 4–5 are gated behind
+- **PDF parsing quality.** Real bundles contain scans, tables, and exhibits
+  that text extraction mangles; a bad parse silently degrades retrieval and
+  doc-claim verification alike. Mitigation: parse status surfaced per file in
+  the documents panel; OCR is out of scope and stated as such at upload.
+- **BM25 misses semantically-relevant excerpts.** Accepted for v1; doc-claim
+  verification rates and operator experience provide the evidence for an
+  embeddings upgrade rather than speculation.
+- **Two new modes with one live user community.** Phases 5–6 are gated behind
   the core shipping and real usage of it. Each mode needs a concrete first
   use case before its plan is written (as Sunclaw was for text-only mode):
-  a named competition for Phase 4, a named research question for Phase 5.
+  a named competition for Phase 5, a named research question for Phase 6.

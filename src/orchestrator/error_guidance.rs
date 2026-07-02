@@ -135,13 +135,19 @@ mod tests {
             crate::orchestrator::error_kind::from_client_error("bot returned HTTP 401").kind,
             crate::orchestrator::error_kind::from_client_error("bot returned HTTP 404").kind,
             crate::orchestrator::error_kind::from_client_error("bot returned HTTP 500").kind,
-            crate::orchestrator::error_kind::from_client_error("invalid response body: expected value").kind,
+            crate::orchestrator::error_kind::from_client_error(
+                "invalid response body: expected value",
+            )
+            .kind,
             crate::orchestrator::error_kind::from_client_error("missing field `x`").kind,
             crate::orchestrator::error_kind::from_client_error("invalid type: integer").kind,
             crate::orchestrator::error_kind::from_schema_failure("confidence", "out of range").kind,
             crate::orchestrator::error_kind::from_client_error("anything else").kind,
         ] {
-            assert!(KNOWN_KINDS.contains(&kind), "classifier emits unlisted kind {kind}");
+            assert!(
+                KNOWN_KINDS.contains(&kind),
+                "classifier emits unlisted kind {kind}"
+            );
         }
     }
 }

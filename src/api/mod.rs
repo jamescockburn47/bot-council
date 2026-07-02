@@ -7,6 +7,7 @@ pub mod compat;
 pub mod config_json;
 pub mod debates;
 pub mod diag;
+pub mod journal;
 pub mod dto;
 pub mod events;
 pub mod health;
@@ -48,6 +49,7 @@ pub fn router(state: AppState) -> Router {
         .route("/config.json", get(config_json::get_config_json))
         .route("/diag/health", get(health::health))
         .route("/diag/models", get(diag::get_model_diagnostics))
+        .route("/admin/events", get(journal::list_events))
         .route("/me", get(bots::get_me))
         .route("/bots/my-submissions", get(bots::my_submissions))
         .route("/bots", get(bots::list_bots).post(bots::create_bot))

@@ -91,6 +91,50 @@ pub async fn build_app() -> anyhow::Result<Router> {
         api::jwks_cache::spawn_refresh_loop(jwks.clone(), raw_client, 600);
     }
 
+    // Ship's log: record the (re)start, and compare the effective model
+    // routes against the previous start — out-of-band env changes to
+    // /etc/bot-council.env (operational lesson 14) become a visible journal
+    // entry instead of a grep discovery.
+    {
+        use crate::observability::events::{self, EventScope};
+        let current_routes = serde_json::json!({
+            "analysis_route": settings.models.effective_analysis_base_url(),
+            "analysis_model": settings.models.effective_analysis_model(),
+            "synthesis_route": settings.models.effective_final_synthesis_base_url(),
+            "synthesis_model": settings.models.effective_final_synthesis_model(),
+        });
+        let previous = events::last_event_of_kind(&pool, "service_started")
+            .await
+            .ok()
+            .flatten()
+            .and_then(|row| row.technical_detail)
+            .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok());
+        if let Some(prev) = previous {
+            if prev != current_routes {
+                events::record_event(
+                    &pool,
+                    "model_route_changed",
+                    EventScope {
+                        label: "the analysis and summary services",
+                        debate_id: None,
+                        bot_id: None,
+                    },
+                    "",
+                    Some(serde_json::json!({"previous": prev, "current": current_routes.clone()})),
+                )
+                .await;
+            }
+        }
+        events::record_event(
+            &pool,
+            "service_started",
+            EventScope::default(),
+            "",
+            Some(current_routes),
+        )
+        .await;
+    }
+
     let state = state::AppState::new(pool, http_client, settings.clone(), jwks, bot_token_key);
 
     // API is mounted at `/api/*` ONLY. Any other path falls through to the

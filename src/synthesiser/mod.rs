@@ -160,8 +160,9 @@ pub async fn run_synthesis(
         parsed = Some(attempt_parsed);
         break;
     }
-    let mut parsed =
-        parsed.expect("retry loop must either return early or produce a SessionArtifact");
+    // The retry loop always sets `parsed` or returns early; if that ever
+    // regresses, degrade to the conservative fallback rather than panic.
+    let mut parsed = parsed.unwrap_or_else(|| conservative_fallback(topic));
     // Hardening: if the model returned an empty issue map but the
     // transcript contains substantive non-abstained content, emit one
     // fallback issue holding each bot's latest position so the downstream

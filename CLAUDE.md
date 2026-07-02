@@ -273,6 +273,7 @@ Design: `docs/superpowers/specs/2026-04-23-unified-bot-contract-design.md` (exte
 ## Specs + plans
 
 - Sentinel inventory (runtime invariants, generated + freshness-tested): `docs/sentinels.md`
+- Operator runbook (plain-English incidents + paste-able remedies; CI-gated commands): `docs/RUNBOOK.md`
 - Hardening plan: `C:\Users\James\.claude\plans\this-has-become-buggy-linked-seal.md`
 - Harness design: `docs/superpowers/specs/2026-04-15-bot-council-harness-design.md`
 - Clerk auth design: `docs/superpowers/specs/2026-04-16-clerk-auth-and-bot-submission-cleanup-design.md`

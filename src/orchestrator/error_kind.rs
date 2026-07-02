@@ -55,6 +55,15 @@ pub fn from_client_error(raw: &str) -> ErrorClassification {
                 detail: format!("HTTP {status}"),
             };
         }
+        // Credential rejection is its own kind — a 401/403 used to fall
+        // into the generic 4xx (and, worse, historic rows show it as
+        // schema_missing_field), hiding the actual fix from the owner.
+        if status == 401 || status == 403 {
+            return ErrorClassification {
+                kind: "auth",
+                detail: format!("HTTP {status}"),
+            };
+        }
         if (400..500).contains(&status) {
             return ErrorClassification {
                 kind: "http_4xx",
@@ -179,10 +188,23 @@ mod tests {
     }
 
     #[test]
-    fn classifies_http_401() {
+    fn classifies_http_401_as_auth() {
         let c = from_client_error("bot returned HTTP 401 Unauthorized");
-        assert_eq!(c.kind, "http_4xx");
+        assert_eq!(c.kind, "auth");
         assert_eq!(c.detail, "HTTP 401");
+    }
+
+    #[test]
+    fn classifies_http_403_as_auth() {
+        let c = from_client_error("bot returned HTTP 403 Forbidden");
+        assert_eq!(c.kind, "auth");
+    }
+
+    #[test]
+    fn classifies_http_404_as_generic_4xx() {
+        let c = from_client_error("bot returned HTTP 404 Not Found");
+        assert_eq!(c.kind, "http_4xx");
+        assert_eq!(c.detail, "HTTP 404");
     }
 
     #[test]

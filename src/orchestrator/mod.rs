@@ -1,5 +1,7 @@
 pub mod anonymiser;
 pub mod dispatch;
+pub mod error_guidance;
+pub mod error_kind;
 pub mod extraction;
 pub mod multi_round;
 pub mod prompts;

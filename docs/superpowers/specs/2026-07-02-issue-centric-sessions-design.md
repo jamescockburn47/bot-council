@@ -135,7 +135,9 @@ pole (product thesis).
 derivation layer. Migration is by resynthesis (the mechanism already exists
 and is BINDING practice after prompt changes — operational lesson 16):
 
-1. Ship backend + frontend together (frontend reads the new shape only).
+1. Phases 1 (backend) and 2 (frontend) merge as separate PRs, but
+   **production ships only after Phase 2 merges** — one `ship.sh` covering
+   both, so prod never runs the new payload against the old UI.
 2. Run `bot-council resynthesise --all` on EVO; historical debates are rebuilt
    into the new schema from their stored transcripts.
 3. Debates whose resynthesis fails render the existing "synthesis not

@@ -3,6 +3,7 @@ use crate::api::events::{DebateEvent, round_name};
 use crate::bot_client::RoundContext;
 use crate::config::{DebateConfig, ModelsConfig};
 use crate::db::{models::BotRow, queries, queries_phase1};
+use crate::orchestrator::sse::{emit, emit_round_responses};
 use crate::orchestrator::{journal, rounds, state_machine};
 use crate::synthesiser::{self, citation_check, precompute};
 use crate::types::{DebateId, Role};
@@ -11,59 +12,6 @@ use reqwest_middleware::ClientWithMiddleware;
 use sqlx::SqlitePool;
 use std::collections::{HashMap, HashSet};
 use tokio::sync::broadcast;
-
-/// Emit an SSE event. Silently drops if no sender or no listeners.
-fn emit(tx: &Option<broadcast::Sender<DebateEvent>>, event: DebateEvent) {
-    if let Some(tx) = tx {
-        let _ = tx.send(event); // intentional: drop if no listeners
-    }
-}
-
-/// Helper to emit ResponseReceived + RoundCompleted events after a round finishes.
-fn emit_round_responses(
-    tx: &Option<broadcast::Sender<DebateEvent>>,
-    round_number: i64,
-    responses: &[crate::db::models::ResponseRow],
-    pseudonym_map: &HashMap<String, String>,
-    role_assignments: &HashMap<String, Role>,
-) {
-    for r in responses {
-        let pseudo = pseudonym_map.get(&r.bot_id).cloned().unwrap_or_default();
-        let role_str = role_assignments
-            .get(&r.bot_id)
-            .map(|role| role.to_string())
-            .unwrap_or_default();
-        emit(
-            tx,
-            DebateEvent::ResponseReceived {
-                round_number,
-                pseudonym: pseudo,
-                role: role_str,
-                response: r.response_json.clone(),
-                confidence: r.confidence,
-                challenge: r
-                    .challenge_json
-                    .as_ref()
-                    .and_then(|j| serde_json::from_str(j).ok()),
-                position_change: r
-                    .position_change_json
-                    .as_ref()
-                    .and_then(|j| serde_json::from_str(j).ok()),
-                valid: r.valid,
-                abstained: r.abstained,
-            },
-        );
-    }
-    let valid_count = responses.iter().filter(|r| r.valid && !r.abstained).count();
-    emit(
-        tx,
-        DebateEvent::RoundCompleted {
-            round_number,
-            response_count: responses.len(),
-            valid_count,
-        },
-    );
-}
 
 /// True when a bot's stored response is a fallback/non-answer string —
 /// "(abstained)", "unable to formulate", etc. — even though the

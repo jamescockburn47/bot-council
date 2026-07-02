@@ -9,6 +9,7 @@ pub mod prompts;
 pub mod response_parser;
 pub mod roles;
 pub mod rounds;
+pub(crate) mod sse;
 pub mod state_machine;
 
 use crate::bot_client::{self, PositionRequest, ScoringContext, ScoringRequest};

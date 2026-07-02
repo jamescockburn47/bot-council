@@ -51,7 +51,7 @@ pub async fn resynth(
 
     let ids = match only_id {
         Some(id) => vec![id.to_string()],
-        None => target_debate_ids(&pool)
+        None => crate::resynth_targets::target_debate_ids(&pool)
             .await
             .context("find target debates")?,
     };
@@ -89,17 +89,11 @@ pub async fn resynth(
         failed = report.failed.len(),
         "resynth: done"
     );
-    crate::observability::events::record_event(
+    crate::orchestrator::journal::record_resynth_run(
         &pool,
-        "resynth_run",
-        crate::observability::events::EventScope::default(),
-        &format!(
-            "Summaries were rebuilt for {} debates; {} skipped; {} failed.",
-            report.succeeded,
-            report.skipped,
-            report.failed.len()
-        ),
-        None,
+        report.succeeded,
+        report.skipped,
+        report.failed.len(),
     )
     .await;
     Ok(report)
@@ -108,21 +102,6 @@ pub async fn resynth(
 enum ResynthOutcome {
     Rewritten,
     SkippedNoTranscript,
-}
-
-/// Eligible for automatic rerun: terminal status, not archived, not a
-/// non-production topic (the same marker list the cleanup job uses).
-async fn target_debate_ids(pool: &SqlitePool) -> Result<Vec<String>, sqlx::Error> {
-    // We fetch all debates and filter in code; the list is small enough
-    // that issuing the topic filter as SQL isn't worth the string
-    // plumbing (queries.rs `list_debates` already handles that for the
-    // list endpoint — we don't reuse it because we need ids only).
-    let rows = queries::list_debates(pool, None, 10_000, false, false).await?;
-    Ok(rows
-        .into_iter()
-        .filter(|r| matches!(r.status.as_str(), "complete" | "failed"))
-        .map(|r| r.id)
-        .collect())
 }
 
 async fn resynth_one(

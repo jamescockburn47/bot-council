@@ -3,8 +3,8 @@ use crate::api::events::{DebateEvent, round_name};
 use crate::bot_client::RoundContext;
 use crate::config::{DebateConfig, ModelsConfig};
 use crate::db::{models::BotRow, queries, queries_phase1};
-use crate::observability::events::{self, EventScope};
-use crate::orchestrator::{rounds, state_machine};
+use crate::orchestrator::sse::{emit, emit_round_responses};
+use crate::orchestrator::{journal, rounds, state_machine};
 use crate::synthesiser::{self, citation_check, precompute};
 use crate::types::{DebateId, Role};
 use futures::StreamExt;
@@ -12,67 +12,6 @@ use reqwest_middleware::ClientWithMiddleware;
 use sqlx::SqlitePool;
 use std::collections::{HashMap, HashSet};
 use tokio::sync::broadcast;
-
-/// Emit an SSE event. Silently drops if no sender or no listeners.
-fn emit(tx: &Option<broadcast::Sender<DebateEvent>>, event: DebateEvent) {
-    if let Some(tx) = tx {
-        let _ = tx.send(event); // intentional: drop if no listeners
-    }
-}
-
-/// Helper to emit ResponseReceived + RoundCompleted events after a round finishes.
-fn emit_round_responses(
-    tx: &Option<broadcast::Sender<DebateEvent>>,
-    round_number: i64,
-    responses: &[crate::db::models::ResponseRow],
-    pseudonym_map: &HashMap<String, String>,
-    role_assignments: &HashMap<String, Role>,
-) {
-    for r in responses {
-        let pseudo = pseudonym_map.get(&r.bot_id).cloned().unwrap_or_default();
-        let role_str = role_assignments
-            .get(&r.bot_id)
-            .map(|role| role.to_string())
-            .unwrap_or_default();
-        emit(
-            tx,
-            DebateEvent::ResponseReceived {
-                round_number,
-                pseudonym: pseudo,
-                role: role_str,
-                response: r.response_json.clone(),
-                confidence: r.confidence,
-                challenge: r
-                    .challenge_json
-                    .as_ref()
-                    .and_then(|j| serde_json::from_str(j).ok()),
-                position_change: r
-                    .position_change_json
-                    .as_ref()
-                    .and_then(|j| serde_json::from_str(j).ok()),
-                valid: r.valid,
-                abstained: r.abstained,
-            },
-        );
-    }
-    let valid_count = responses.iter().filter(|r| r.valid && !r.abstained).count();
-    emit(
-        tx,
-        DebateEvent::RoundCompleted {
-            round_number,
-            response_count: responses.len(),
-            valid_count,
-        },
-    );
-}
-
-/// True when synthesis contains no claim-bearing sections.
-fn is_conservative_empty_synthesis(s: &serde_json::Value) -> bool {
-    s.get("issues")
-        .and_then(|v| v.as_array())
-        .map(|a| a.is_empty())
-        .unwrap_or(false)
-}
 
 /// True when a bot's stored response is a fallback/non-answer string —
 /// "(abstained)", "unable to formulate", etc. — even though the
@@ -225,18 +164,7 @@ pub async fn run_multi_round_debate(
                 "Round 0 quorum not met: {active} of {} required",
                 debate_config.quorum
             );
-            events::record_event(
-                pool,
-                "quorum_not_met",
-                EventScope {
-                    label: &format!("Debate \"{topic}\""),
-                    debate_id: Some(id),
-                    bot_id: None,
-                },
-                &format!("Only {active} debaters answered the opening round."),
-                Some(serde_json::json!({"reason": reason})),
-            )
-            .await;
+            journal::record_quorum_failure(pool, id, topic, active, &reason).await;
             emit(
                 &event_tx,
                 DebateEvent::DebateFailed {
@@ -780,21 +708,7 @@ async fn run_divergence_and_synthesis(
         Ok(v) => v,
         Err(e) => {
             let reason = format!("synthesis failed: {e}");
-            events::record_event(
-                pool,
-                "debate_failed",
-                EventScope {
-                    label: &format!(
-                        "The debate {}",
-                        debate_id.chars().take(8).collect::<String>()
-                    ),
-                    debate_id: Some(debate_id),
-                    bot_id: None,
-                },
-                "The rounds completed, but the summariser could not produce the analysis.",
-                Some(serde_json::json!({"error": reason})),
-            )
-            .await;
+            journal::record_synthesis_failure(pool, debate_id, &reason).await;
             emit(
                 event_tx,
                 DebateEvent::DebateFailed {
@@ -834,7 +748,9 @@ async fn run_divergence_and_synthesis(
             "synthesis contains invalid citations; accepting with warning"
         );
     }
-    if citation_result.citations_total == 0 && !is_conservative_empty_synthesis(&synthesis_value) {
+    if citation_result.citations_total == 0
+        && !journal::is_conservative_empty_synthesis(&synthesis_value)
+    {
         tracing::warn!(
             debate_id = %debate_id,
             "synthesis contains substantive content without citations; accepting with warning"
@@ -854,42 +770,7 @@ async fn run_divergence_and_synthesis(
     .await
     .map_err(|e| format!("db error storing synthesis: {e}"))?;
 
-    let debate_label = format!(
-        "the debate {}",
-        debate_id.chars().take(8).collect::<String>()
-    );
-    if is_conservative_empty_synthesis(&synthesis_value) {
-        events::record_event(
-            pool,
-            "synthesis_fallback",
-            EventScope {
-                label: &debate_label,
-                debate_id: Some(debate_id),
-                bot_id: None,
-            },
-            "",
-            None,
-        )
-        .await;
-    }
-    if let Ok(artifact) = serde_json::from_value::<crate::synthesiser::schema::SessionArtifact>(
-        synthesis_value.clone(),
-    ) {
-        for v in crate::observability::sentinels::check_artifact(&artifact, crux.is_some()) {
-            events::record_event(
-                pool,
-                "sentinel_violation",
-                EventScope {
-                    label: &debate_label,
-                    debate_id: Some(debate_id),
-                    bot_id: None,
-                },
-                &format!("Self-check {}: {}.", v.sentinel_id, v.detail),
-                Some(serde_json::json!({"sentinel": v.sentinel_id, "detail": v.detail})),
-            )
-            .await;
-        }
-    }
+    journal::record_synthesis_quality(pool, debate_id, &synthesis_value, crux.is_some()).await;
 
     // Emit synthesis completed with parsed JSON
     emit(

@@ -52,7 +52,9 @@ async fn journal_lists_events_newest_first_with_filters() {
         .unwrap();
     let res = app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    let body = axum::body::to_bytes(res.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let rows: Vec<Value> = serde_json::from_slice(&body).unwrap();
     assert_eq!(rows.len(), 2);
     // Newest first: the quorum event was recorded second.
@@ -70,7 +72,9 @@ async fn journal_lists_events_newest_first_with_filters() {
     .body(Body::empty())
     .unwrap();
     let res = app.clone().oneshot(req).await.unwrap();
-    let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    let body = axum::body::to_bytes(res.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let rows: Vec<Value> = serde_json::from_slice(&body).unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0]["event_kind"], "quorum_not_met");
@@ -84,7 +88,9 @@ async fn journal_lists_events_newest_first_with_filters() {
     .body(Body::empty())
     .unwrap();
     let res = app.oneshot(req).await.unwrap();
-    let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    let body = axum::body::to_bytes(res.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let rows: Vec<Value> = serde_json::from_slice(&body).unwrap();
     assert_eq!(rows.len(), 1);
 }

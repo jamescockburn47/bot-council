@@ -3,11 +3,13 @@ pub mod dispatch;
 pub mod error_guidance;
 pub mod error_kind;
 pub mod extraction;
+pub(crate) mod journal;
 pub mod multi_round;
 pub mod prompts;
 pub mod response_parser;
 pub mod roles;
 pub mod rounds;
+pub(crate) mod sse;
 pub mod state_machine;
 
 use crate::bot_client::{self, PositionRequest, ScoringContext, ScoringRequest};

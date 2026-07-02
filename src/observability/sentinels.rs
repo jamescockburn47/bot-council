@@ -129,7 +129,10 @@ pub fn check_provenance(provenance: &FieldProvenance, raw_response: &str) -> Vec
 /// closed set (see [`ING_NEVER_REJECTS`]).
 #[must_use]
 pub fn check_ingest_kind(kind: &str) -> Vec<Violation> {
-    if matches!(kind, "clean" | "salvaged_field" | "salvaged_raw" | "truncated") {
+    if matches!(
+        kind,
+        "clean" | "salvaged_field" | "salvaged_raw" | "truncated"
+    ) {
         Vec::new()
     } else {
         vec![Violation::of(

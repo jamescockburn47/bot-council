@@ -1,5 +1,5 @@
-use crate::api::bot_validation::validate_smoke_json_for_round;
 use crate::api::auth::{AuthIdentity, RequireAdmin};
+use crate::api::bot_validation::validate_smoke_json_for_round;
 use crate::api::dto::{
     BotAnalyticsResponse, BotDebateAnalytics, BotHealthCheckResponse, BotPerformanceSummary,
     BotResponse, CreateBotRequest, RejectBotRequest, UserInfoResponse,
@@ -732,7 +732,6 @@ pub(crate) fn classify_smoke_test_error(raw: &str) -> String {
         format!("Smoke test failed: {raw}")
     }
 }
-
 
 /// Smoke probe for text-only bots. Sends a `/hook`-shape body and validates
 /// only that `text` is a non-empty string.

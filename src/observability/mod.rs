@@ -5,6 +5,7 @@
 //! has a live Sentry client to talk to.
 
 pub mod scrubber;
+pub mod sentinels;
 pub mod sentry_init;
 
 pub use sentry_init::init_sentry;

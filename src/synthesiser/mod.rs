@@ -180,6 +180,10 @@ pub async fn run_synthesis(
         transcript_text,
         grounding_evidence_json,
     );
+    crate::observability::sentinels::log_violations(
+        "synthesis",
+        &crate::observability::sentinels::check_artifact(&parsed, crux.is_some()),
+    );
     let canonical = serde_json::to_string(&parsed)
         .map_err(|e| format!("failed to serialise synthesis output: {e}"))?;
 

@@ -67,16 +67,10 @@ fn emit_round_responses(
 
 /// True when synthesis contains no claim-bearing sections.
 fn is_conservative_empty_synthesis(s: &serde_json::Value) -> bool {
-    let arrays_empty = |key: &str| {
-        s.get(key)
-            .and_then(|v| v.as_array())
-            .map(|a| a.is_empty())
-            .unwrap_or(false)
-    };
-    arrays_empty("consensus_points")
-        && arrays_empty("live_disagreements")
-        && arrays_empty("flagged_capitulations")
-        && arrays_empty("minority_positions")
+    s.get("issues")
+        .and_then(|v| v.as_array())
+        .map(|a| a.is_empty())
+        .unwrap_or(false)
 }
 
 /// True when a bot's stored response is a fallback/non-answer string —

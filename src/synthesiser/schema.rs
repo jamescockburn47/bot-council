@@ -1,122 +1,238 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
-/// The rigid output schema for Opus synthesis.
+/// Terminal artifact of a council session (debate today; competition and
+/// research modes will emit the same shape). Issue-centric: every reader
+/// surface — Layer 0 headline, issue cards, the map — renders from `issues`.
 ///
-/// Every field carries `#[serde(default)]`. The model is *asked* for all
-/// of these in the prompt, but MiniMax-M2.7 sometimes drops fields —
-/// `consensus_points`, `minority_positions`, etc. — on shorter transcripts.
-/// Without defaults, dropping one field nukes the whole synthesis: the
-/// typed parse fails and we fall through to the empty-template salvage.
-/// With defaults, we preserve whatever fields the model DID return and
-/// only the missing section is empty — far more useful than losing
-/// everything.
+/// Every field carries `#[serde(default)]`: MiniMax-M2.7 sometimes drops
+/// fields on shorter transcripts. Without defaults, one dropped field fails
+/// the typed parse and the whole synthesis falls through to the
+/// empty-template salvage; with defaults, only the dropped section is empty.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SynthesisOutput {
-    /// The debate topic. Defaulted to empty when the model drops it;
-    /// `run_synthesis` reinjects the known topic before parsing so the
-    /// default rarely fires for this field specifically.
+pub struct SessionArtifact {
+    /// The session topic. `run_synthesis` reinjects the known topic before
+    /// parsing, so the default rarely fires for this field.
     #[serde(default)]
     pub topic: String,
-    /// Four-sentence plain-prose outcome summary for a reader who has
-    /// not followed the debate. About the DEBATE'S CONCLUSION on the
-    /// TOPIC — not about bot behaviour, not truncated, no citations,
-    /// no pseudonyms. Added in 2026-04 so rendered first in the UI.
-    /// Defaults to empty for older rows synthesised before the field
-    /// existed; the frontend hides the block when empty.
+    /// Layer 0: one to two sentences stating the argument's end state
+    /// across all issues — nuance-honest, never a verdict.
+    #[serde(default)]
+    pub headline: String,
+    /// Four-sentence plain-prose outcome summary for a reader who has not
+    /// followed the session. No pseudonyms, no citations.
     #[serde(default)]
     pub executive_summary: String,
-    /// Points on which all participants explicitly agreed.
+    /// The argument's anatomy: one entry per distinct question at issue.
     #[serde(default)]
-    pub consensus_points: Vec<ConsensusPoint>,
-    /// Issues that remained unresolved at the end of the debate.
-    #[serde(default)]
-    pub live_disagreements: Vec<LiveDisagreement>,
-    /// Position shifts identified as inadequately justified.
-    #[serde(default)]
-    pub flagged_capitulations: Vec<FlaggedCapitulation>,
-    /// Minority positions preserved with full dignity.
-    #[serde(default)]
-    pub minority_positions: Vec<MinorityPosition>,
-    /// Per-pseudonym confidence values across rounds 0–4 (None = absent).
-    #[serde(default)]
-    pub confidence_trajectories: HashMap<String, Vec<Option<i64>>>,
-    /// High-level meta-observations (deterministic evidence-grounded narrative).
+    pub issues: Vec<Issue>,
+    /// High-level meta-observations (deterministic evidence-grounded
+    /// narrative; composed council-side, not model-authored).
     #[serde(default)]
     pub meta_observations: String,
 }
 
-/// A point of consensus with supporting evidence.
+/// One question at issue in the session.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ConsensusPoint {
-    /// The agreed point, full sentence.
-    pub point: String,
-    /// 3–6 word keyword headline for the point, suitable as a graph-node
-    /// label. Model-generated; if absent (older rows, salvage path)
-    /// defaults to empty — the frontend falls back to a truncation of
-    /// `point`.
+pub struct Issue {
+    /// The question, stated neutrally, full sentence.
     #[serde(default)]
-    pub headline: String,
-    /// Pseudonyms of bots that supported this point.
-    pub supporting_bots: Vec<String>,
-    /// Evidence with citations.
-    pub evidence: String,
-}
-
-/// A live disagreement with two sides.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LiveDisagreement {
-    /// The issue in dispute.
     pub issue: String,
-    /// One side of the disagreement.
-    pub side_a: DisagreementSide,
-    /// The opposing side.
-    pub side_b: DisagreementSide,
-}
-
-/// One side of a disagreement.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DisagreementSide {
-    /// The position held, full sentence.
-    pub position: String,
-    /// 3–6 word keyword headline for this side of the disagreement,
-    /// suitable as a graph-node label. Defaults to empty for older rows.
+    /// 3–6 word keyword label (issue-card title, map anchor label).
     #[serde(default)]
     pub headline: String,
-    /// Pseudonyms of bots holding this position.
+    /// True for the issue selected as the debate's crux between R2 and R3.
+    /// At most one issue per artifact carries this.
+    #[serde(default)]
+    pub is_crux: bool,
+    /// How the issue ended.
+    #[serde(default)]
+    pub status: IssueStatus,
+    /// Surviving positions. One position => settled; two or more => split.
+    /// A position with a single bot is a minority position by definition.
+    #[serde(default)]
+    pub positions: Vec<Position>,
+    /// Position shifts observed on this issue across rounds.
+    #[serde(default)]
+    pub movement: Vec<Movement>,
+}
+
+/// How an issue ended. Unknown model output degrades to `Split` — the
+/// honest default is "contested"; consensus is never manufactured by a
+/// parse fallback.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum IssueStatus {
+    /// One surviving position shared by all participating bots.
+    Settled,
+    /// The framing itself was rejected; the surviving contribution is a
+    /// proposed reframing rather than a side.
+    Reframed,
+    /// Two or more positions remained live at close. Last variant on
+    /// purpose: `#[serde(other)]` must sit on the final variant, so any
+    /// unknown status string degrades here.
+    #[default]
+    #[serde(other)]
+    Split,
+}
+
+/// One surviving position on an issue.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Position {
+    /// The position held, full sentence.
+    #[serde(default)]
+    pub stance: String,
+    /// 3–6 word keyword label (map node label).
+    #[serde(default)]
+    pub headline: String,
+    /// Pseudonyms of bots holding this position at close.
+    #[serde(default)]
     pub bots: Vec<String>,
     /// The strongest argument offered, with citation.
+    #[serde(default)]
     pub best_argument: String,
+    /// Evidence with citations.
+    #[serde(default)]
+    pub evidence: String,
+    /// Mean end-of-session confidence of the holders, if reported.
+    #[serde(default)]
+    pub final_confidence: Option<i64>,
+    /// True when this "position" rejects the issue's framing rather than
+    /// taking a side. Rendered distinctly; never flattened into a pole.
+    #[serde(default)]
+    pub frame_rejection: bool,
 }
 
-/// A flagged capitulation (position change without adequate justification).
+/// A position shift observed on an issue.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FlaggedCapitulation {
-    /// Pseudonym of the bot that changed position.
+pub struct Movement {
+    /// Pseudonym of the bot that moved.
+    #[serde(default)]
     pub bot: String,
     /// The prior position.
+    #[serde(default)]
     pub from: String,
     /// The new position.
+    #[serde(default)]
     pub to: String,
-    /// Whether the stated justification was adequate.
-    pub justification_adequate: bool,
-    /// Reason for the flag.
-    pub flag_reason: String,
+    /// False when the shift lacked adequate justification (the old
+    /// "flagged capitulation"). Defaults TRUE — a dropped field must not
+    /// falsely accuse a bot of capitulating.
+    #[serde(default = "default_true")]
+    pub justified: bool,
+    /// Verbatim transcript quote that triggered or justified the shift.
+    #[serde(default)]
+    pub trigger_quote: String,
 }
 
-/// A minority position preserved in the synthesis.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MinorityPosition {
-    /// Pseudonym of the bot holding this position.
-    pub bot: String,
-    /// The position itself, full sentence.
-    pub position: String,
-    /// 3–6 word keyword headline suitable as a graph-node label.
-    /// Defaults to empty for older rows.
-    #[serde(default)]
-    pub headline: String,
-    /// The strongest argument offered, with citation.
-    pub key_argument: String,
-    /// Confidence level at the end of the debate, if provided.
-    pub confidence: Option<i64>,
+fn default_true() -> bool {
+    true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn full_fixture() -> &'static str {
+        r#"{
+            "topic": "t",
+            "headline": "Split 2-1 on enforcement; consensus on capture risk.",
+            "executive_summary": "One. Two. Three. Four.",
+            "issues": [
+                {
+                    "issue": "Whether enforcement should be ex-ante",
+                    "headline": "Ex-ante enforcement viability",
+                    "is_crux": true,
+                    "status": "split",
+                    "positions": [
+                        {
+                            "stance": "Ex-ante enforcement is workable",
+                            "headline": "Ex-ante workable",
+                            "bots": ["Agent A", "Agent B"],
+                            "best_argument": "Precedent exists [Agent A, Round 2]",
+                            "evidence": "Cited three regimes [Agent A, Round 2]",
+                            "final_confidence": 70,
+                            "frame_rejection": false
+                        },
+                        {
+                            "stance": "The ex-ante/ex-post dichotomy is false",
+                            "headline": "Dichotomy rejected",
+                            "bots": ["Agent C"],
+                            "best_argument": "Hybrid regimes dominate [Agent C, Round 3]",
+                            "evidence": "",
+                            "final_confidence": null,
+                            "frame_rejection": true
+                        }
+                    ],
+                    "movement": [
+                        {
+                            "bot": "Agent B",
+                            "from": "Ex-post only",
+                            "to": "Ex-ante workable",
+                            "justified": true,
+                            "trigger_quote": "the precedent Agent A cited"
+                        }
+                    ]
+                }
+            ],
+            "meta_observations": "Conclusion: m"
+        }"#
+    }
+
+    #[test]
+    fn full_artifact_parses() {
+        let a: SessionArtifact = serde_json::from_str(full_fixture()).unwrap();
+        assert_eq!(a.issues.len(), 1);
+        let issue = &a.issues[0];
+        assert!(issue.is_crux);
+        assert_eq!(issue.status, IssueStatus::Split);
+        assert_eq!(issue.positions.len(), 2);
+        assert!(issue.positions[1].frame_rejection);
+        assert_eq!(issue.positions[0].final_confidence, Some(70));
+        assert_eq!(issue.movement.len(), 1);
+        assert!(issue.movement[0].justified);
+    }
+
+    #[test]
+    fn dropped_fields_default_instead_of_failing() {
+        // MiniMax sometimes drops whole fields; every field must default.
+        let a: SessionArtifact =
+            serde_json::from_str(r#"{"topic":"t","issues":[{"issue":"q"}]}"#).unwrap();
+        assert_eq!(a.headline, "");
+        assert_eq!(a.issues[0].status, IssueStatus::Split);
+        assert!(a.issues[0].positions.is_empty());
+        assert!(a.issues[0].movement.is_empty());
+        // movement.justified defaults TRUE — never falsely flag a shift
+        let m: Movement = serde_json::from_str(r#"{"bot":"A","from":"x","to":"y"}"#).unwrap();
+        assert!(m.justified);
+    }
+
+    #[test]
+    fn unknown_status_degrades_to_split_not_parse_failure() {
+        // "contested"/"resolved"/typos must not nuke the whole parse.
+        // Split is the honest default: unknown => treat as contested,
+        // never manufacture consensus.
+        let i: Issue = serde_json::from_str(r#"{"issue":"q","status":"contested"}"#).unwrap();
+        assert_eq!(i.status, IssueStatus::Split);
+    }
+
+    #[test]
+    fn legacy_shape_parses_as_empty_artifact() {
+        // Old stored rows (pre-resynth) must not crash the typed parse —
+        // they produce an artifact with zero issues, which downstream
+        // renders as "synthesis not available / resynth needed".
+        let legacy = r#"{"topic":"t","consensus_points":[{"point":"p"}],
+            "live_disagreements":[],"minority_positions":[],
+            "confidence_trajectories":{},"meta_observations":"m"}"#;
+        let a: SessionArtifact = serde_json::from_str(legacy).unwrap();
+        assert!(a.issues.is_empty());
+        assert_eq!(a.topic, "t");
+    }
+
+    #[test]
+    fn status_serialises_snake_case() {
+        assert_eq!(
+            serde_json::to_string(&IssueStatus::Reframed).unwrap(),
+            "\"reframed\""
+        );
+    }
 }

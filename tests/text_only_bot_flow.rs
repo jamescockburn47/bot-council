@@ -211,34 +211,41 @@ async fn mock_minimax_server() -> MockServer {
     // PositionChange schema spec), and wiremock's insertion-order fallback
     // was letting the R4 extractor mock capture synthesis calls — synthesis
     // then silently fell through to salvage_loose_output because the
-    // extractor's JSON shape doesn't fit SynthesisOutput. `minority_positions`
+    // extractor's JSON shape doesn't fit the synthesis schema. `is_crux`
     // appears only in the synthesis prompt's OUTPUT SCHEMA block and nowhere
     // in any extractor / validator / divergence / pairing prompt.
-    // NOTE: at least one populated structural field is required now that
-    // `run_synthesis` retries-on-empty when all arrays come back empty
-    // (MiniMax-M2.7 flakiness mitigation, 2026-04). With all three empty
-    // the synthesiser would fire two additional attempts, blowing the
-    // `.expect(1)` assertion below.
+    // NOTE: a populated `issues` array is required now that `run_synthesis`
+    // retries-on-empty when the issue map comes back empty (MiniMax-M2.7
+    // flakiness mitigation, 2026-04). With `issues: []` the synthesiser
+    // would fire two additional attempts, blowing the `.expect(1)`
+    // assertion below.
     let synthesis_output = json!({
         "choices": [{"message": {"content": json!({
             "topic": "preflight checks",
+            "headline": "Council split on preflight value.",
             "executive_summary": "The debate considered whether preflight checks are worth the cost. Participants weighed incident-reduction claims against deployment overhead. On balance the reform case drew more support than full removal. The central unresolved issue was the correct evidentiary threshold for 'worth the cost'.",
-            "consensus_points": [{
-                "point": "Preflight checks reduce incident volume when well-scoped.",
-                "headline": "Scoped preflight reduces incidents",
-                "supporting_bots": ["Agent A"],
-                "evidence": "Agent A, Round 1 cited incident-reduction data."
+            "issues": [{
+                "issue": "Whether preflight checks are worth their cost",
+                "headline": "Preflight cost-benefit threshold",
+                "is_crux": false,
+                "status": "split",
+                "positions": [{
+                    "stance": "Preflight checks reduce incident volume when well-scoped.",
+                    "headline": "Scoped preflight reduces incidents",
+                    "bots": ["Agent A"],
+                    "best_argument": "Incident data supports scoping [Agent A, Round 1]",
+                    "evidence": "Agent A, Round 1 cited incident-reduction data.",
+                    "final_confidence": 70,
+                    "frame_rejection": false
+                }],
+                "movement": []
             }],
-            "live_disagreements": [],
-            "flagged_capitulations": [],
-            "minority_positions": [],
-            "confidence_trajectories": {},
             "meta_observations": "Conclusion: test synthesis."
         }).to_string()}}]
     });
     Mock::given(method("POST"))
         .and(path("/v1/chat/completions"))
-        .and(body_string_contains("minority_positions"))
+        .and(body_string_contains("is_crux"))
         .respond_with(ResponseTemplate::new(200).set_body_json(synthesis_output))
         .expect(1)
         .mount(&server)

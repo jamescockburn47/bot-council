@@ -44,89 +44,28 @@ pub fn check_citations(
     let mut total = 0usize;
     let mut invalid = Vec::new();
 
-    // Check consensus_points[].evidence
-    if let Some(arr) = synthesis.get("consensus_points").and_then(|v| v.as_array()) {
-        for (i, item) in arr.iter().enumerate() {
-            if let Some(text) = item.get("evidence").and_then(|v| v.as_str()) {
-                check_text(
-                    &re,
-                    text,
-                    &format!("consensus_points[{}].evidence", i),
-                    valid_pseudonyms,
-                    responses,
-                    max_round,
-                    &mut total,
-                    &mut invalid,
-                );
-            }
-        }
-    }
-
-    // Check live_disagreements[].side_a.best_argument and side_b.best_argument
-    if let Some(arr) = synthesis
-        .get("live_disagreements")
-        .and_then(|v| v.as_array())
-    {
-        for (i, item) in arr.iter().enumerate() {
-            for side in &["side_a", "side_b"] {
-                if let Some(text) = item
-                    .get(side)
-                    .and_then(|s| s.get("best_argument"))
-                    .and_then(|v| v.as_str())
-                {
-                    check_text(
-                        &re,
-                        text,
-                        &format!("live_disagreements[{}].{}.best_argument", i, side),
-                        valid_pseudonyms,
-                        responses,
-                        max_round,
-                        &mut total,
-                        &mut invalid,
-                    );
+    // Check issues[].positions[].{evidence, best_argument}. Movement
+    // trigger_quote is a verbatim transcript quote, not a citation, so it
+    // is deliberately not walked here.
+    if let Some(issues) = synthesis.get("issues").and_then(|v| v.as_array()) {
+        for (i, issue) in issues.iter().enumerate() {
+            if let Some(positions) = issue.get("positions").and_then(|v| v.as_array()) {
+                for (j, position) in positions.iter().enumerate() {
+                    for field in ["evidence", "best_argument"] {
+                        if let Some(text) = position.get(field).and_then(|v| v.as_str()) {
+                            check_text(
+                                &re,
+                                text,
+                                &format!("issues[{i}].positions[{j}].{field}"),
+                                valid_pseudonyms,
+                                responses,
+                                max_round,
+                                &mut total,
+                                &mut invalid,
+                            );
+                        }
+                    }
                 }
-            }
-        }
-    }
-
-    // Check minority_positions[].key_argument
-    if let Some(arr) = synthesis
-        .get("minority_positions")
-        .and_then(|v| v.as_array())
-    {
-        for (i, item) in arr.iter().enumerate() {
-            if let Some(text) = item.get("key_argument").and_then(|v| v.as_str()) {
-                check_text(
-                    &re,
-                    text,
-                    &format!("minority_positions[{}].key_argument", i),
-                    valid_pseudonyms,
-                    responses,
-                    max_round,
-                    &mut total,
-                    &mut invalid,
-                );
-            }
-        }
-    }
-
-    // Check flagged_capitulations[].flag_reason (may contain citations)
-    if let Some(arr) = synthesis
-        .get("flagged_capitulations")
-        .and_then(|v| v.as_array())
-    {
-        for (i, item) in arr.iter().enumerate() {
-            if let Some(text) = item.get("flag_reason").and_then(|v| v.as_str()) {
-                check_text(
-                    &re,
-                    text,
-                    &format!("flagged_capitulations[{}].flag_reason", i),
-                    valid_pseudonyms,
-                    responses,
-                    max_round,
-                    &mut total,
-                    &mut invalid,
-                );
             }
         }
     }
@@ -230,14 +169,16 @@ mod tests {
     #[test]
     fn test_valid_citations() {
         let synthesis = serde_json::json!({
-            "consensus_points": [{
-                "point": "All agree on X",
-                "supporting_bots": ["Agent A"],
-                "evidence": "As stated by [Agent A, Round 2] and confirmed by [Agent B, Round 4]"
-            }],
-            "live_disagreements": [],
-            "minority_positions": [],
-            "flagged_capitulations": []
+            "issues": [{
+                "issue": "Whether X holds",
+                "status": "settled",
+                "positions": [{
+                    "stance": "All agree on X",
+                    "bots": ["Agent A", "Agent B"],
+                    "best_argument": "",
+                    "evidence": "As stated by [Agent A, Round 2] and confirmed by [Agent B, Round 4]"
+                }]
+            }]
         });
 
         let mut pseudonyms = HashSet::new();
@@ -257,14 +198,16 @@ mod tests {
     #[test]
     fn test_invalid_pseudonym_and_round() {
         let synthesis = serde_json::json!({
-            "consensus_points": [{
-                "point": "Bad ref",
-                "supporting_bots": ["Agent A"],
-                "evidence": "[Agent Z, Round 2] said something and [Agent A, Round 9] agreed"
-            }],
-            "live_disagreements": [],
-            "minority_positions": [],
-            "flagged_capitulations": []
+            "issues": [{
+                "issue": "Bad ref",
+                "status": "split",
+                "positions": [{
+                    "stance": "Bad ref",
+                    "bots": ["Agent A"],
+                    "best_argument": "",
+                    "evidence": "[Agent Z, Round 2] said something and [Agent A, Round 9] agreed"
+                }]
+            }]
         });
 
         let mut pseudonyms = HashSet::new();
@@ -292,14 +235,16 @@ mod tests {
     #[test]
     fn test_abstained_citation() {
         let synthesis = serde_json::json!({
-            "consensus_points": [{
-                "point": "Ref to abstainer",
-                "supporting_bots": ["Agent A"],
-                "evidence": "[Agent A, Round 1] abstained but is cited"
-            }],
-            "live_disagreements": [],
-            "minority_positions": [],
-            "flagged_capitulations": []
+            "issues": [{
+                "issue": "Ref to abstainer",
+                "status": "split",
+                "positions": [{
+                    "stance": "Ref to abstainer",
+                    "bots": ["Agent A"],
+                    "best_argument": "",
+                    "evidence": "[Agent A, Round 1] abstained but is cited"
+                }]
+            }]
         });
 
         let mut pseudonyms = HashSet::new();
@@ -318,14 +263,16 @@ mod tests {
     #[test]
     fn test_no_response_citation() {
         let synthesis = serde_json::json!({
-            "consensus_points": [{
-                "point": "Ref to missing round",
-                "supporting_bots": ["Agent A"],
-                "evidence": "[Agent A, Round 3] has no response entry"
-            }],
-            "live_disagreements": [],
-            "minority_positions": [],
-            "flagged_capitulations": []
+            "issues": [{
+                "issue": "Ref to missing round",
+                "status": "split",
+                "positions": [{
+                    "stance": "Ref to missing round",
+                    "bots": ["Agent A"],
+                    "best_argument": "",
+                    "evidence": "[Agent A, Round 3] has no response entry"
+                }]
+            }]
         });
 
         let mut pseudonyms = HashSet::new();
@@ -343,24 +290,26 @@ mod tests {
     }
 
     #[test]
-    fn test_live_disagreements_citations() {
+    fn test_split_issue_position_citations() {
         let synthesis = serde_json::json!({
-            "consensus_points": [],
-            "live_disagreements": [{
+            "issues": [{
                 "issue": "Topic X",
-                "side_a": {
-                    "position": "For",
-                    "bots": ["Agent A"],
-                    "best_argument": "Argued by [Agent A, Round 2]"
-                },
-                "side_b": {
-                    "position": "Against",
-                    "bots": ["Agent B"],
-                    "best_argument": "Countered by [Agent B, Round 3]"
-                }
-            }],
-            "minority_positions": [],
-            "flagged_capitulations": []
+                "status": "split",
+                "positions": [
+                    {
+                        "stance": "For",
+                        "bots": ["Agent A"],
+                        "best_argument": "Argued by [Agent A, Round 2]",
+                        "evidence": ""
+                    },
+                    {
+                        "stance": "Against",
+                        "bots": ["Agent B"],
+                        "best_argument": "Countered by [Agent B, Round 3]",
+                        "evidence": ""
+                    }
+                ]
+            }]
         });
 
         let mut pseudonyms = HashSet::new();
@@ -380,14 +329,16 @@ mod tests {
     #[test]
     fn test_citations_accept_alias_expanded_agent_names() {
         let synthesis = serde_json::json!({
-            "consensus_points": [{
-                "point": "Alias citation",
-                "supporting_bots": ["Agent A"],
-                "evidence": "As shown by [Agent A (Clint), Round 2]"
-            }],
-            "live_disagreements": [],
-            "minority_positions": [],
-            "flagged_capitulations": []
+            "issues": [{
+                "issue": "Alias citation",
+                "status": "settled",
+                "positions": [{
+                    "stance": "Alias citation",
+                    "bots": ["Agent A"],
+                    "best_argument": "",
+                    "evidence": "As shown by [Agent A (Clint), Round 2]"
+                }]
+            }]
         });
         let mut pseudonyms = HashSet::new();
         pseudonyms.insert("Agent A".to_string());

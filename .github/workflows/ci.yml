@@ -11,6 +11,19 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  hygiene:
+    name: Hygiene (file lengths)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: File-length gate (300-line rule, grandfathered ratchet)
+        # CLAUDE.md: max 300 lines per file, split before adding. New files
+        # are gated at 300; pre-existing offenders live in
+        # scripts/file-length-grandfather.txt with a ratchet ceiling they
+        # may not grow past. Shrink one below 300 → delete its row.
+        run: ./scripts/check-file-length.sh
+
   backend:
     name: Backend (Rust)
     runs-on: ubuntu-latest

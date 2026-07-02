@@ -7,7 +7,7 @@
 pub mod events;
 pub mod scrubber;
 pub mod sentinels;
-pub mod system_guidance;
 pub mod sentry_init;
+pub mod system_guidance;
 
 pub use sentry_init::init_sentry;

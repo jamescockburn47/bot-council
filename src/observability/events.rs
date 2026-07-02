@@ -182,7 +182,9 @@ mod tests {
             None,
         )
         .await;
-        let problems = recent_events(&pool, 10, Some("problem")).await.expect("fetch");
+        let problems = recent_events(&pool, 10, Some("problem"))
+            .await
+            .expect("fetch");
         assert_eq!(problems.len(), 1);
         assert_eq!(problems[0].event_kind, "quorum_not_met");
         let last = last_event_of_kind(&pool, "service_started")

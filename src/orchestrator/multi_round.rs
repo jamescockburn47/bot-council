@@ -1,9 +1,9 @@
-use crate::observability::events::{self, EventScope};
 use crate::analyser::divergence::analyse_divergence;
 use crate::api::events::{DebateEvent, round_name};
 use crate::bot_client::RoundContext;
 use crate::config::{DebateConfig, ModelsConfig};
 use crate::db::{models::BotRow, queries, queries_phase1};
+use crate::observability::events::{self, EventScope};
 use crate::orchestrator::{rounds, state_machine};
 use crate::synthesiser::{self, citation_check, precompute};
 use crate::types::{DebateId, Role};
@@ -784,7 +784,10 @@ async fn run_divergence_and_synthesis(
                 pool,
                 "debate_failed",
                 EventScope {
-                    label: &format!("The debate {}", debate_id.chars().take(8).collect::<String>()),
+                    label: &format!(
+                        "The debate {}",
+                        debate_id.chars().take(8).collect::<String>()
+                    ),
                     debate_id: Some(debate_id),
                     bot_id: None,
                 },
@@ -869,9 +872,9 @@ async fn run_divergence_and_synthesis(
         )
         .await;
     }
-    if let Ok(artifact) =
-        serde_json::from_value::<crate::synthesiser::schema::SessionArtifact>(synthesis_value.clone())
-    {
+    if let Ok(artifact) = serde_json::from_value::<crate::synthesiser::schema::SessionArtifact>(
+        synthesis_value.clone(),
+    ) {
         for v in crate::observability::sentinels::check_artifact(&artifact, crux.is_some()) {
             events::record_event(
                 pool,

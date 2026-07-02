@@ -24,6 +24,11 @@ jobs:
         # may not grow past. Shrink one below 300 → delete its row.
         run: ./scripts/check-file-length.sh
 
+      - name: Runbook command-rot gate
+        # Every ./scripts/*.sh named in docs/RUNBOOK.md must exist
+        # (operator-legibility spec Part 4).
+        run: ./scripts/check-runbook.sh
+
   backend:
     name: Backend (Rust)
     runs-on: ubuntu-latest

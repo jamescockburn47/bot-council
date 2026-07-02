@@ -10,6 +10,7 @@ pub mod diag;
 pub mod dto;
 pub mod events;
 pub mod health;
+pub mod journal;
 pub mod jwks_cache;
 pub mod stream;
 pub mod synthesis;
@@ -48,6 +49,7 @@ pub fn router(state: AppState) -> Router {
         .route("/config.json", get(config_json::get_config_json))
         .route("/diag/health", get(health::health))
         .route("/diag/models", get(diag::get_model_diagnostics))
+        .route("/admin/events", get(journal::list_events))
         .route("/me", get(bots::get_me))
         .route("/bots/my-submissions", get(bots::my_submissions))
         .route("/bots", get(bots::list_bots).post(bots::create_bot))

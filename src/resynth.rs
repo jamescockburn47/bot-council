@@ -89,6 +89,19 @@ pub async fn resynth(
         failed = report.failed.len(),
         "resynth: done"
     );
+    crate::observability::events::record_event(
+        &pool,
+        "resynth_run",
+        crate::observability::events::EventScope::default(),
+        &format!(
+            "Summaries were rebuilt for {} debates; {} skipped; {} failed.",
+            report.succeeded,
+            report.skipped,
+            report.failed.len()
+        ),
+        None,
+    )
+    .await;
     Ok(report)
 }
 

@@ -199,6 +199,38 @@ chrome), zoom-to-fit on load.
   lowest-support nodes collapse into an expandable "+N more" cluster per
   issue.
 
+### Visual and interaction quality bar
+
+The current map's failures are visual as much as semantic: crunched truncated
+labels, awkward force-soup placement, perpetual jiggle. Phase 2 rebuilds the
+presentation against these requirements:
+
+- **2D, not 3D.** `ArgumentMap3D` is retired. 2D (SVG or canvas) with the
+  same dark editorial aesthetic — glow, soft motion, depth cues — is the only
+  way to get collision-aware labels and deterministic placement. Striking
+  through polish, not through a third axis.
+- **Labels are `headline` fields, never truncated prose.** The artifact
+  schema's 3–6 word headlines are the node labels; full sentences live in
+  hover tooltips and the drawer. No mid-word truncation anywhere.
+- **Collision-aware label placement.** Labels never overlap nodes, edges, or
+  each other; displaced labels get leader lines; labels carry a backing halo
+  for contrast over edges.
+- **Deterministic, settled layout.** Issue anchors on a radial layout (crux
+  centred, others ringed by weight); positions orbit their anchor with
+  enforced minimum separation. The simulation runs to settlement once, then
+  freezes — no perpetual jiggle, and the layout is seeded per session so the
+  same debate renders identically every visit (stable for screenshots and
+  shared links).
+- **Semantic zoom.** Zoomed out: issue anchors + status colour only. Mid:
+  position nodes + headlines. Close: bot pills + confidence glow. The map
+  never shows everything at once at any single zoom level.
+- **Focus interactions.** Hover highlights the connected subgraph and dims
+  the rest; click eases the camera onto the issue and opens the drawer;
+  double-click background fits to canvas; replay scrubbing animates with
+  eased transitions. Trackpad/touch pan-zoom supported.
+- **Keyboard + accessibility** carry over from the 2026-04-19 spec: arrows
+  cycle nodes, enter opens drawer, esc closes, `/` focuses search.
+
 ### Mode-generic semantics
 
 The abstraction that keeps one map engine across modes: **anchors = the
@@ -447,9 +479,11 @@ deferred to those plans.
 - **Resynth over full history** costs one synthesis call per historical
   debate. Acceptable at current volume (Pro-tier throttle 500ms, lesson 16).
 - **Map rework scope creep.** The map is the most seductive place to
-  over-build. The spec deliberately reuses the existing force-graph engine,
-  palette, drawer, and reconstruct approach; only the graph derivation
-  (`derive.ts`) and edge/anchor semantics change materially in Phase 2.
+  over-build. The palette, drawer pattern, and reconstruct approach are
+  reused; the presentation layer is rebuilt in 2D against the quality bar
+  above (retiring `ArgumentMap3D`), and graph derivation (`derive.ts`)
+  retargets the issue schema. Phase 2 is the largest frontend phase and may
+  split into two PRs (reading path; map) as flagged in Phasing.
 - **Baseline gaming/optics.** A weak baseline flatters the council. The
   fairness rule (bare topic, same length guidance, no roles) is in the spec
   precisely so the comparison survives sceptical scrutiny.

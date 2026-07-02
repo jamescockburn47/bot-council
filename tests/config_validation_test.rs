@@ -1,3 +1,7 @@
+// Test code may unwrap/expect/panic — that is what asserts are
+// (CLAUDE.md: unwrap() allowed in tests).
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 use bot_council::config::{
     AuthConfig, DatabaseConfig, DebateConfig, HttpClientConfig, ModelsConfig, SentryConfig,
     ServerConfig, Settings,

@@ -160,8 +160,9 @@ pub async fn run_synthesis(
         parsed = Some(attempt_parsed);
         break;
     }
-    let mut parsed =
-        parsed.expect("retry loop must either return early or produce a SessionArtifact");
+    // The retry loop always sets `parsed` or returns early; if that ever
+    // regresses, degrade to the conservative fallback rather than panic.
+    let mut parsed = parsed.unwrap_or_else(|| conservative_fallback(topic));
     // Hardening: if the model returned an empty issue map but the
     // transcript contains substantive non-abstained content, emit one
     // fallback issue holding each bot's latest position so the downstream
@@ -178,6 +179,10 @@ pub async fn run_synthesis(
         participant_map_text,
         transcript_text,
         grounding_evidence_json,
+    );
+    crate::observability::sentinels::log_violations(
+        "synthesis",
+        &crate::observability::sentinels::check_artifact(&parsed, crux.is_some()),
     );
     let canonical = serde_json::to_string(&parsed)
         .map_err(|e| format!("failed to serialise synthesis output: {e}"))?;

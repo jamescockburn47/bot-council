@@ -12,6 +12,10 @@
 //!   - At least one text_only R3 row carries a `frame_rejected` crux
 //!     engagement stance.
 
+// Test code may unwrap/expect/panic — that is what asserts are
+// (CLAUDE.md: unwrap() allowed in tests).
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 mod common;
 
 use axum::body::Body;

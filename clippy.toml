@@ -1,0 +1,5 @@
+# Test code may unwrap/expect/panic — that is what asserts are.
+# (CLAUDE.md: "No unwrap() in production paths. unwrap() allowed in #[cfg(test)]".)
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-panic-in-tests = true

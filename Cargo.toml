@@ -3,6 +3,20 @@ name = "bot-council"
 version = "0.1.0"
 edition = "2024"
 
+# Enforced baseline (CLAUDE.md coding standards, previously convention-only):
+# panic-free production code, log-clean output. Test code is exempted via
+# clippy.toml's allow-*-in-tests; genuinely-safe exceptions in src/ take a
+# scoped #[allow] with a trailing reason.
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+
 [dependencies]
 axum = "0.8"
 axum-extra = { version = "0.10", features = ["typed-header"] }

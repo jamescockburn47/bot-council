@@ -40,6 +40,8 @@ pub fn check_citations(
     responses: &HashMap<(String, i64), bool>,
     max_round: i64,
 ) -> CitationCheckResult {
+    #[allow(clippy::expect_used)]
+    // const pattern, compile-time known-valid; exercised by every test run
     let re = Regex::new(r"\[([^,\]]+),\s*Round\s*(\d+)\]").expect("valid regex");
     let mut total = 0usize;
     let mut invalid = Vec::new();

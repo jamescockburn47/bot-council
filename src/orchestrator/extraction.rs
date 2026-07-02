@@ -44,6 +44,17 @@ pub enum CruxEngagementStance {
     FrameRejected,
 }
 
+/// Run the extraction sentinels over a finished provenance record; log any
+/// violations and return the record unchanged (sentinels never block —
+/// they make breakage loud, see src/observability/sentinels.rs).
+fn checked(provenance: FieldProvenance, raw_response: &str) -> FieldProvenance {
+    crate::observability::sentinels::log_violations(
+        "extraction",
+        &crate::observability::sentinels::check_provenance(&provenance, raw_response),
+    );
+    provenance
+}
+
 /// Result of the R3 crux-engagement extraction. Returned alongside the
 /// `FieldProvenance` so callers can persist both the provenance and the
 /// classified stance (when available) into `responses.extraction_metadata`.
@@ -164,11 +175,14 @@ pub async fn extract_crux_engagement(
     }
     CruxEngagementExtraction {
         stance: Some(parsed.engagement_stance),
-        provenance: FieldProvenance {
-            field: field_name,
-            source: "extracted",
-            quote: Some(parsed.reasoning_quote),
-        },
+        provenance: checked(
+            FieldProvenance {
+                field: field_name,
+                source: "extracted",
+                quote: Some(parsed.reasoning_quote),
+            },
+            bot_text,
+        ),
     }
 }
 
@@ -284,11 +298,14 @@ pub async fn extract_steelman(
     }
     SteelmanExtraction {
         steelman: Some(parsed.steelman),
-        provenance: FieldProvenance {
-            field: field_name,
-            source: "extracted",
-            quote: Some(parsed.source_quote),
-        },
+        provenance: checked(
+            FieldProvenance {
+                field: field_name,
+                source: "extracted",
+                quote: Some(parsed.source_quote),
+            },
+            bot_text,
+        ),
     }
 }
 
@@ -362,11 +379,14 @@ pub async fn extract_if_needed(
                 }
             };
             if patched {
-                FieldProvenance {
-                    field: field_name,
-                    source: "extracted",
-                    quote: Some(source_quote),
-                }
+                checked(
+                    FieldProvenance {
+                        field: field_name,
+                        source: "extracted",
+                        quote: Some(source_quote),
+                    },
+                    &response.response,
+                )
             } else {
                 FieldProvenance {
                     field: field_name,

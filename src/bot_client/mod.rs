@@ -22,6 +22,8 @@ pub fn build_http_client(config: &HttpClientConfig) -> ClientWithMiddleware {
             Duration::from_secs(config.retry_delay_secs * 4),
         )
         .build_with_max_retries(config.max_retries);
+    #[allow(clippy::expect_used)]
+    // startup-time construction; fails only if the TLS backend is broken, before any request is served
     let base = Client::builder()
         .timeout(Duration::from_secs(config.request_timeout_secs))
         .connect_timeout(Duration::from_secs(config.connect_timeout_secs))

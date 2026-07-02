@@ -89,6 +89,10 @@ pub async fn run_round1(
     let results = futures::future::join_all(futures).await;
 
     for (bot_id, outcome) in results {
+        let ingest_kind = match &outcome {
+            DispatchOutcome::Success { response, .. } => Some(response.ingest_kind.as_str()),
+            _ => None,
+        };
         let (response_text, confidence, abstained, retry_count, fallback_from_round) = match outcome
         {
             DispatchOutcome::Success {
@@ -132,6 +136,7 @@ pub async fn run_round1(
             abstained,
             None,
             fallback_from_round,
+            ingest_kind,
         )
         .await
         .map_err(|e| format!("db error storing Round 1 response: {e}"))?;

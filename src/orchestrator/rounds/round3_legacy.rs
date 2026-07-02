@@ -244,6 +244,7 @@ pub async fn run_round3_cross_examination_legacy(
             abstained,
             None,
             None,
+            answer_opt.as_ref().map(|r| r.ingest_kind.as_str()),
         )
         .await
         .map_err(|e| format!("db error storing Round 3 response: {e}"))?;

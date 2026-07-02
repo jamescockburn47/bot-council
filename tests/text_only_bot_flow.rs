@@ -498,6 +498,23 @@ async fn text_only_bot_completes_debate_with_extracted_fields() {
     .fetch_one(&pool)
     .await
     .unwrap();
+
+    // Lenient ingest: the text-only bot returns the documented {text} shape,
+    // so its stored rows must record ingest_kind = 'clean'.
+    let (r2_ingest,): (Option<String>,) = sqlx::query_as(
+        "SELECT ingest_kind FROM responses \
+         WHERE debate_id = ? AND bot_id = ? AND round_number = 2",
+    )
+    .bind(&debate_id)
+    .bind(&text_only_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        r2_ingest.as_deref(),
+        Some("clean"),
+        "documented {{text}} shape must persist ingest_kind=clean"
+    );
     let r2_meta_json: Value = serde_json::from_str(r2_meta.as_deref().unwrap_or("{}")).unwrap();
     assert_eq!(
         r2_meta_json["challenge"]["source"], "extracted",

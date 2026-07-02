@@ -75,6 +75,7 @@ pub async fn run_round0(
             Some(r) => (r.response.clone(), false),
             None => ("(abstained)".to_string(), true),
         };
+        let ingest_kind = resp_opt.as_ref().map(|r| r.ingest_kind.as_str());
         let resp_id = uuid::Uuid::new_v4().to_string();
         queries_phase1::insert_response_full(
             pool,
@@ -91,6 +92,7 @@ pub async fn run_round0(
             abstained,
             None,
             None,
+            ingest_kind,
         )
         .await
         .map_err(|e| format!("db error storing Round 0 response: {e}"))?;

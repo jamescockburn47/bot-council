@@ -1,0 +1,20 @@
+# Grandfathered files: pre-existing offenders of the 300-line rule
+# (CLAUDE.md). Each row is "path ratchet-ceiling" — the file may not
+# grow past its ceiling. Shrink a file below 300 lines and delete its
+# row. NEVER raise a ceiling; split the file instead.
+# Generated 2026-07-02 from the then-current line counts.
+frontend/src/lib/components/outcome/ArgumentMap3D.svelte 465
+frontend/src/routes/bots/+page.svelte 399
+frontend/src/routes/debates/[id]/+page.svelte 549
+frontend/src/routes/debates/new/+page.svelte 338
+frontend/src/routes/how-it-works/+page.svelte 349
+frontend/src/routes/security/+page.svelte 333
+src/api/bots.rs 1466
+src/api/debates.rs 401
+src/db/queries.rs 806
+src/orchestrator/extraction.rs 517
+src/orchestrator/multi_round.rs 993
+src/resynth.rs 326
+src/synthesiser/citation_check.rs 365
+src/synthesiser/meta.rs 329
+src/synthesiser/mod.rs 672

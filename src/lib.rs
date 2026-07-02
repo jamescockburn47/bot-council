@@ -9,6 +9,7 @@ pub mod extractor;
 pub mod observability;
 pub mod orchestrator;
 pub mod resynth;
+pub(crate) mod resynth_targets;
 pub mod sanitise;
 pub mod scoreboard;
 pub mod state;
